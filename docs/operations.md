@@ -146,6 +146,23 @@ Provisioned local Grafana URL:
 http://127.0.0.1:3000/d/kaspa-watchtower/kaspa-watchtower
 ```
 
+Prometheus alert rules:
+
+```text
+prometheus/kaspa-watchtower-rules.yml
+```
+
+The local `asus-traffic-monitor` Prometheus stack has the rule file copied to
+`prometheus-rules/kaspa-watchtower-rules.yml` and mounted at
+`/etc/prometheus/rules/kaspa-watchtower-rules.yml`. Current rules:
+
+- `KaspaWatchtowerExporterDown`
+- `KaspaWatchtowerCritical`
+- `KaspaWatchtowerWarning`
+- `KaspaNodePeerCountLow`
+- `KaspaRelayProgressStalled`
+- `KaspaWatchtowerMetricsStale`
+
 Manual recovery dry-run:
 
 ```bash

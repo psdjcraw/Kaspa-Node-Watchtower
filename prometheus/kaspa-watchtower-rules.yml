@@ -1,0 +1,62 @@
+groups:
+  - name: kaspa-watchtower
+    rules:
+      - alert: KaspaWatchtowerExporterDown
+        expr: absent(kaspa_watchtower_status_ok{job="kaspa-watchtower"})
+        for: 2m
+        labels:
+          severity: critical
+          service: kaspa-watchtower
+        annotations:
+          summary: "Kaspa watchtower metrics are missing"
+          description: "Prometheus has not scraped kaspa_watchtower_status_ok for 2 minutes."
+
+      - alert: KaspaWatchtowerCritical
+        expr: kaspa_watchtower_severity_value{job="kaspa-watchtower"} >= 2
+        for: 2m
+        labels:
+          severity: critical
+          service: kaspa-watchtower
+        annotations:
+          summary: "Kaspa watchtower reports critical severity"
+          description: "Watchtower severity is critical for node {{ $labels.node }}."
+
+      - alert: KaspaWatchtowerWarning
+        expr: kaspa_watchtower_severity_value{job="kaspa-watchtower"} == 1
+        for: 10m
+        labels:
+          severity: warning
+          service: kaspa-watchtower
+        annotations:
+          summary: "Kaspa watchtower reports warning severity"
+          description: "Watchtower severity is warning for node {{ $labels.node }}."
+
+      - alert: KaspaNodePeerCountLow
+        expr: kaspa_watchtower_peer_count{job="kaspa-watchtower"} < 1
+        for: 2m
+        labels:
+          severity: critical
+          service: kaspa-watchtower
+        annotations:
+          summary: "Kaspa node has no connected peers"
+          description: "Peer count is below 1 for node {{ $labels.node }}."
+
+      - alert: KaspaRelayProgressStalled
+        expr: kaspa_watchtower_relay_blocks_window{job="kaspa-watchtower"} < 1
+        for: 15m
+        labels:
+          severity: warning
+          service: kaspa-watchtower
+        annotations:
+          summary: "Kaspa relay block progress stalled"
+          description: "No relay blocks were observed in the recent watchtower window for node {{ $labels.node }}."
+
+      - alert: KaspaWatchtowerMetricsStale
+        expr: time() - timestamp(kaspa_watchtower_status_ok{job="kaspa-watchtower"}) > 180
+        for: 2m
+        labels:
+          severity: warning
+          service: kaspa-watchtower
+        annotations:
+          summary: "Kaspa watchtower metrics are stale"
+          description: "Prometheus sample age is above 180 seconds for node {{ $labels.node }}."

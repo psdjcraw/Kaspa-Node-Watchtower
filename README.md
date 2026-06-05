@@ -118,4 +118,10 @@ Grafana dashboard JSON:
 grafana/kaspa-watchtower.json
 ```
 
+Prometheus alert rules:
+
+```text
+prometheus/kaspa-watchtower-rules.yml
+```
+
 See `docs/operations.md` for alert criteria and the Discord cron plan.
