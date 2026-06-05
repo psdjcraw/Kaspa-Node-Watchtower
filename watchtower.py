@@ -607,7 +607,12 @@ def html_row(cells: list[Any], tag: str = "td") -> str:
     return "<tr>" + "".join(f"<{tag}>{html.escape(str(cell))}</{tag}>" for cell in cells) + "</tr>"
 
 
-def write_status_page(path: Path, report: dict[str, Any], state: dict[str, Any]) -> None:
+def write_status_page(
+    path: Path,
+    report: dict[str, Any],
+    state: dict[str, Any],
+    benchmark_path: Path | None = None,
+) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     checks = "\n".join(
         html_row([
@@ -634,6 +639,23 @@ def write_status_page(path: Path, report: dict[str, Any], state: dict[str, Any])
     failed = failed_check_names(report)
     failure_text = ", ".join(failed) if failed else "None"
     last_alert_at = state.get("last_alert_at") or "None"
+    benchmark_summary = build_benchmark_summary(
+        benchmark_path or Path(DEFAULT_CONFIG["benchmark_path"]),
+        limit=48,
+    )
+    benchmark_rows = "\n".join(
+        html_row([label, value])
+        for label, value in [
+            ("Snapshots", benchmark_summary["snapshots"]),
+            ("Window", benchmark_summary["window"]),
+            ("DAA Rate", benchmark_summary["daa_rate"]),
+            ("Block Rate", benchmark_summary["block_rate"]),
+            ("Relay Average", benchmark_summary["relay_rate"]),
+            ("Latest Peer State", benchmark_summary["latest_peer_state"]),
+            ("Severity Counts", benchmark_summary["severity_counts"]),
+            ("Disk Free Delta", benchmark_summary["disk_delta"]),
+        ]
+    )
     metric_items = [
         ("Severity", report["severity"]),
         ("Peers", grpc_metrics.get("peer_count", "unknown")),
@@ -766,6 +788,12 @@ def write_status_page(path: Path, report: dict[str, Any], state: dict[str, Any])
       </section>
     </section>
     <section class="panel">
+      <h2>Benchmark Trend</h2>
+      <table>
+        <tbody>{benchmark_rows}</tbody>
+      </table>
+    </section>
+    <section class="panel">
       <h2>Recent History</h2>
       <table>
         <thead>{html_row(["Checked At", "Severity", "Failed", "Peers", "Relay Blocks", "DAA"], "th")}</thead>
@@ -784,6 +812,7 @@ def alert(config: dict) -> int:
     state_path = Path(config.get("state_path") or DEFAULT_CONFIG["state_path"])
     status_page_path = Path(config.get("status_page_path") or DEFAULT_CONFIG["status_page_path"])
     canvas_status_page = config.get("canvas_status_page_path") or DEFAULT_CONFIG["canvas_status_page_path"]
+    benchmark_path = Path(config.get("benchmark_path") or DEFAULT_CONFIG["benchmark_path"])
     thresholds = config.get("thresholds", {})
     repeat_minutes = float(thresholds.get("alert_repeat_minutes", 60))
     state = load_state(state_path)
@@ -805,9 +834,9 @@ def alert(config: dict) -> int:
     if should_emit:
         state["last_alert_at"] = report["checked_at"]
     save_state(state_path, state)
-    write_status_page(status_page_path, report, state)
+    write_status_page(status_page_path, report, state, benchmark_path)
     if canvas_status_page:
-        write_status_page(Path(canvas_status_page), report, state)
+        write_status_page(Path(canvas_status_page), report, state, benchmark_path)
 
     if should_emit:
         print(format_alert(report, previous_status, previous_severity))
@@ -1004,25 +1033,52 @@ def format_rate(delta: float | None, hours: float) -> str:
     return f"{delta / hours:.2f}/h"
 
 
-def benchmark_report(config: dict, *, limit: int) -> int:
-    path = Path(config.get("benchmark_path") or DEFAULT_CONFIG["benchmark_path"])
+def build_benchmark_summary(path: Path, *, limit: int) -> dict[str, Any]:
     items = load_jsonl(path)
     if limit > 0:
         items = items[-limit:]
     if len(items) < 2:
-        print(f"Benchmark report unavailable: need at least 2 snapshots in {path}")
-        return 2
+        return {
+            "ok": False,
+            "path": str(path),
+            "snapshots": len(items),
+            "window": "need at least 2 snapshots",
+            "daa_delta": "unknown",
+            "daa_rate": "unknown",
+            "block_delta": "unknown",
+            "block_rate": "unknown",
+            "relay_rate": "unknown",
+            "latest_peer_state": "unknown",
+            "latest_status": "unknown",
+            "latest_severity": "unknown",
+            "severity_counts": "{}",
+            "disk_delta": "unknown",
+        }
 
     first = items[0]
     last = items[-1]
     first_at = parse_iso_datetime(first.get("checked_at"))
     last_at = parse_iso_datetime(last.get("checked_at"))
     if first_at is None or last_at is None:
-        print(f"Benchmark report unavailable: invalid timestamps in {path}")
-        return 2
+        return {
+            "ok": False,
+            "path": str(path),
+            "snapshots": len(items),
+            "window": "invalid timestamps",
+            "daa_delta": "unknown",
+            "daa_rate": "unknown",
+            "block_delta": "unknown",
+            "block_rate": "unknown",
+            "relay_rate": "unknown",
+            "latest_peer_state": "unknown",
+            "latest_status": "unknown",
+            "latest_severity": "unknown",
+            "severity_counts": "{}",
+            "disk_delta": "unknown",
+        }
+
     elapsed_seconds = max(0.0, (last_at - first_at).total_seconds())
     elapsed_hours = elapsed_seconds / 3600
-
     first_daa = numeric(first.get("virtual_daa_score"))
     last_daa = numeric(last.get("virtual_daa_score"))
     first_blocks = numeric(first.get("block_count"))
@@ -1041,20 +1097,49 @@ def benchmark_report(config: dict, *, limit: int) -> int:
         severities[severity] = severities.get(severity, 0) + 1
 
     disk_delta_text = "unknown" if disk_delta is None else f"{disk_delta:+.2f} GiB"
+    latest_peer_state = (
+        f"peers={last.get('peer_count')} "
+        f"active={last.get('active_peers')} "
+        f"synced={last.get('is_synced')}"
+    )
+    return {
+        "ok": True,
+        "path": str(path),
+        "snapshots": len(items),
+        "window": f"{first.get('checked_at')} -> {last.get('checked_at')} ({elapsed_hours:.2f}h)",
+        "daa_delta": daa_delta if daa_delta is not None else "unknown",
+        "daa_rate": format_rate(daa_delta, elapsed_hours),
+        "block_delta": block_delta if block_delta is not None else "unknown",
+        "block_rate": format_rate(block_delta, elapsed_hours),
+        "relay_rate": relay_rate,
+        "latest_peer_state": latest_peer_state,
+        "latest_status": last.get("status"),
+        "latest_severity": last.get("severity"),
+        "severity_counts": json.dumps(severities, sort_keys=True),
+        "disk_delta": disk_delta_text,
+    }
+
+
+def benchmark_report(config: dict, *, limit: int) -> int:
+    path = Path(config.get("benchmark_path") or DEFAULT_CONFIG["benchmark_path"])
+    summary = build_benchmark_summary(path, limit=limit)
+    if not summary["ok"]:
+        print(f"Benchmark report unavailable: {summary['window']} in {path}")
+        return 2
     lines = [
-        f"Kaspa benchmark report: {last.get('node_name')}",
-        f"snapshots={len(items)} path={path}",
-        f"window={first.get('checked_at')} -> {last.get('checked_at')} ({elapsed_hours:.2f}h)",
-        f"daa_delta={daa_delta if daa_delta is not None else 'unknown'} rate={format_rate(daa_delta, elapsed_hours)}",
-        f"block_count_delta={block_delta if block_delta is not None else 'unknown'} rate={format_rate(block_delta, elapsed_hours)}",
-        f"relay_window_average={relay_rate}",
-        f"latest_peers={last.get('peer_count')} active={last.get('active_peers')} synced={last.get('is_synced')}",
-        f"latest_status={last.get('status')} severity={last.get('severity')}",
-        f"severity_counts={json.dumps(severities, sort_keys=True)}",
-        f"disk_free_delta={disk_delta_text}",
+        f"Kaspa benchmark report: {config['node_name']}",
+        f"snapshots={summary['snapshots']} path={path}",
+        f"window={summary['window']}",
+        f"daa_delta={summary['daa_delta']} rate={summary['daa_rate']}",
+        f"block_count_delta={summary['block_delta']} rate={summary['block_rate']}",
+        f"relay_window_average={summary['relay_rate']}",
+        f"latest_{summary['latest_peer_state']}",
+        f"latest_status={summary['latest_status']} severity={summary['latest_severity']}",
+        f"severity_counts={summary['severity_counts']}",
+        f"disk_free_delta={summary['disk_delta']}",
     ]
     print("\n".join(lines))
-    return 0 if last.get("status") == "ok" else 1
+    return 0 if summary["latest_status"] == "ok" else 1
 
 
 def recover(config: dict, *, force: bool = False, dry_run: bool = False) -> int:

@@ -118,6 +118,9 @@ HTML status page:
 open state/status.html
 ```
 
+The generated status page includes the latest health checks, recent check
+history, and a benchmark trend section from the latest saved snapshots.
+
 Canvas-hosted status page file:
 
 ```text

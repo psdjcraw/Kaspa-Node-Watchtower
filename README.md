@@ -18,6 +18,7 @@ explorers or hosted APIs.
 - Alert severity, repeat suppression, history, and local HTML status page generation
 - Concise `--summary` output for quick Discord/operator status checks
 - Benchmark snapshots and reports for version/configuration comparison
+- Benchmark trend section in the generated status dashboard
 
 ## Planned Features
 
