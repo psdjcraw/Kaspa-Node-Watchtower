@@ -226,13 +226,14 @@ scripts/collect_diagnostics.sh
 scripts/collect_diagnostics.sh --archive
 ```
 
-GitHub Actions runs the static smoke workflow in `.github/workflows/smoke.yml`
-on pushes to `main` and pull requests.
+GitHub Actions runs the static smoke workflow and CodeQL analysis on pushes to
+`main` and pull requests.
 
-Check the latest GitHub Actions smoke run:
+Check the latest GitHub Actions smoke and CodeQL runs:
 
 ```bash
 scripts/check_ci_status.sh
+KASPA_WATCHTOWER_GITHUB_WORKFLOW=codeql.yml scripts/check_ci_status.sh
 ```
 
 Check Prometheus alert state:

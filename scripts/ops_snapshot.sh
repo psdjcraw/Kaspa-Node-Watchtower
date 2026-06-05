@@ -53,6 +53,12 @@ printf 'status_ok: '
 curl -fsS "$EXPORTER_URL/metrics" | awk '/^kaspa_watchtower_status_ok/ {print $2; exit}'
 printf 'peer_count: '
 curl -fsS "$EXPORTER_URL/metrics" | awk '/^kaspa_watchtower_peer_count/ {print $2; exit}'
+printf 'sync_active: '
+curl -fsS "$EXPORTER_URL/metrics" | awk '/^kaspa_watchtower_sync_active/ {print $2; exit}'
+printf 'sync_baseline_available: '
+curl -fsS "$EXPORTER_URL/metrics" | awk '/^kaspa_watchtower_sync_baseline_available/ {print $2; exit}'
+printf 'sync_header_rate_per_hour: '
+curl -fsS "$EXPORTER_URL/metrics" | awk '/^kaspa_watchtower_sync_header_rate_per_hour/ {print $2; found=1; exit} END {if (!found) print "missing"}'
 
 section "Prometheus"
 printf 'target status: '
@@ -64,17 +70,32 @@ matches = [t for t in targets if t.get("scrapePool") == "kaspa-watchtower"]
 print(matches[0].get("health", "missing") if matches else "missing")'
 printf 'status_ok query: %s\n' "$(prom_query 'kaspa_watchtower_status_ok')"
 printf 'peer_count query: %s\n' "$(prom_query 'kaspa_watchtower_peer_count')"
-printf 'active alerts: %s\n' "$(prom_query 'count(ALERTS{service="kaspa-watchtower"}) or vector(0)')"
+printf 'sync_active query: %s\n' "$(prom_query 'kaspa_watchtower_sync_active')"
+printf 'sync_header_rate query: %s\n' "$(prom_query 'kaspa_watchtower_sync_header_rate_per_hour')"
+printf 'active alerts: '
+curl -fsS "$PROMETHEUS_URL/api/v1/alerts" |
+  python3 -c 'import json, sys
+data = json.load(sys.stdin)
+alerts = [
+    item for item in data.get("data", {}).get("alerts", [])
+    if item.get("labels", {}).get("service") == "kaspa-watchtower"
+]
+print(len(alerts))'
 
 section "Grafana"
 status="$(curl -s -o /dev/null -w '%{http_code}' "$GRAFANA_URL$GRAFANA_DASHBOARD_PATH")"
 printf 'dashboard: %s%s http=%s\n' "$GRAFANA_URL" "$GRAFANA_DASHBOARD_PATH" "$status"
 
 section "GitHub Actions"
-if scripts/check_ci_status.sh; then
+if KASPA_WATCHTOWER_GITHUB_WORKFLOW=smoke.yml scripts/check_ci_status.sh; then
   true
 else
-  printf 'GitHub Actions status unavailable or failing\n'
+  printf 'GitHub Actions smoke status unavailable or failing\n'
+fi
+if KASPA_WATCHTOWER_GITHUB_WORKFLOW=codeql.yml scripts/check_ci_status.sh; then
+  true
+else
+  printf 'GitHub Actions CodeQL status unavailable or failing\n'
 fi
 
 section "Recent Files"

@@ -57,8 +57,10 @@ check_grafana_dashboard() {
 }
 
 check_github_actions() {
-  scripts/check_ci_status.sh >/dev/null
+  KASPA_WATCHTOWER_GITHUB_WORKFLOW=smoke.yml scripts/check_ci_status.sh >/dev/null
   ok "GitHub Actions latest smoke run"
+  KASPA_WATCHTOWER_GITHUB_WORKFLOW=codeql.yml scripts/check_ci_status.sh >/dev/null
+  ok "GitHub Actions latest CodeQL run"
 }
 
 check_exporter

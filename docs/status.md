@@ -68,6 +68,7 @@ scripts/smoke_test.sh
 
 ```bash
 scripts/check_ci_status.sh
+KASPA_WATCHTOWER_GITHUB_WORKFLOW=codeql.yml scripts/check_ci_status.sh
 ```
 
 ## Daily Report
