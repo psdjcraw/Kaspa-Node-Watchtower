@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import html
 import json
 import os
 import re
@@ -25,7 +26,9 @@ DEFAULT_CONFIG = {
     "rpc_endpoint": "",
     "grpc_endpoint": "",
     "state_path": "state/watchtower-state.json",
+    "status_page_path": "state/status.html",
     "thresholds": {
+        "alert_repeat_minutes": 60,
         "stale_log_minutes": 15,
         "progress_window_minutes": 10,
         "min_relay_blocks_in_window": 1,
@@ -34,6 +37,10 @@ DEFAULT_CONFIG = {
         "disk_free_gb_min": 20,
         "disk_free_percent_min": 5,
         "require_rpc": True,
+    },
+    "recovery": {
+        "mode": "manual",
+        "restart_command": [],
     },
 }
 
@@ -69,6 +76,26 @@ class Check:
 
     def as_dict(self) -> dict[str, Any]:
         return {"name": self.name, "ok": self.ok, "detail": self.detail}
+
+
+CRITICAL_CHECKS = {
+    "process",
+    "data_dir",
+    "rpc_tcp",
+    "grpc_metrics",
+    "sync_status",
+    "peer_count",
+    "log_file",
+}
+
+
+def summarize_severity(checks: list[Check]) -> str:
+    failed = [check.name for check in checks if not check.ok]
+    if not failed:
+        return "ok"
+    if any(name in CRITICAL_CHECKS for name in failed):
+        return "critical"
+    return "warn"
 
 
 def load_config(path: Path | None) -> dict:
@@ -390,11 +417,12 @@ def build_report(config: dict) -> dict[str, Any]:
     else:
         checks.append(Check("log_file", False, f"missing ({log_path})"))
 
-    ok = all(check.ok for check in checks)
-    status_text = "ok" if ok else "alert"
+    severity = summarize_severity(checks)
+    status_text = "ok" if severity == "ok" else "alert"
     report = {
         "node_name": config["node_name"],
         "status": status_text,
+        "severity": severity,
         "checked_at": dt.datetime.now().astimezone().isoformat(),
         "process_match": config["process_match"],
         "processes": processes,
@@ -414,6 +442,7 @@ def build_report(config: dict) -> dict[str, Any]:
         "latest_relay_block": latest_relay,
         "latest_throughput": latest_throughput,
         "progress": progress,
+        "recovery": recovery_plan(config, severity),
     }
     return report
 
@@ -423,6 +452,7 @@ def status(config: dict) -> int:
 
     print(f"Kaspa Node Watchtower: {report['node_name']}")
     print(f"Status: {report['status']}")
+    print(f"Severity: {report['severity']}")
     print(f"Checked at: {report['checked_at']}")
     print(f"RPC endpoint: {report['rpc_endpoint'] or 'not configured'}")
     print(f"Process match: {report['process_match']}")
@@ -498,33 +528,183 @@ def save_state(path: Path, state: dict[str, Any]) -> None:
         handle.write("\n")
 
 
+def parse_iso_datetime(value: str | None) -> dt.datetime | None:
+    if not value:
+        return None
+    try:
+        return dt.datetime.fromisoformat(value)
+    except ValueError:
+        return None
+
+
+def failed_check_names(report: dict[str, Any]) -> list[str]:
+    return [check["name"] for check in report["checks"] if not check["ok"]]
+
+
+def history_item(report: dict[str, Any]) -> dict[str, Any]:
+    grpc_metrics = report.get("grpc_metrics") or {}
+    progress = report.get("progress") or {}
+    return {
+        "checked_at": report["checked_at"],
+        "status": report["status"],
+        "severity": report["severity"],
+        "failed_checks": failed_check_names(report),
+        "peer_count": grpc_metrics.get("peer_count"),
+        "is_synced": grpc_metrics.get("is_synced"),
+        "virtual_daa_score": grpc_metrics.get("virtual_daa_score"),
+        "relay_blocks_in_window": progress.get("relay_blocks_in_window"),
+    }
+
+
+def should_emit_alert(
+    state: dict[str, Any],
+    report: dict[str, Any],
+    repeat_minutes: float,
+) -> bool:
+    previous_status = state.get("status")
+    previous_severity = state.get("severity")
+    if previous_status != report["status"] or previous_severity != report["severity"]:
+        return True
+    if report["status"] == "ok":
+        return False
+
+    last_alert_at = parse_iso_datetime(state.get("last_alert_at"))
+    checked_at = parse_iso_datetime(report.get("checked_at")) or dt.datetime.now().astimezone()
+    if last_alert_at is None:
+        return True
+    elapsed = (checked_at - last_alert_at).total_seconds()
+    return elapsed >= repeat_minutes * 60
+
+
+def recovery_plan(config: dict, severity: str) -> dict[str, Any]:
+    recovery = config.get("recovery", {})
+    mode = recovery.get("mode", "manual")
+    restart_command = recovery.get("restart_command") or []
+    return {
+        "mode": mode,
+        "restart_command_configured": bool(restart_command),
+        "action": "none" if severity == "ok" else "manual_approval_required",
+        "restart_command": restart_command if mode == "manual" else [],
+    }
+
+
+def html_row(cells: list[Any], tag: str = "td") -> str:
+    return "<tr>" + "".join(f"<{tag}>{html.escape(str(cell))}</{tag}>" for cell in cells) + "</tr>"
+
+
+def write_status_page(path: Path, report: dict[str, Any], state: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    checks = "\n".join(
+        html_row([
+            "OK" if check["ok"] else "ALERT",
+            check["name"],
+            check["detail"],
+        ])
+        for check in report["checks"]
+    )
+    history = "\n".join(
+        html_row([
+            item.get("checked_at", ""),
+            item.get("severity", ""),
+            ",".join(item.get("failed_checks") or []),
+            item.get("peer_count", ""),
+            item.get("relay_blocks_in_window", ""),
+            item.get("virtual_daa_score", ""),
+        ])
+        for item in reversed(state.get("history", [])[-30:])
+    )
+    grpc_metrics = report.get("grpc_metrics") or {}
+    progress = report.get("progress") or {}
+    page = f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Kaspa Node Watchtower</title>
+  <style>
+    body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 24px; color: #1f2933; }}
+    h1 {{ font-size: 24px; margin: 0 0 8px; }}
+    h2 {{ font-size: 18px; margin-top: 24px; }}
+    .status {{ font-weight: 700; }}
+    .ok {{ color: #137333; }}
+    .warn {{ color: #b26a00; }}
+    .critical {{ color: #b3261e; }}
+    table {{ border-collapse: collapse; width: 100%; font-size: 14px; }}
+    th, td {{ border-bottom: 1px solid #d7dde5; padding: 7px 8px; text-align: left; vertical-align: top; }}
+    code {{ background: #eef2f6; padding: 2px 4px; border-radius: 4px; }}
+  </style>
+</head>
+<body>
+  <h1>Kaspa Node Watchtower</h1>
+  <p class="status {html.escape(report['severity'])}">{html.escape(report['node_name'])}: {html.escape(report['severity'])}</p>
+  <p>Checked at: <code>{html.escape(report['checked_at'])}</code></p>
+  <p>Network: <code>{html.escape(str(grpc_metrics.get('network_id', 'unknown')))}</code>,
+     synced: <code>{html.escape(str(grpc_metrics.get('is_synced', 'unknown')))}</code>,
+     peers: <code>{html.escape(str(grpc_metrics.get('peer_count', 'unknown')))}</code>,
+     DAA: <code>{html.escape(str(grpc_metrics.get('virtual_daa_score', 'unknown')))}</code></p>
+  <p>Relay progress: <code>{html.escape(str(progress.get('relay_blocks_in_window', 0)))}</code> blocks in
+     <code>{html.escape(str(progress.get('window_minutes', 0)))}</code> minutes.</p>
+  <h2>Checks</h2>
+  <table>
+    <thead>{html_row(["State", "Check", "Detail"], "th")}</thead>
+    <tbody>{checks}</tbody>
+  </table>
+  <h2>Recent History</h2>
+  <table>
+    <thead>{html_row(["Checked At", "Severity", "Failed", "Peers", "Relay Blocks", "DAA"], "th")}</thead>
+    <tbody>{history}</tbody>
+  </table>
+</body>
+</html>
+"""
+    path.write_text(page, encoding="utf-8")
+
+
 def alert(config: dict) -> int:
     report = build_report(config)
     state_path = Path(config.get("state_path") or DEFAULT_CONFIG["state_path"])
+    status_page_path = Path(config.get("status_page_path") or DEFAULT_CONFIG["status_page_path"])
+    thresholds = config.get("thresholds", {})
+    repeat_minutes = float(thresholds.get("alert_repeat_minutes", 60))
     state = load_state(state_path)
     previous_status = state.get("status")
-    should_emit = previous_status != report["status"] or report["status"] != "ok"
+    previous_severity = state.get("severity")
+    should_emit = should_emit_alert(state, report, repeat_minutes)
+    history = state.get("history", [])
+    history.append(history_item(report))
+    history = history[-100:]
     state.update(
         {
             "status": report["status"],
+            "severity": report["severity"],
             "checked_at": report["checked_at"],
             "last_report": report,
+            "history": history,
         }
     )
+    if should_emit:
+        state["last_alert_at"] = report["checked_at"]
     save_state(state_path, state)
+    write_status_page(status_page_path, report, state)
 
     if should_emit:
-        print(format_alert(report, previous_status))
+        print(format_alert(report, previous_status, previous_severity))
     return 0 if report["status"] == "ok" else 1
 
 
-def format_alert(report: dict[str, Any], previous_status: str | None = None) -> str:
+def format_alert(
+    report: dict[str, Any],
+    previous_status: str | None = None,
+    previous_severity: str | None = None,
+) -> str:
     lines = [
-        f"Kaspa watchtower: {report['node_name']} is {report['status']}",
+        f"Kaspa watchtower: {report['node_name']} is {report['severity']}",
         f"checked_at={report['checked_at']}",
     ]
     if previous_status:
         lines.append(f"previous_status={previous_status}")
+    if previous_severity:
+        lines.append(f"previous_severity={previous_severity}")
     for check in report["checks"]:
         if not check["ok"] or report["status"] == "ok":
             mark = "OK" if check["ok"] else "ALERT"
@@ -547,6 +727,13 @@ def format_alert(report: dict[str, Any], previous_status: str | None = None) -> 
         f"{progress['relay_events_in_window']} events in "
         f"{progress['window_minutes']:g}m"
     )
+    recovery = report.get("recovery") or {}
+    if recovery.get("action") != "none":
+        lines.append(
+            "Recovery: "
+            f"{recovery.get('action')} "
+            f"(mode={recovery.get('mode')}, restart_command_configured={recovery.get('restart_command_configured')})"
+        )
     return "\n".join(lines)
 
 

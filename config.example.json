@@ -7,7 +7,9 @@
   "rpc_endpoint": "127.0.0.1:16210",
   "grpc_endpoint": "127.0.0.1:16210",
   "state_path": "state/watchtower-state.json",
+  "status_page_path": "state/status.html",
   "thresholds": {
+    "alert_repeat_minutes": 60,
     "stale_log_minutes": 15,
     "progress_window_minutes": 10,
     "min_relay_blocks_in_window": 1,
@@ -16,5 +18,14 @@
     "disk_free_gb_min": 20,
     "disk_free_percent_min": 5,
     "require_rpc": true
+  },
+  "recovery": {
+    "mode": "manual",
+    "restart_command": [
+      "launchctl",
+      "kickstart",
+      "-k",
+      "gui/501/com.openclaw.kaspad-tn10"
+    ]
   }
 }

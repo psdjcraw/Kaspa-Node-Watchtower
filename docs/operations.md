@@ -26,6 +26,24 @@ The local watchtower reports an alert when any of these fail:
 - No relay-accepted blocks appear in the latest `10 minutes`.
 - The configured log file is missing.
 
+Severity mapping:
+
+- `critical`: process, data directory, RPC, gRPC, sync, peer count, or log file failure.
+- `warn`: disk, log freshness, or relay progress failure.
+- `ok`: all checks pass.
+
+Alert repeat suppression:
+
+- Status or severity transitions are announced immediately.
+- Ongoing non-OK states repeat at most once every `60` minutes.
+- Healthy repeated checks stay quiet.
+
+Recovery:
+
+- Current mode is `manual`.
+- The watchtower can include the configured restart command in alert context,
+  but it does not restart the healthy node automatically.
+
 ## Commands
 
 Human-readable status:
@@ -51,6 +69,12 @@ status changes, and keeps emitting while the status remains `alert`.
 
 The cron wrapper prefers `.venv/bin/python` so the gRPC dependencies can stay
 local to this repository.
+
+HTML status page:
+
+```bash
+open state/status.html
+```
 
 ## Git Push
 

@@ -15,6 +15,7 @@ explorers or hosted APIs.
 - Alert-mode output for Discord/OpenClaw cron
 - JSON output for later dashboards or exporters
 - Direct rusty-kaspa gRPC metrics: sync status, peer count, network id, DAA score, block/header counts, process metrics
+- Alert severity, repeat suppression, history, and local HTML status page generation
 
 ## Planned Features
 
