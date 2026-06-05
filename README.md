@@ -89,6 +89,7 @@ For a concise operator summary:
 
 ```bash
 .venv/bin/python watchtower.py -c config.json --summary
+.venv/bin/python watchtower.py -c config.json --sync-report
 ```
 
 Print the watchtower version:
@@ -130,6 +131,7 @@ Common operator commands are also available through `make`:
 ```bash
 make help
 make status
+make sync-report
 make smoke
 make daily-report
 make diagnostics-archive

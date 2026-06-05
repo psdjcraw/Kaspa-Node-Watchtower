@@ -272,6 +272,43 @@ class WatchtowerUnitTests(unittest.TestCase):
         self.assertIn("daa_delta=+0", checks["sync_progress"]["detail"])
         self.assertEqual(report["sync_progress"]["header_rate_per_hour"], 0)
 
+    def test_format_sync_report_includes_rates_and_benchmark_window(self):
+        report = {
+            "node_name": "kaspa-mainnet-local",
+            "checked_at": "2026-06-05T22:20:00+09:00",
+            "status": "ok",
+            "severity": "ok",
+            "checks": [],
+            "grpc_metrics": {
+                "network_id": "mainnet",
+                "is_synced": False,
+                "peer_count": 8,
+                "active_peers": 8,
+                "virtual_daa_score": 451,
+                "block_count": 123,
+                "header_count": 456,
+                "tip_count": 2,
+            },
+            "sync_progress": {
+                "detail": "daa_delta=+10 block_delta=+5 header_delta=+0 over 30.0m",
+                "daa_rate_per_hour": 20,
+                "block_rate_per_hour": 10,
+                "header_rate_per_hour": 0,
+            },
+        }
+        benchmark_summary = {
+            "window": "a -> b (0.50h)",
+            "daa_rate": "20.00/h",
+            "block_rate": "10.00/h",
+            "relay_rate": "0.00/min",
+        }
+
+        text = watchtower.format_sync_report(report, benchmark_summary)
+
+        self.assertIn("Kaspa sync report: kaspa-mainnet-local", text)
+        self.assertIn("sync_rates=daa=20.00/h blocks=10.00/h headers=0.00/h", text)
+        self.assertIn("benchmark_window=a -> b (0.50h)", text)
+
     def test_config_validation_rejects_invalid_numeric_settings(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)

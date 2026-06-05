@@ -131,6 +131,7 @@ Concise operator summary:
 
 ```bash
 .venv/bin/python watchtower.py -c config.json --summary
+.venv/bin/python watchtower.py -c config.json --sync-report
 ```
 
 Config validation:

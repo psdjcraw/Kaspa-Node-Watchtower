@@ -1192,6 +1192,56 @@ def format_summary(report: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def format_sync_report(report: dict[str, Any], benchmark_summary: dict[str, Any]) -> str:
+    grpc_metrics = report.get("grpc_metrics") or {}
+    sync_progress = report.get("sync_progress") or {}
+    failed = failed_check_names(report)
+    failed_text = ", ".join(failed) if failed else "none"
+    return "\n".join(
+        [
+            f"Kaspa sync report: {report['node_name']}",
+            f"checked_at={report['checked_at']} status={report['status']} severity={report['severity']}",
+            (
+                "node="
+                f"network={grpc_metrics.get('network_id', 'unknown')} "
+                f"synced={grpc_metrics.get('is_synced', 'unknown')} "
+                f"peers={grpc_metrics.get('peer_count', 'unknown')} "
+                f"active={grpc_metrics.get('active_peers', 'unknown')}"
+            ),
+            (
+                "dag="
+                f"daa={grpc_metrics.get('virtual_daa_score', 'unknown')} "
+                f"blocks={grpc_metrics.get('block_count', 'unknown')} "
+                f"headers={grpc_metrics.get('header_count', 'unknown')} "
+                f"tips={grpc_metrics.get('tip_count', 'unknown')}"
+            ),
+            f"sync_progress={sync_progress.get('detail', 'inactive')}",
+            (
+                "sync_rates="
+                f"daa={format_optional_rate(sync_progress.get('daa_rate_per_hour'))} "
+                f"blocks={format_optional_rate(sync_progress.get('block_rate_per_hour'))} "
+                f"headers={format_optional_rate(sync_progress.get('header_rate_per_hour'))}"
+            ),
+            f"benchmark_window={benchmark_summary.get('window', 'unknown')}",
+            (
+                "benchmark_rates="
+                f"daa={benchmark_summary.get('daa_rate', 'unknown')} "
+                f"blocks={benchmark_summary.get('block_rate', 'unknown')} "
+                f"relay={benchmark_summary.get('relay_rate', 'unknown')}"
+            ),
+            f"failed_checks={failed_text}",
+        ]
+    )
+
+
+def sync_report(config: dict, *, limit: int) -> int:
+    report, _state = build_stateful_report(config)
+    benchmark_path = Path(config.get("benchmark_path") or DEFAULT_CONFIG["benchmark_path"])
+    benchmark_summary = build_benchmark_summary(benchmark_path, limit=limit)
+    print(format_sync_report(report, benchmark_summary))
+    return 0 if report["status"] == "ok" else 1
+
+
 def benchmark_item(report: dict[str, Any]) -> dict[str, Any]:
     grpc_metrics = report.get("grpc_metrics") or {}
     progress = report.get("progress") or {}
@@ -2014,6 +2064,7 @@ def main() -> int:
     parser.add_argument("-c", "--config", type=Path, help="Path to config JSON.")
     parser.add_argument("--json", action="store_true", help="Print a JSON health report.")
     parser.add_argument("--summary", action="store_true", help="Print a concise text health summary.")
+    parser.add_argument("--sync-report", action="store_true", help="Print a focused mainnet sync progress report.")
     parser.add_argument("--alert", action="store_true", help="Print only alert transition output and update state.")
     parser.add_argument("--recover", action="store_true", help="Run the configured manual recovery command when unhealthy.")
     parser.add_argument("--force-recover", action="store_true", help="Run recovery even when the current report is healthy.")
@@ -2034,6 +2085,8 @@ def main() -> int:
         report, _state = build_stateful_report(config)
         print(format_summary(report))
         return 0 if report["status"] == "ok" else 1
+    if args.sync_report:
+        return sync_report(config, limit=args.benchmark_limit)
     if args.alert:
         return alert(config)
     if args.recover:
