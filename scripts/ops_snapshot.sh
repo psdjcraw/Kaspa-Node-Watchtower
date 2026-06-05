@@ -57,6 +57,10 @@ printf 'sync_active: '
 curl -fsS "$EXPORTER_URL/metrics" | awk '/^kaspa_watchtower_sync_active/ {print $2; exit}'
 printf 'sync_baseline_available: '
 curl -fsS "$EXPORTER_URL/metrics" | awk '/^kaspa_watchtower_sync_baseline_available/ {print $2; exit}'
+printf 'sync_daa_rate_per_hour: '
+curl -fsS "$EXPORTER_URL/metrics" | awk '/^kaspa_watchtower_sync_daa_rate_per_hour/ {print $2; found=1; exit} END {if (!found) print "missing"}'
+printf 'sync_block_rate_per_hour: '
+curl -fsS "$EXPORTER_URL/metrics" | awk '/^kaspa_watchtower_sync_block_rate_per_hour/ {print $2; found=1; exit} END {if (!found) print "missing"}'
 printf 'sync_header_rate_per_hour: '
 curl -fsS "$EXPORTER_URL/metrics" | awk '/^kaspa_watchtower_sync_header_rate_per_hour/ {print $2; found=1; exit} END {if (!found) print "missing"}'
 
@@ -71,6 +75,8 @@ print(matches[0].get("health", "missing") if matches else "missing")'
 printf 'status_ok query: %s\n' "$(prom_query 'kaspa_watchtower_status_ok')"
 printf 'peer_count query: %s\n' "$(prom_query 'kaspa_watchtower_peer_count')"
 printf 'sync_active query: %s\n' "$(prom_query 'kaspa_watchtower_sync_active')"
+printf 'sync_daa_rate query: %s\n' "$(prom_query 'kaspa_watchtower_sync_daa_rate_per_hour')"
+printf 'sync_block_rate query: %s\n' "$(prom_query 'kaspa_watchtower_sync_block_rate_per_hour')"
 printf 'sync_header_rate query: %s\n' "$(prom_query 'kaspa_watchtower_sync_header_rate_per_hour')"
 printf 'active alerts: '
 curl -fsS "$PROMETHEUS_URL/api/v1/alerts" |
