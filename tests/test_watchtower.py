@@ -390,13 +390,38 @@ class WatchtowerUnitTests(unittest.TestCase):
             config["retention"]["benchmark_entries"] = 0
 
             failed = {
-                check.name
+                check.name: check.detail
                 for check in watchtower.config_validation_checks(config)
                 if not check.ok
             }
 
             self.assertIn("thresholds.disk_free_percent_min", failed)
             self.assertIn("retention.benchmark_entries", failed)
+            self.assertIn("expected number between 0 and 100", failed["thresholds.disk_free_percent_min"])
+            self.assertIn("expected integer > 0", failed["retention.benchmark_entries"])
+
+    def test_validate_config_prints_failed_summary(self):
+        config = copy.deepcopy(watchtower.DEFAULT_CONFIG)
+        config["node_name"] = ""
+
+        with mock.patch("builtins.print") as mocked_print:
+            status = watchtower.validate_config(config)
+
+        output = "\n".join(str(call.args[0]) for call in mocked_print.call_args_list)
+        self.assertEqual(status, 1)
+        self.assertIn("FAIL node_name: missing; expected non-empty node name", output)
+        self.assertIn("Config validation failed:", output)
+        self.assertIn("node_name", output)
+
+    def test_config_validation_tolerates_non_object_sections(self):
+        config = copy.deepcopy(watchtower.DEFAULT_CONFIG)
+        config["thresholds"] = "invalid"
+        config["recovery"] = "invalid"
+
+        checks = watchtower.config_validation_checks(config)
+
+        self.assertTrue(any(check.name == "thresholds.alert_repeat_minutes" for check in checks))
+        self.assertTrue(any(check.name == "recovery.mode" for check in checks))
 
 
 if __name__ == "__main__":

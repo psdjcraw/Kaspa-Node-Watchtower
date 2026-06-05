@@ -64,6 +64,9 @@ make summary
 make smoke
 ```
 
+`make validate` prints failed setting names with expected value hints when a
+path, endpoint, threshold, boolean flag, or retention setting needs correction.
+
 For external endpoints and dashboards:
 
 ```bash

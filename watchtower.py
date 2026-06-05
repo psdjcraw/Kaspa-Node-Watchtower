@@ -2133,6 +2133,8 @@ def path_parent_writable(path: str) -> bool:
 
 def nested_config_value(config: dict, section: str, key: str) -> Any:
     section_config = config.get(section) or {}
+    if not isinstance(section_config, dict):
+        section_config = {}
     default_section = DEFAULT_CONFIG.get(section) or {}
     return section_config.get(key, default_section.get(key))
 
@@ -2163,73 +2165,128 @@ def number_between_config(value: Any, minimum: float, maximum: float | None = No
     return True
 
 
+def validation_detail(value: Any, expected: str, ok: bool) -> str:
+    status = "ok" if ok else f"expected {expected}"
+    return f"{value if value not in (None, '') else 'missing'}; {status}"
+
+
+def path_exists_check(name: str, value: Any, expected: str = "existing path") -> Check:
+    text = str(value or "")
+    ok = bool(text) and Path(text).exists()
+    return Check(name, ok, validation_detail(text, expected, ok))
+
+
+def parent_writable_check(name: str, value: Any) -> Check:
+    text = str(value or "")
+    ok = path_parent_writable(text)
+    return Check(name, ok, validation_detail(text, "writable parent directory", ok))
+
+
+def endpoint_check(name: str, value: Any) -> Check:
+    text = str(value or "")
+    ok = endpoint_configured(text)
+    return Check(name, ok, validation_detail(text, "host:port endpoint", ok))
+
+
 def config_validation_checks(config: dict) -> list[Check]:
-    recovery = config.get("recovery", {})
+    recovery = config.get("recovery") or {}
+    if not isinstance(recovery, dict):
+        recovery = {}
     restart_command = recovery.get("restart_command") or []
     recovery_mode = recovery.get("mode", DEFAULT_CONFIG["recovery"]["mode"])
     checks = [
-        Check("node_name", bool(config.get("node_name")), str(config.get("node_name") or "missing")),
-        Check("process_match", bool(config.get("process_match")), str(config.get("process_match") or "missing")),
-        Check("rpc_endpoint", endpoint_configured(config.get("rpc_endpoint") or ""), config.get("rpc_endpoint") or "missing"),
-        Check("grpc_endpoint", endpoint_configured(config.get("grpc_endpoint") or ""), config.get("grpc_endpoint") or "missing"),
-        Check("log_path", Path(config.get("log_path") or "").exists(), config.get("log_path") or "missing"),
-        Check("data_dir", Path(config.get("data_dir") or "").exists(), config.get("data_dir") or "missing"),
-        Check("state_path", path_parent_writable(config.get("state_path") or DEFAULT_CONFIG["state_path"]), config.get("state_path") or DEFAULT_CONFIG["state_path"]),
-        Check("status_page_path", path_parent_writable(config.get("status_page_path") or DEFAULT_CONFIG["status_page_path"]), config.get("status_page_path") or DEFAULT_CONFIG["status_page_path"]),
-        Check("benchmark_path", path_parent_writable(config.get("benchmark_path") or DEFAULT_CONFIG["benchmark_path"]), config.get("benchmark_path") or DEFAULT_CONFIG["benchmark_path"]),
-        Check("prometheus_metrics_path", path_parent_writable(config.get("prometheus_metrics_path") or DEFAULT_CONFIG["prometheus_metrics_path"]), config.get("prometheus_metrics_path") or DEFAULT_CONFIG["prometheus_metrics_path"]),
-        Check("recovery_history_path", path_parent_writable(config.get("recovery_history_path") or DEFAULT_CONFIG["recovery_history_path"]), config.get("recovery_history_path") or DEFAULT_CONFIG["recovery_history_path"]),
-        Check("recovery.mode", recovery_mode in {"manual"}, str(recovery_mode)),
+        Check(
+            "node_name",
+            bool(config.get("node_name")),
+            validation_detail(config.get("node_name"), "non-empty node name", bool(config.get("node_name"))),
+        ),
+        Check(
+            "process_match",
+            bool(config.get("process_match")),
+            validation_detail(
+                config.get("process_match"),
+                "non-empty process name fragment",
+                bool(config.get("process_match")),
+            ),
+        ),
+        endpoint_check("rpc_endpoint", config.get("rpc_endpoint")),
+        endpoint_check("grpc_endpoint", config.get("grpc_endpoint")),
+        path_exists_check("log_path", config.get("log_path"), "existing kaspad log file"),
+        path_exists_check("data_dir", config.get("data_dir"), "existing kaspad data directory"),
+        parent_writable_check("state_path", config.get("state_path") or DEFAULT_CONFIG["state_path"]),
+        parent_writable_check(
+            "status_page_path",
+            config.get("status_page_path") or DEFAULT_CONFIG["status_page_path"],
+        ),
+        parent_writable_check("benchmark_path", config.get("benchmark_path") or DEFAULT_CONFIG["benchmark_path"]),
+        parent_writable_check(
+            "prometheus_metrics_path",
+            config.get("prometheus_metrics_path") or DEFAULT_CONFIG["prometheus_metrics_path"],
+        ),
+        parent_writable_check(
+            "recovery_history_path",
+            config.get("recovery_history_path") or DEFAULT_CONFIG["recovery_history_path"],
+        ),
+        Check(
+            "recovery.mode",
+            recovery_mode in {"manual"},
+            validation_detail(recovery_mode, "manual", recovery_mode in {"manual"}),
+        ),
         Check(
             "recovery.post_recovery_wait_seconds",
             number_between_config(recovery.get("post_recovery_wait_seconds", 20), 0),
-            str(recovery.get("post_recovery_wait_seconds", 20)),
+            validation_detail(
+                recovery.get("post_recovery_wait_seconds", 20),
+                "number >= 0",
+                number_between_config(recovery.get("post_recovery_wait_seconds", 20), 0),
+            ),
         ),
     ]
     threshold_specs = [
-        ("alert_repeat_minutes", lambda value: number_between_config(value, 1)),
-        ("stale_log_minutes", lambda value: number_between_config(value, 1)),
-        ("progress_window_minutes", lambda value: number_between_config(value, 1)),
-        ("min_relay_blocks_in_window", non_negative_int_config),
-        ("min_peer_count", non_negative_int_config),
-        ("disk_free_gb_min", lambda value: number_between_config(value, 0)),
-        ("disk_free_percent_min", lambda value: number_between_config(value, 0, 100)),
-        ("require_rpc", lambda value: isinstance(value, bool)),
-        ("require_grpc_metrics", lambda value: isinstance(value, bool)),
-        ("require_synced", lambda value: isinstance(value, bool)),
-        ("require_relay_progress_when_unsynced", lambda value: isinstance(value, bool)),
-        ("require_sync_progress_when_unsynced", lambda value: isinstance(value, bool)),
-        ("sync_progress_stall_minutes", lambda value: number_between_config(value, 1)),
-        ("min_sync_daa_delta", non_negative_int_config),
-        ("min_sync_block_delta", non_negative_int_config),
-        ("min_sync_header_delta", non_negative_int_config),
+        ("alert_repeat_minutes", lambda value: number_between_config(value, 1), "number >= 1"),
+        ("stale_log_minutes", lambda value: number_between_config(value, 1), "number >= 1"),
+        ("progress_window_minutes", lambda value: number_between_config(value, 1), "number >= 1"),
+        ("min_relay_blocks_in_window", non_negative_int_config, "integer >= 0"),
+        ("min_peer_count", non_negative_int_config, "integer >= 0"),
+        ("disk_free_gb_min", lambda value: number_between_config(value, 0), "number >= 0"),
+        ("disk_free_percent_min", lambda value: number_between_config(value, 0, 100), "number between 0 and 100"),
+        ("require_rpc", lambda value: isinstance(value, bool), "boolean"),
+        ("require_grpc_metrics", lambda value: isinstance(value, bool), "boolean"),
+        ("require_synced", lambda value: isinstance(value, bool), "boolean"),
+        ("require_relay_progress_when_unsynced", lambda value: isinstance(value, bool), "boolean"),
+        ("require_sync_progress_when_unsynced", lambda value: isinstance(value, bool), "boolean"),
+        ("sync_progress_stall_minutes", lambda value: number_between_config(value, 1), "number >= 1"),
+        ("min_sync_daa_delta", non_negative_int_config, "integer >= 0"),
+        ("min_sync_block_delta", non_negative_int_config, "integer >= 0"),
+        ("min_sync_header_delta", non_negative_int_config, "integer >= 0"),
     ]
-    for key, validator in threshold_specs:
+    for key, validator, expected in threshold_specs:
         value = nested_config_value(config, "thresholds", key)
-        checks.append(Check(f"thresholds.{key}", validator(value), str(value)))
+        ok = validator(value)
+        checks.append(Check(f"thresholds.{key}", ok, validation_detail(value, expected, ok)))
 
     retention_specs = [
-        ("state_history_entries", positive_int_config),
-        ("benchmark_entries", positive_int_config),
+        ("state_history_entries", positive_int_config, "integer > 0"),
+        ("benchmark_entries", positive_int_config, "integer > 0"),
     ]
-    for key, validator in retention_specs:
+    for key, validator, expected in retention_specs:
         value = nested_config_value(config, "retention", key)
-        checks.append(Check(f"retention.{key}", validator(value), str(value)))
+        ok = validator(value)
+        checks.append(Check(f"retention.{key}", ok, validation_detail(value, expected, ok)))
     canvas_status_page = config.get("canvas_status_page_path") or ""
     if canvas_status_page:
-        checks.append(
-            Check(
-                "canvas_status_page_path",
-                path_parent_writable(canvas_status_page),
-                canvas_status_page,
-            )
-        )
+        checks.append(parent_writable_check("canvas_status_page_path", canvas_status_page))
     if restart_command:
+        ok = bool(shutil.which(str(restart_command[0])))
         checks.append(
             Check(
                 "recovery.restart_command",
-                bool(shutil.which(str(restart_command[0]))),
-                " ".join(str(part) for part in restart_command),
+                ok,
+                validation_detail(
+                    " ".join(str(part) for part in restart_command),
+                    "executable command on PATH",
+                    ok,
+                ),
             )
         )
     return checks
@@ -2237,11 +2294,17 @@ def config_validation_checks(config: dict) -> list[Check]:
 
 def validate_config(config: dict) -> int:
     checks = config_validation_checks(config)
+    failed = [check for check in checks if not check.ok]
     print(f"Config validation: {config.get('node_name') or 'unknown'}")
     for check in checks:
         mark = "OK" if check.ok else "FAIL"
         print(f"{mark} {check.name}: {check.detail}")
-    return 0 if all(check.ok for check in checks) else 1
+    if failed:
+        names = ", ".join(check.name for check in failed)
+        print(f"Config validation failed: {len(failed)} issue(s): {names}")
+        return 1
+    print("Config validation passed")
+    return 0
 
 
 def prune_state(config: dict) -> int:

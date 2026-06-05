@@ -150,7 +150,8 @@ Config validation:
 ```
 
 Validation checks paths, endpoints, recovery mode, threshold ranges, boolean
-feature flags, and retention limits.
+feature flags, and retention limits. Failed checks include expected value hints
+and a final failed-setting summary.
 
 Alert mode for cron:
 

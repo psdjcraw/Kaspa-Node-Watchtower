@@ -25,6 +25,8 @@ All notable changes to Kaspa Node Watchtower are tracked here.
 
 ### Changed
 
+- Config validation output now includes expected value hints and a final failed
+  setting summary.
 - Daily operator report now starts with a verdict and continues through
   integration or GitHub status failures so later sections still print, including
   a recent SQLite history summary.

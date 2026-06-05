@@ -7,6 +7,7 @@ import argparse
 import datetime as dt
 import json
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 from typing import Any
 
@@ -389,7 +390,7 @@ def export(args: argparse.Namespace) -> int:
     benchmark_items = load_jsonl(args.benchmarks)
     upgrade_items = load_jsonl(args.upgrades)
     recovery_items = load_jsonl(args.recovery)
-    with sqlite3.connect(args.db) as connection:
+    with closing(sqlite3.connect(args.db)) as connection:
         create_schema(connection)
         benchmark_imported = upsert_items(
             connection,

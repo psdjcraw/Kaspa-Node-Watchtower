@@ -2,6 +2,7 @@ import importlib.util
 import sqlite3
 import tempfile
 import unittest
+from contextlib import closing
 from pathlib import Path
 
 
@@ -16,7 +17,7 @@ class ExportHistorySqliteTests(unittest.TestCase):
     def test_history_summary_uses_latest_window(self):
         with tempfile.TemporaryDirectory() as tmp:
             db_path = Path(tmp) / "history.sqlite"
-            with sqlite3.connect(db_path) as connection:
+            with closing(sqlite3.connect(db_path)) as connection:
                 export_history_sqlite.create_schema(connection)
                 export_history_sqlite.upsert_items(
                     connection,
@@ -89,7 +90,7 @@ class ExportHistorySqliteTests(unittest.TestCase):
     def test_history_summary_filters_benchmarks_to_latest_node(self):
         with tempfile.TemporaryDirectory() as tmp:
             db_path = Path(tmp) / "history.sqlite"
-            with sqlite3.connect(db_path) as connection:
+            with closing(sqlite3.connect(db_path)) as connection:
                 export_history_sqlite.create_schema(connection)
                 export_history_sqlite.upsert_items(
                     connection,

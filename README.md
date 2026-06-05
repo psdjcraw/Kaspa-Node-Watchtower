@@ -107,6 +107,10 @@ Validate local configuration:
 .venv/bin/python watchtower.py -c config.json --validate-config
 ```
 
+Validation output includes failed setting names and expected value hints so
+operators can fix local path, endpoint, threshold, and retention mistakes
+without reading the code.
+
 The reporter reads local process state, RPC TCP reachability, direct gRPC
 metrics, data directory size/free space, and recent `kaspad` logs. It reports
 IBD/catch-up completion counts, trusted block counts, latest relay activity,
