@@ -12,6 +12,18 @@ Kaspa Node Watchtower watches a local `kaspad` process, summarizes sync progress
 and helps operators understand node health without relying only on external
 explorers or hosted APIs.
 
+## Why This Matters
+
+Self-hosted Kaspa nodes are healthier when operators can inspect their own
+systems directly. Hosted explorers and public APIs are useful references, but
+they should not be the only source of truth for node health, sync progress, or
+relay freshness.
+
+Kaspa Node Watchtower helps operators keep local visibility over their nodes
+with direct process, filesystem, log, RPC, gRPC, Prometheus, and Grafana signals.
+That makes independent node operation easier to monitor, debug, and recover,
+which supports a more resilient decentralized network.
+
 ## Features
 
 - Node health checks: process, RPC TCP, gRPC metrics, disk free space, data directory, log freshness, and relay block progress
