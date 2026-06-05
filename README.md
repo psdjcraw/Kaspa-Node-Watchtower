@@ -96,9 +96,7 @@ detection.
 For gRPC metrics, create the local virtualenv and generated protobuf files:
 
 ```bash
-python3 -m venv .venv
-.venv/bin/python -m pip install -r requirements.txt
-.venv/bin/python -m grpc_tools.protoc -I proto --python_out=generated_proto --grpc_python_out=generated_proto proto/rpc.proto proto/messages.proto
+make bootstrap
 ```
 
 For local edits, copy `config.example.json` to `config.json` and adjust paths.
@@ -252,6 +250,7 @@ make daily-report
 ```
 
 See `docs/operations.md` for alert criteria and the Discord cron plan.
+See `docs/install.md` for bootstrap and local setup.
 See `docs/integrations.md` for Prometheus/Grafana integration steps.
 See `docs/status.md` for the active deployment map.
 See `docs/runbook.md` for failure handling.

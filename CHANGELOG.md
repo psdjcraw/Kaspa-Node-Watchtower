@@ -8,6 +8,8 @@ All notable changes to Kaspa Node Watchtower are tracked here.
 
 - Development version reporting through `watchtower.py --version` and
   `make version`.
+- Bootstrap script and `make bootstrap` target for virtualenv dependency
+  installation and protobuf generation.
 
 ### Changed
 
