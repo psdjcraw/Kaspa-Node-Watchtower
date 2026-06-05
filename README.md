@@ -10,7 +10,7 @@ explorers or hosted APIs.
 
 ## Features
 
-- Node health checks: process, RPC TCP, disk free space, data directory, and log freshness
+- Node health checks: process, RPC TCP, disk free space, data directory, log freshness, and relay block progress
 - Sync reports: IBD start/end time, processed blocks, headers, and throughput
 - Alert-mode output for Discord/OpenClaw cron
 - JSON output for later dashboards or exporters
@@ -50,8 +50,8 @@ python3 watchtower.py -c config.json
 
 The reporter reads local process state, RPC TCP reachability, data directory
 size/free space, and recent `kaspad` logs. It reports IBD/catch-up completion
-counts, trusted block counts, latest relay activity, and latest transaction
-throughput stats.
+counts, trusted block counts, latest relay activity, latest transaction
+throughput stats, and recent relay block progress for stall detection.
 
 For local edits, copy `config.example.json` to `config.json` and adjust paths.
 `config.json` is ignored by git.

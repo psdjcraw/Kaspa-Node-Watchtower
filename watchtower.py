@@ -26,6 +26,8 @@ DEFAULT_CONFIG = {
     "state_path": "state/watchtower-state.json",
     "thresholds": {
         "stale_log_minutes": 15,
+        "progress_window_minutes": 10,
+        "min_relay_blocks_in_window": 1,
         "disk_free_gb_min": 20,
         "disk_free_percent_min": 5,
         "require_rpc": True,
@@ -37,6 +39,23 @@ DEFAULT_CONFIG = {
 class IbdCompletion:
     timestamp: str
     blocks: int
+
+
+@dataclass(frozen=True)
+class RelayAccepted:
+    timestamp: dt.datetime
+    blocks: int
+    line: str
+
+
+@dataclass(frozen=True)
+class ProcessedStats:
+    timestamp: dt.datetime
+    blocks: int
+    headers: int
+    seconds: float
+    transactions: int
+    line: str
 
 
 @dataclass(frozen=True)
@@ -164,6 +183,44 @@ def parse_trusted_blocks(lines: Iterable[str]) -> int:
     return total
 
 
+def parse_relay_accepted(lines: Iterable[str]) -> list[RelayAccepted]:
+    pattern = re.compile(r"Accepted (\d+) blocks? .* via relay")
+    accepted = []
+    for line in lines:
+        timestamp = parse_log_timestamp(line)
+        if timestamp is None:
+            continue
+        match = pattern.search(line)
+        if match:
+            accepted.append(RelayAccepted(timestamp, int(match.group(1)), line))
+    return accepted
+
+
+def parse_processed_stats(lines: Iterable[str]) -> list[ProcessedStats]:
+    pattern = re.compile(
+        r"Processed (\d+) blocks and (\d+) headers in the last ([0-9.]+)s "
+        r"\((\d+) transactions;"
+    )
+    stats = []
+    for line in lines:
+        timestamp = parse_log_timestamp(line)
+        if timestamp is None:
+            continue
+        match = pattern.search(line)
+        if match:
+            stats.append(
+                ProcessedStats(
+                    timestamp=timestamp,
+                    blocks=int(match.group(1)),
+                    headers=int(match.group(2)),
+                    seconds=float(match.group(3)),
+                    transactions=int(match.group(4)),
+                    line=line,
+                )
+            )
+    return stats
+
+
 def latest_matching(lines: Iterable[str], needle: str) -> str | None:
     found = None
     for line in lines:
@@ -213,12 +270,21 @@ def build_report(config: dict) -> dict[str, Any]:
     trusted_blocks = 0
     latest_relay = None
     latest_throughput = None
+    progress: dict[str, Any] = {
+        "window_minutes": float(thresholds.get("progress_window_minutes", 10)),
+        "relay_blocks_in_window": 0,
+        "relay_events_in_window": 0,
+        "latest_relay_age_seconds": None,
+        "latest_processed": None,
+    }
     if log_path.exists():
         lines = tail_lines(log_path, int(config["log_scan_bytes"]))
         completions = parse_ibd_completions(lines)
         trusted_blocks = parse_trusted_blocks(lines)
         latest_relay = latest_matching(lines, " via relay")
         latest_throughput = latest_matching(lines, "Tx throughput stats:")
+        relay_events = parse_relay_accepted(lines)
+        processed_stats = parse_processed_stats(lines)
         latest_timestamp = latest_log_timestamp(lines)
         if latest_timestamp is not None:
             now = dt.datetime.now(latest_timestamp.tzinfo)
@@ -231,6 +297,42 @@ def build_report(config: dict) -> dict[str, Any]:
                     "log_freshness",
                     age_seconds <= stale_limit,
                     f"latest log is {age_seconds:.1f}s old",
+                )
+            )
+            progress_window = float(thresholds.get("progress_window_minutes", 10))
+            cutoff = now - dt.timedelta(minutes=progress_window)
+            recent_relay_events = [event for event in relay_events if event.timestamp >= cutoff]
+            recent_relay_blocks = sum(event.blocks for event in recent_relay_events)
+            latest_relay_event = relay_events[-1] if relay_events else None
+            if latest_relay_event is not None:
+                progress["latest_relay_timestamp"] = latest_relay_event.timestamp.isoformat()
+                progress["latest_relay_blocks"] = latest_relay_event.blocks
+                progress["latest_relay_age_seconds"] = round(
+                    max(0.0, (now - latest_relay_event.timestamp).total_seconds()),
+                    1,
+                )
+            progress["relay_blocks_in_window"] = recent_relay_blocks
+            progress["relay_events_in_window"] = len(recent_relay_events)
+            if processed_stats:
+                latest_processed = processed_stats[-1]
+                progress["latest_processed"] = {
+                    "timestamp": latest_processed.timestamp.isoformat(),
+                    "blocks": latest_processed.blocks,
+                    "headers": latest_processed.headers,
+                    "seconds": latest_processed.seconds,
+                    "transactions": latest_processed.transactions,
+                    "line": latest_processed.line,
+                }
+            min_relay_blocks = int(thresholds.get("min_relay_blocks_in_window", 1))
+            checks.append(
+                Check(
+                    "block_progress",
+                    recent_relay_blocks >= min_relay_blocks,
+                    (
+                        f"{recent_relay_blocks} relay blocks in "
+                        f"{progress_window:g}m window "
+                        f"({len(recent_relay_events)} events)"
+                    ),
                 )
             )
     else:
@@ -257,6 +359,7 @@ def build_report(config: dict) -> dict[str, Any]:
         "trusted_blocks_observed": trusted_blocks,
         "latest_relay_block": latest_relay,
         "latest_throughput": latest_throughput,
+        "progress": progress,
     }
     return report
 
@@ -298,6 +401,22 @@ def status(config: dict) -> int:
         print(f"Latest relay block: {report['latest_relay_block']}")
     if report["latest_throughput"]:
         print(f"Latest throughput: {report['latest_throughput']}")
+    progress = report["progress"]
+    print(
+        "Relay progress: "
+        f"{progress['relay_blocks_in_window']} blocks / "
+        f"{progress['relay_events_in_window']} events in "
+        f"{progress['window_minutes']:g}m"
+    )
+    latest_processed = progress.get("latest_processed")
+    if latest_processed:
+        print(
+            "Latest processed stats: "
+            f"{latest_processed['blocks']} blocks, "
+            f"{latest_processed['headers']} headers, "
+            f"{latest_processed['transactions']} tx in "
+            f"{latest_processed['seconds']}s"
+        )
 
     return 0 if report["status"] == "ok" else 1
 
@@ -349,6 +468,13 @@ def format_alert(report: dict[str, Any], previous_status: str | None = None) -> 
             lines.append(f"{mark} {check['name']}: {check['detail']}")
     if report["latest_throughput"]:
         lines.append(report["latest_throughput"])
+    progress = report["progress"]
+    lines.append(
+        "Relay progress: "
+        f"{progress['relay_blocks_in_window']} blocks / "
+        f"{progress['relay_events_in_window']} events in "
+        f"{progress['window_minutes']:g}m"
+    )
     return "\n".join(lines)
 
 

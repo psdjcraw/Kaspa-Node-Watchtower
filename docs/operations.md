@@ -19,6 +19,7 @@ The local watchtower reports an alert when any of these fail:
 - RPC TCP connection to `127.0.0.1:16210` fails.
 - Disk free space drops below `20 GiB` or below `5%`.
 - The latest `kaspad` log timestamp is older than `15 minutes`.
+- No relay-accepted blocks appear in the latest `10 minutes`.
 - The configured log file is missing.
 
 ## Commands
