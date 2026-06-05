@@ -1,0 +1,9 @@
+# Default repository owner.
+* @psdjcraw
+
+# Operational scripts, monitoring, and runbooks.
+/scripts/ @psdjcraw
+/prometheus/ @psdjcraw
+/grafana/ @psdjcraw
+/docs/ @psdjcraw
+/launchd/ @psdjcraw
