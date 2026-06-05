@@ -100,4 +100,16 @@ Write Prometheus textfile metrics:
 .venv/bin/python watchtower.py -c config.json --prometheus
 ```
 
+Serve the metrics over HTTP:
+
+```bash
+./run_prometheus_exporter.sh
+```
+
+Endpoint:
+
+```text
+http://127.0.0.1:9660/metrics
+```
+
 See `docs/operations.md` for alert criteria and the Discord cron plan.

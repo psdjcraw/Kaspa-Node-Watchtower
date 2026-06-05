@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.openclaw.kaspa-watchtower-prometheus</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/psdjc/.openclaw/workspace/Kaspa-Node-Watchtowe/run_prometheus_exporter.sh</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>/Users/psdjc/.openclaw/workspace/Kaspa-Node-Watchtowe</string>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>/Users/psdjc/.openclaw/workspace/Kaspa-Node-Watchtowe/state/prometheus-exporter.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/psdjc/.openclaw/workspace/Kaspa-Node-Watchtowe/state/prometheus-exporter.err.log</string>
+</dict>
+</plist>

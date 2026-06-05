@@ -103,6 +103,30 @@ Prometheus textfile metrics:
 Alert-mode runs also refresh `state/watchtower.prom`, so the cron health check
 keeps the textfile fresh for local scraping or textfile collectors.
 
+Prometheus HTTP exporter:
+
+```bash
+./run_prometheus_exporter.sh
+curl -fsS http://127.0.0.1:9660/metrics
+```
+
+LaunchAgent install/restart:
+
+```bash
+launchctl bootstrap gui/$(id -u) /Users/psdjc/.openclaw/workspace/Kaspa-Node-Watchtowe/launchd/com.openclaw.kaspa-watchtower-prometheus.plist
+launchctl kickstart -k gui/$(id -u)/com.openclaw.kaspa-watchtower-prometheus
+```
+
+Prometheus scrape target from the existing Docker stack:
+
+```yaml
+  - job_name: kaspa-watchtower
+    scrape_interval: 15s
+    static_configs:
+      - targets:
+          - host.docker.internal:9660
+```
+
 Manual recovery dry-run:
 
 ```bash
@@ -134,6 +158,12 @@ Prometheus textfile metrics:
 
 ```text
 state/watchtower.prom
+```
+
+Prometheus HTTP endpoint:
+
+```text
+http://127.0.0.1:9660/metrics
 ```
 
 Canvas-hosted status page file:
