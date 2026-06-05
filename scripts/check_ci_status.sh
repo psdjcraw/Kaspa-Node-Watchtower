@@ -7,16 +7,28 @@ GITHUB_REPOSITORY="${KASPA_WATCHTOWER_GITHUB_REPOSITORY:-psdjcraw/Kaspa-Node-Wat
 GITHUB_WORKFLOW="${KASPA_WATCHTOWER_GITHUB_WORKFLOW:-smoke.yml}"
 GITHUB_BRANCH="${KASPA_WATCHTOWER_GITHUB_BRANCH:-main}"
 API_URL="https://api.github.com/repos/$GITHUB_REPOSITORY/actions/workflows/$GITHUB_WORKFLOW/runs"
+GITHUB_API_TOKEN="${GITHUB_TOKEN:-${GH_TOKEN:-}}"
 
 curl_args=(-fsS -G "$API_URL" --data-urlencode "branch=$GITHUB_BRANCH" --data-urlencode "per_page=1")
-if [ -n "${GITHUB_TOKEN:-}" ]; then
-  curl_args=(-H "Authorization: Bearer $GITHUB_TOKEN" "${curl_args[@]}")
+if [ -n "$GITHUB_API_TOKEN" ]; then
+  curl_args=(-H "Authorization: Bearer $GITHUB_API_TOKEN" "${curl_args[@]}")
 fi
 
-curl "${curl_args[@]}" |
+if ! response="$(curl "${curl_args[@]}")"; then
+  printf 'FAIL GitHub Actions: API request failed for %s workflow=%s branch=%s\n' \
+    "$GITHUB_REPOSITORY" "$GITHUB_WORKFLOW" "$GITHUB_BRANCH" >&2
+  printf 'Set GITHUB_TOKEN or GH_TOKEN if GitHub API access is rate-limited or private.\n' >&2
+  exit 1
+fi
+
+printf '%s\n' "$response" |
   python3 -c 'import json, sys
 
-data = json.load(sys.stdin)
+try:
+    data = json.load(sys.stdin)
+except json.JSONDecodeError as exc:
+    print(f"FAIL GitHub Actions: API returned invalid JSON: {exc}", file=sys.stderr)
+    raise SystemExit(1)
 runs = data.get("workflow_runs", [])
 if not runs:
     print("FAIL GitHub Actions: no workflow runs found", file=sys.stderr)

@@ -256,8 +256,8 @@ https://github.com/psdjcraw/Kaspa-Node-Watchtowe/actions/workflows/smoke.yml
 ```
 
 The local CI checker reads the latest `main` run through the GitHub Actions API.
-Set `GITHUB_TOKEN` if the API becomes rate-limited or the repository visibility
-changes.
+Set `GITHUB_TOKEN` or `GH_TOKEN` if the API becomes rate-limited or the
+repository visibility changes.
 
 The local `asus-traffic-monitor` Prometheus stack has the rule file copied to
 `prometheus-rules/kaspa-watchtower-rules.yml` and mounted at
