@@ -124,4 +124,10 @@ Prometheus alert rules:
 prometheus/kaspa-watchtower-rules.yml
 ```
 
+Run alert rule tests:
+
+```bash
+prometheus/run_rule_tests.sh
+```
+
 See `docs/operations.md` for alert criteria and the Discord cron plan.

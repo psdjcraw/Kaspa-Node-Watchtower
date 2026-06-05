@@ -1,0 +1,95 @@
+rule_files:
+  - kaspa-watchtower-rules.yml
+
+evaluation_interval: 1m
+
+tests:
+  - interval: 1m
+    input_series:
+      - series: 'kaspa_watchtower_status_ok{job="kaspa-watchtower",node="test"}'
+        values: '1+0x20'
+      - series: 'kaspa_watchtower_severity_value{job="kaspa-watchtower",node="test"}'
+        values: '0+0x20'
+      - series: 'kaspa_watchtower_peer_count{job="kaspa-watchtower",node="test"}'
+        values: '8+0x20'
+      - series: 'kaspa_watchtower_relay_blocks_window{job="kaspa-watchtower",node="test"}'
+        values: '100+0x20'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: KaspaWatchtowerCritical
+        exp_alerts: []
+      - eval_time: 5m
+        alertname: KaspaNodePeerCountLow
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: KaspaRelayProgressStalled
+        exp_alerts: []
+
+  - interval: 1m
+    input_series:
+      - series: 'kaspa_watchtower_severity_value{job="kaspa-watchtower",node="test"}'
+        values: '2+0x5'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: KaspaWatchtowerCritical
+        exp_alerts:
+          - exp_labels:
+              alertname: KaspaWatchtowerCritical
+              job: kaspa-watchtower
+              node: test
+              service: kaspa-watchtower
+              severity: critical
+            exp_annotations:
+              summary: "Kaspa watchtower reports critical severity"
+              description: "Watchtower severity is critical for node test."
+
+  - interval: 1m
+    input_series:
+      - series: 'kaspa_watchtower_peer_count{job="kaspa-watchtower",node="test"}'
+        values: '0+0x5'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: KaspaNodePeerCountLow
+        exp_alerts:
+          - exp_labels:
+              alertname: KaspaNodePeerCountLow
+              job: kaspa-watchtower
+              node: test
+              service: kaspa-watchtower
+              severity: critical
+            exp_annotations:
+              summary: "Kaspa node has no connected peers"
+              description: "Peer count is below 1 for node test."
+
+  - interval: 1m
+    input_series:
+      - series: 'kaspa_watchtower_relay_blocks_window{job="kaspa-watchtower",node="test"}'
+        values: '0+0x20'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: KaspaRelayProgressStalled
+        exp_alerts:
+          - exp_labels:
+              alertname: KaspaRelayProgressStalled
+              job: kaspa-watchtower
+              node: test
+              service: kaspa-watchtower
+              severity: warning
+            exp_annotations:
+              summary: "Kaspa relay block progress stalled"
+              description: "No relay blocks were observed in the recent watchtower window for node test."
+
+  - interval: 1m
+    input_series: []
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: KaspaWatchtowerExporterDown
+        exp_alerts:
+          - exp_labels:
+              alertname: KaspaWatchtowerExporterDown
+              job: kaspa-watchtower
+              service: kaspa-watchtower
+              severity: critical
+            exp_annotations:
+              summary: "Kaspa watchtower metrics are missing"
+              description: "Prometheus has not scraped kaspa_watchtower_status_ok for 2 minutes."

@@ -152,6 +152,12 @@ Prometheus alert rules:
 prometheus/kaspa-watchtower-rules.yml
 ```
 
+Prometheus alert rule tests:
+
+```bash
+prometheus/run_rule_tests.sh
+```
+
 The local `asus-traffic-monitor` Prometheus stack has the rule file copied to
 `prometheus-rules/kaspa-watchtower-rules.yml` and mounted at
 `/etc/prometheus/rules/kaspa-watchtower-rules.yml`. Current rules:
