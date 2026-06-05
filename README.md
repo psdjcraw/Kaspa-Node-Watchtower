@@ -86,4 +86,10 @@ Save a benchmark snapshot and compare recent snapshots:
 .venv/bin/python watchtower.py -c config.json --benchmark-report
 ```
 
+Cron-friendly benchmark snapshot mode:
+
+```bash
+./run_benchmark_snapshot.sh
+```
+
 See `docs/operations.md` for alert criteria and the Discord cron plan.

@@ -78,6 +78,12 @@ Benchmark snapshot:
 .venv/bin/python watchtower.py -c config.json --benchmark-snapshot
 ```
 
+Cron-friendly benchmark snapshot:
+
+```bash
+./run_benchmark_snapshot.sh
+```
+
 Benchmark report:
 
 ```bash
@@ -163,3 +169,15 @@ cd /Users/psdjc/.openclaw/workspace/Kaspa-Node-Watchtowe && ./run_watchtower.sh
 
 If the command prints nothing, stay quiet. If it prints text, post the concise
 output to the Discord thread for the Kaspa watchtower.
+
+OpenClaw cron job `aef87796-2552-4cf6-b8ff-897b9ce3ca99`
+(`kaspa-watchtower-benchmark-snapshots`) runs every 30 minutes in an isolated
+session. It is separate from alerting and executes:
+
+```bash
+cd /Users/psdjc/.openclaw/workspace/Kaspa-Node-Watchtowe && ./run_benchmark_snapshot.sh
+```
+
+The benchmark wrapper writes the latest snapshot output to
+`state/last-benchmark-snapshot.txt`, appends structured data to
+`state/benchmarks.jsonl`, and prints only when the snapshot command fails.
