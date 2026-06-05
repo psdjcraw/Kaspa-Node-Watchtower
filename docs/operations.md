@@ -262,7 +262,7 @@ python3 -m unittest discover -s tests
 GitHub Actions:
 
 ```text
-https://github.com/psdjcraw/Kaspa-Node-Watchtowe/actions/workflows/smoke.yml
+https://github.com/psdjcraw/Kaspa-Node-Watchtower/actions/workflows/smoke.yml
 ```
 
 The local CI checker reads the latest `main` run through the GitHub Actions API.

@@ -3,7 +3,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-GITHUB_REPOSITORY="${KASPA_WATCHTOWER_GITHUB_REPOSITORY:-psdjcraw/Kaspa-Node-Watchtowe}"
+GITHUB_REPOSITORY="${KASPA_WATCHTOWER_GITHUB_REPOSITORY:-psdjcraw/Kaspa-Node-Watchtower}"
 GITHUB_WORKFLOW="${KASPA_WATCHTOWER_GITHUB_WORKFLOW:-smoke.yml}"
 GITHUB_BRANCH="${KASPA_WATCHTOWER_GITHUB_BRANCH:-main}"
 API_URL="https://api.github.com/repos/$GITHUB_REPOSITORY/actions/workflows/$GITHUB_WORKFLOW/runs"

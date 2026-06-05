@@ -10,7 +10,7 @@
 - Prometheus target: `kaspa-watchtower` at `host.docker.internal:9660`
 - Grafana dashboard: `http://127.0.0.1:3000/d/kaspa-watchtower/kaspa-watchtower`
 - Grafana recovery panels: recovery counts, latest recovery timestamps, and recovery trend
-- GitHub Actions smoke workflow: `https://github.com/psdjcraw/Kaspa-Node-Watchtowe/actions/workflows/smoke.yml`
+- GitHub Actions smoke workflow: `https://github.com/psdjcraw/Kaspa-Node-Watchtower/actions/workflows/smoke.yml`
 - Canvas status page: `/Users/psdjc/.openclaw/canvas/kaspa-watchtower/status.html`
 
 ## Local Services
