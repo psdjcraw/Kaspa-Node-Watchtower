@@ -54,6 +54,12 @@ Integration verification:
 scripts/check_integrations.sh
 ```
 
+Operational snapshot:
+
+```bash
+scripts/ops_snapshot.sh
+```
+
 Full local smoke test:
 
 ```bash
