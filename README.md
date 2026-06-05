@@ -16,11 +16,10 @@ explorers or hosted APIs.
 - JSON output for later dashboards or exporters
 - Direct rusty-kaspa gRPC metrics: sync status, peer count, network id, DAA score, block/header counts, process metrics
 - Alert severity, repeat suppression, history, and local HTML status page generation
+- Concise `--summary` output for quick Discord/operator status checks
 
 ## Planned Features
 
-- Peer count via a real Kaspa RPC client
-- Local dashboard for recent logs and operational status
 - Version-to-version sync benchmark reports
 
 ## Current Context
@@ -48,6 +47,12 @@ For the current local node:
 
 ```bash
 .venv/bin/python watchtower.py -c config.json
+```
+
+For a concise operator summary:
+
+```bash
+.venv/bin/python watchtower.py -c config.json --summary
 ```
 
 The reporter reads local process state, RPC TCP reachability, direct gRPC

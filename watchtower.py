@@ -863,6 +863,50 @@ def format_alert(
     return "\n".join(lines)
 
 
+def format_summary(report: dict[str, Any]) -> str:
+    grpc_metrics = report.get("grpc_metrics") or {}
+    progress = report.get("progress") or {}
+    disk = report.get("disk") or {}
+    failed = failed_check_names(report)
+    failed_text = ", ".join(failed) if failed else "none"
+    latest_relay_age = progress.get("latest_relay_age_seconds")
+    latest_relay_age_text = "unknown" if latest_relay_age is None else f"{latest_relay_age}s"
+    disk_text = "unknown"
+    if disk.get("exists"):
+        disk_text = f"{disk.get('free_gb')} GiB ({disk.get('free_percent')}%)"
+
+    lines = [
+        f"Kaspa watchtower summary: {report['node_name']}",
+        f"status={report['status']} severity={report['severity']} checked_at={report['checked_at']}",
+        (
+            "grpc="
+            f"synced={grpc_metrics.get('is_synced', 'unknown')} "
+            f"peers={grpc_metrics.get('peer_count', 'unknown')} "
+            f"active={grpc_metrics.get('active_peers', 'unknown')} "
+            f"network={grpc_metrics.get('network_id', 'unknown')} "
+            f"daa={grpc_metrics.get('virtual_daa_score', 'unknown')}"
+        ),
+        (
+            "progress="
+            f"{progress.get('relay_blocks_in_window', 0)} relay blocks / "
+            f"{progress.get('relay_events_in_window', 0)} events in "
+            f"{progress.get('window_minutes', 'unknown')}m, "
+            f"latest_relay_age={latest_relay_age_text}"
+        ),
+        f"disk_free={disk_text}",
+        f"failed_checks={failed_text}",
+    ]
+    recovery = report.get("recovery") or {}
+    if recovery.get("action") != "none":
+        lines.append(
+            "recovery="
+            f"{recovery.get('action')} "
+            f"mode={recovery.get('mode')} "
+            f"restart_configured={recovery.get('restart_command_configured')}"
+        )
+    return "\n".join(lines)
+
+
 def recover(config: dict, *, force: bool = False, dry_run: bool = False) -> int:
     report = build_report(config)
     recovery = config.get("recovery", {})
@@ -901,6 +945,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Report local Kaspa node health.")
     parser.add_argument("-c", "--config", type=Path, help="Path to config JSON.")
     parser.add_argument("--json", action="store_true", help="Print a JSON health report.")
+    parser.add_argument("--summary", action="store_true", help="Print a concise text health summary.")
     parser.add_argument("--alert", action="store_true", help="Print only alert transition output and update state.")
     parser.add_argument("--recover", action="store_true", help="Run the configured manual recovery command when unhealthy.")
     parser.add_argument("--force-recover", action="store_true", help="Run recovery even when the current report is healthy.")
@@ -910,6 +955,10 @@ def main() -> int:
     if args.json:
         report = build_report(config)
         print(json.dumps(report, indent=2, sort_keys=True))
+        return 0 if report["status"] == "ok" else 1
+    if args.summary:
+        report = build_report(config)
+        print(format_summary(report))
         return 0 if report["status"] == "ok" else 1
     if args.alert:
         return alert(config)

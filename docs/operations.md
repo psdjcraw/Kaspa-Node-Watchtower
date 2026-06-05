@@ -60,6 +60,12 @@ JSON status for automation:
 .venv/bin/python watchtower.py -c config.json --json
 ```
 
+Concise operator summary:
+
+```bash
+.venv/bin/python watchtower.py -c config.json --summary
+```
+
 Alert mode for cron:
 
 ```bash
