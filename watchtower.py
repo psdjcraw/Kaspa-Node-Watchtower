@@ -1377,9 +1377,42 @@ def path_parent_writable(path: str) -> bool:
     return parent.exists() and os.access(parent, os.W_OK)
 
 
+def nested_config_value(config: dict, section: str, key: str) -> Any:
+    section_config = config.get(section) or {}
+    default_section = DEFAULT_CONFIG.get(section) or {}
+    return section_config.get(key, default_section.get(key))
+
+
+def positive_int_config(value: Any) -> bool:
+    try:
+        return int(value) > 0
+    except (TypeError, ValueError):
+        return False
+
+
+def non_negative_int_config(value: Any) -> bool:
+    try:
+        return int(value) >= 0
+    except (TypeError, ValueError):
+        return False
+
+
+def number_between_config(value: Any, minimum: float, maximum: float | None = None) -> bool:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return False
+    if parsed < minimum:
+        return False
+    if maximum is not None and parsed > maximum:
+        return False
+    return True
+
+
 def config_validation_checks(config: dict) -> list[Check]:
     recovery = config.get("recovery", {})
     restart_command = recovery.get("restart_command") or []
+    recovery_mode = recovery.get("mode", DEFAULT_CONFIG["recovery"]["mode"])
     checks = [
         Check("node_name", bool(config.get("node_name")), str(config.get("node_name") or "missing")),
         Check("process_match", bool(config.get("process_match")), str(config.get("process_match") or "missing")),
@@ -1391,7 +1424,30 @@ def config_validation_checks(config: dict) -> list[Check]:
         Check("status_page_path", path_parent_writable(config.get("status_page_path") or DEFAULT_CONFIG["status_page_path"]), config.get("status_page_path") or DEFAULT_CONFIG["status_page_path"]),
         Check("benchmark_path", path_parent_writable(config.get("benchmark_path") or DEFAULT_CONFIG["benchmark_path"]), config.get("benchmark_path") or DEFAULT_CONFIG["benchmark_path"]),
         Check("prometheus_metrics_path", path_parent_writable(config.get("prometheus_metrics_path") or DEFAULT_CONFIG["prometheus_metrics_path"]), config.get("prometheus_metrics_path") or DEFAULT_CONFIG["prometheus_metrics_path"]),
+        Check("recovery.mode", recovery_mode in {"manual"}, str(recovery_mode)),
     ]
+    threshold_specs = [
+        ("alert_repeat_minutes", lambda value: number_between_config(value, 1)),
+        ("stale_log_minutes", lambda value: number_between_config(value, 1)),
+        ("progress_window_minutes", lambda value: number_between_config(value, 1)),
+        ("min_relay_blocks_in_window", non_negative_int_config),
+        ("min_peer_count", non_negative_int_config),
+        ("disk_free_gb_min", lambda value: number_between_config(value, 0)),
+        ("disk_free_percent_min", lambda value: number_between_config(value, 0, 100)),
+        ("require_rpc", lambda value: isinstance(value, bool)),
+        ("require_grpc_metrics", lambda value: isinstance(value, bool)),
+    ]
+    for key, validator in threshold_specs:
+        value = nested_config_value(config, "thresholds", key)
+        checks.append(Check(f"thresholds.{key}", validator(value), str(value)))
+
+    retention_specs = [
+        ("state_history_entries", positive_int_config),
+        ("benchmark_entries", positive_int_config),
+    ]
+    for key, validator in retention_specs:
+        value = nested_config_value(config, "retention", key)
+        checks.append(Check(f"retention.{key}", validator(value), str(value)))
     canvas_status_page = config.get("canvas_status_page_path") or ""
     if canvas_status_page:
         checks.append(

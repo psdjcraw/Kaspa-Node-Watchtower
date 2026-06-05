@@ -1,4 +1,5 @@
 import json
+import copy
 import tempfile
 import unittest
 from pathlib import Path
@@ -76,6 +77,39 @@ class WatchtowerUnitTests(unittest.TestCase):
             self.assertEqual(summary["block_delta"], 60)
             self.assertEqual(summary["relay_rate"], "6.00/min")
             self.assertEqual(json.loads(summary["severity_counts"]), {"ok": 2})
+
+    def test_config_validation_rejects_invalid_numeric_settings(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            config = copy.deepcopy(watchtower.DEFAULT_CONFIG)
+            config.update(
+                {
+                    "node_name": "test-node",
+                    "process_match": "kaspad",
+                    "rpc_endpoint": "127.0.0.1:16210",
+                    "grpc_endpoint": "127.0.0.1:16210",
+                    "log_path": str(tmp_path / "log.txt"),
+                    "data_dir": str(tmp_path / "data"),
+                    "state_path": str(tmp_path / "state.json"),
+                    "status_page_path": str(tmp_path / "status.html"),
+                    "benchmark_path": str(tmp_path / "benchmarks.jsonl"),
+                    "prometheus_metrics_path": str(tmp_path / "watchtower.prom"),
+                    "canvas_status_page_path": "",
+                }
+            )
+            Path(config["log_path"]).write_text("", encoding="utf-8")
+            Path(config["data_dir"]).mkdir()
+            config["thresholds"]["disk_free_percent_min"] = 101
+            config["retention"]["benchmark_entries"] = 0
+
+            failed = {
+                check.name
+                for check in watchtower.config_validation_checks(config)
+                if not check.ok
+            }
+
+            self.assertIn("thresholds.disk_free_percent_min", failed)
+            self.assertIn("retention.benchmark_entries", failed)
 
 
 if __name__ == "__main__":

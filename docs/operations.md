@@ -108,6 +108,9 @@ Config validation:
 .venv/bin/python watchtower.py -c config.json --validate-config
 ```
 
+Validation checks paths, endpoints, recovery mode, threshold ranges, boolean
+feature flags, and retention limits.
+
 Alert mode for cron:
 
 ```bash
