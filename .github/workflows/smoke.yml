@@ -19,7 +19,7 @@ jobs:
           python-version: "3.12"
 
       - name: Compile Python
-        run: python -m py_compile watchtower.py kaspa_grpc_probe.py prometheus_file_server.py
+        run: python -m py_compile watchtower.py kaspa_grpc_probe.py prometheus_file_server.py scripts/upgrade_checkpoint.py
 
       - name: Run unit tests
         run: python -m unittest discover -s tests

@@ -39,6 +39,7 @@
 - Status HTML: `state/status.html`
 - Canvas HTML: `/Users/psdjc/.openclaw/canvas/kaspa-watchtower/status.html`
 - Benchmark JSONL: `state/benchmarks.jsonl`
+- Upgrade checkpoints: `state/upgrade-checkpoints.jsonl`
 - Prometheus textfile: `state/watchtower.prom`
 - Last benchmark output: `state/last-benchmark-snapshot.txt`
 - Last smoke output: `state/last-smoke-test.txt`

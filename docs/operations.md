@@ -141,6 +141,14 @@ Benchmark report:
 .venv/bin/python watchtower.py -c config.json --benchmark-report
 ```
 
+Upgrade checkpoints:
+
+```bash
+scripts/upgrade_checkpoint.py before --label pre-upgrade
+scripts/upgrade_checkpoint.py after --label post-upgrade
+scripts/upgrade_checkpoint.py report
+```
+
 Apply retention limits:
 
 ```bash

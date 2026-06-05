@@ -163,3 +163,23 @@ Check benchmark output:
 ```bash
 tail -n 40 state/last-benchmark-snapshot.txt
 ```
+
+## rusty-kaspa Upgrade
+
+Before changing the node binary or config:
+
+```bash
+scripts/smoke_test.sh
+scripts/upgrade_checkpoint.py before --label pre-upgrade
+```
+
+After the node is back:
+
+```bash
+scripts/smoke_test.sh
+scripts/upgrade_checkpoint.py after --label post-upgrade
+scripts/upgrade_checkpoint.py report
+```
+
+Review status/severity, failed checks, DAA/block deltas, peer delta, resource
+delta, and disk-free delta before considering the upgrade complete.

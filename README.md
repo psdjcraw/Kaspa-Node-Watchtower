@@ -94,6 +94,14 @@ Save a benchmark snapshot and compare recent snapshots:
 .venv/bin/python watchtower.py -c config.json --benchmark-report
 ```
 
+Capture upgrade checkpoints:
+
+```bash
+scripts/upgrade_checkpoint.py before --label pre-upgrade
+scripts/upgrade_checkpoint.py after --label post-upgrade
+scripts/upgrade_checkpoint.py report
+```
+
 Apply retention limits to state files:
 
 ```bash

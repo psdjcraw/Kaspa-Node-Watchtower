@@ -11,7 +11,7 @@ ok() {
   printf 'OK %s\n' "$1"
 }
 
-"$PYTHON_BIN" -m py_compile watchtower.py kaspa_grpc_probe.py prometheus_file_server.py
+"$PYTHON_BIN" -m py_compile watchtower.py kaspa_grpc_probe.py prometheus_file_server.py scripts/upgrade_checkpoint.py
 ok "Python compile"
 
 "$PYTHON_BIN" -m unittest discover -s tests >/dev/null
