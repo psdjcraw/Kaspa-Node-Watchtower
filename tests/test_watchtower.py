@@ -110,6 +110,17 @@ class WatchtowerUnitTests(unittest.TestCase):
                 "relay_events_in_window": 5,
                 "latest_relay_age_seconds": 1,
             },
+            "sync_progress": {
+                "active": True,
+                "baseline_available": True,
+                "elapsed_minutes": 10,
+                "daa_delta": 10,
+                "block_delta": 20,
+                "header_delta": 30,
+                "daa_rate_per_hour": 60,
+                "block_rate_per_hour": 120,
+                "header_rate_per_hour": 180,
+            },
             "disk": {"free_gb": 100, "free_percent": 20},
         }
 
@@ -129,6 +140,8 @@ class WatchtowerUnitTests(unittest.TestCase):
         self.assertIn("kaspa_watchtower_mempool_size", metrics)
         self.assertIn("kaspa_watchtower_tip_count", metrics)
         self.assertIn("kaspa_watchtower_process_fd_num", metrics)
+        self.assertIn("kaspa_watchtower_sync_active", metrics)
+        self.assertIn("kaspa_watchtower_sync_header_rate_per_hour", metrics)
         self.assertIn("kaspa_watchtower_recovery_attempts_total", metrics)
         self.assertIn("kaspa_watchtower_recovery_last_started_timestamp_seconds", metrics)
 
@@ -216,6 +229,7 @@ class WatchtowerUnitTests(unittest.TestCase):
         self.assertEqual(report["severity"], "warn")
         self.assertFalse(checks["sync_progress"]["ok"])
         self.assertIn("daa_delta=+0", checks["sync_progress"]["detail"])
+        self.assertEqual(report["sync_progress"]["header_rate_per_hour"], 0)
 
     def test_config_validation_rejects_invalid_numeric_settings(self):
         with tempfile.TemporaryDirectory() as tmp:

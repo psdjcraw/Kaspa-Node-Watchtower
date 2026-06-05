@@ -616,6 +616,13 @@ def format_delta(value: float | None) -> str:
     return f"{value:+.2f}"
 
 
+def format_optional_rate(value: Any) -> str:
+    parsed = numeric(value)
+    if parsed is None:
+        return "unknown"
+    return f"{parsed:.2f}/h"
+
+
 def short_hash(value: Any, length: int = 12) -> str:
     text = str(value or "")
     return text[:length] if text else "unknown"
@@ -666,6 +673,12 @@ def apply_stateful_checks(report: dict[str, Any], state: dict[str, Any], config:
 
     if not candidates:
         detail = f"baseline pending for {stall_minutes:g}m unsynced window"
+        report["sync_progress"] = {
+            "active": True,
+            "baseline_available": False,
+            "window_minutes": stall_minutes,
+            "detail": detail,
+        }
         report["checks"].append(Check("sync_progress", True, detail).as_dict())
         recalculate_report_health(report, config)
         return
@@ -698,12 +711,26 @@ def apply_stateful_checks(report: dict[str, Any], state: dict[str, Any], config:
         )
     )
     elapsed_minutes = max(0.0, (checked_at - baseline_at).total_seconds() / 60)
+    elapsed_hours = elapsed_minutes / 60
+    report["sync_progress"] = {
+        "active": True,
+        "baseline_available": True,
+        "baseline_checked_at": baseline_at.isoformat(),
+        "elapsed_minutes": round(elapsed_minutes, 2),
+        "daa_delta": deltas["daa"],
+        "block_delta": deltas["block"],
+        "header_delta": deltas["header"],
+        "daa_rate_per_hour": None if deltas["daa"] is None or elapsed_hours <= 0 else deltas["daa"] / elapsed_hours,
+        "block_rate_per_hour": None if deltas["block"] is None or elapsed_hours <= 0 else deltas["block"] / elapsed_hours,
+        "header_rate_per_hour": None if deltas["header"] is None or elapsed_hours <= 0 else deltas["header"] / elapsed_hours,
+    }
     detail = (
         f"daa_delta={format_delta(deltas['daa'])} "
         f"block_delta={format_delta(deltas['block'])} "
         f"header_delta={format_delta(deltas['header'])} "
         f"over {elapsed_minutes:.1f}m"
     )
+    report["sync_progress"]["detail"] = detail
     report["checks"].append(Check("sync_progress", ok, detail).as_dict())
     recalculate_report_health(report, config)
 
@@ -780,6 +807,7 @@ def write_status_page(
     )
     grpc_metrics = report.get("grpc_metrics") or {}
     progress = report.get("progress") or {}
+    sync_progress = report.get("sync_progress") or {}
     recovery = report.get("recovery") or {}
     failed = failed_check_names(report)
     failure_text = ", ".join(failed) if failed else "None"
@@ -827,6 +855,11 @@ def write_status_page(
         ("DAA Score", grpc_metrics.get("virtual_daa_score", "unknown")),
         ("Block Count", grpc_metrics.get("block_count", "unknown")),
         ("Header Count", grpc_metrics.get("header_count", "unknown")),
+        ("Sync Baseline", sync_progress.get("baseline_checked_at", "pending")),
+        ("Sync Header Rate", format_optional_rate(sync_progress.get("header_rate_per_hour"))),
+        ("Sync DAA Delta", format_delta(numeric(sync_progress.get("daa_delta")))),
+        ("Sync Block Delta", format_delta(numeric(sync_progress.get("block_delta")))),
+        ("Sync Header Delta", format_delta(numeric(sync_progress.get("header_delta")))),
         ("Mempool", grpc_metrics.get("mempool_size", "unknown")),
         ("Tips", grpc_metrics.get("tip_count", "unknown")),
         ("Virtual Parents", grpc_metrics.get("virtual_parent_count", "unknown")),
@@ -1074,6 +1107,13 @@ def format_alert(
         f"{progress['relay_events_in_window']} events in "
         f"{progress['window_minutes']:g}m"
     )
+    sync_progress = report.get("sync_progress") or {}
+    if sync_progress.get("active"):
+        lines.append(
+            "Sync progress: "
+            f"{sync_progress.get('detail', 'unknown')} "
+            f"(headers={format_optional_rate(sync_progress.get('header_rate_per_hour'))})"
+        )
     recovery = report.get("recovery") or {}
     if recovery.get("action") != "none":
         lines.append(
@@ -1087,6 +1127,7 @@ def format_alert(
 def format_summary(report: dict[str, Any]) -> str:
     grpc_metrics = report.get("grpc_metrics") or {}
     progress = report.get("progress") or {}
+    sync_progress = report.get("sync_progress") or {}
     disk = report.get("disk") or {}
     failed = failed_check_names(report)
     failed_text = ", ".join(failed) if failed else "none"
@@ -1126,6 +1167,16 @@ def format_summary(report: dict[str, Any]) -> str:
         f"disk_free={disk_text}",
         f"failed_checks={failed_text}",
     ]
+    sync_progress = report.get("sync_progress") or {}
+    if sync_progress.get("active"):
+        lines.insert(
+            -2,
+            (
+                "sync_progress="
+                f"{sync_progress.get('detail', 'unknown')} "
+                f"header_rate={format_optional_rate(sync_progress.get('header_rate_per_hour'))}"
+            ),
+        )
     recovery = report.get("recovery") or {}
     if recovery.get("action") != "none":
         lines.append(
@@ -1458,6 +1509,7 @@ def format_prometheus_metrics(
     node_labels = {"node": report["node_name"]}
     grpc_metrics = report.get("grpc_metrics") or {}
     progress = report.get("progress") or {}
+    sync_progress = report.get("sync_progress") or {}
     disk = report.get("disk") or {}
     recovery_summary = recovery_summary or {}
     severity_values = {"ok": 0, "warn": 1, "critical": 2}
@@ -1515,6 +1567,25 @@ def format_prometheus_metrics(
     )
     add_prometheus_metric(lines, "kaspa_watchtower_block_count", grpc_metrics.get("block_count"), node_labels)
     add_prometheus_metric(lines, "kaspa_watchtower_header_count", grpc_metrics.get("header_count"), node_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_sync_active", sync_progress.get("active"), node_labels)
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_sync_baseline_available",
+        sync_progress.get("baseline_available"),
+        node_labels,
+    )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_sync_elapsed_minutes",
+        sync_progress.get("elapsed_minutes"),
+        node_labels,
+    )
+    add_prometheus_metric(lines, "kaspa_watchtower_sync_daa_delta", sync_progress.get("daa_delta"), node_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_sync_block_delta", sync_progress.get("block_delta"), node_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_sync_header_delta", sync_progress.get("header_delta"), node_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_sync_daa_rate_per_hour", sync_progress.get("daa_rate_per_hour"), node_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_sync_block_rate_per_hour", sync_progress.get("block_rate_per_hour"), node_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_sync_header_rate_per_hour", sync_progress.get("header_rate_per_hour"), node_labels)
     add_prometheus_metric(lines, "kaspa_watchtower_mempool_size", grpc_metrics.get("mempool_size"), node_labels)
     add_prometheus_metric(lines, "kaspa_watchtower_tip_count", grpc_metrics.get("tip_count"), node_labels)
     add_prometheus_metric(
