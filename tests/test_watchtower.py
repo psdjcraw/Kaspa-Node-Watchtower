@@ -111,11 +111,24 @@ class WatchtowerUnitTests(unittest.TestCase):
             "disk": {"free_gb": 100, "free_percent": 20},
         }
 
-        metrics = watchtower.format_prometheus_metrics(report, {"snapshots": 0})
+        recovery_summary = {
+            "attempts": 2,
+            "executed": 1,
+            "dry_runs": 1,
+            "skipped": 0,
+            "unavailable": 0,
+            "last_started_at": "2026-06-05T10:00:00+09:00",
+            "last_completed_at": "2026-06-05T10:01:00+09:00",
+            "last_exit_code": 0,
+        }
+
+        metrics = watchtower.format_prometheus_metrics(report, {"snapshots": 0}, recovery_summary)
 
         self.assertIn("kaspa_watchtower_mempool_size", metrics)
         self.assertIn("kaspa_watchtower_tip_count", metrics)
         self.assertIn("kaspa_watchtower_process_fd_num", metrics)
+        self.assertIn("kaspa_watchtower_recovery_attempts_total", metrics)
+        self.assertIn("kaspa_watchtower_recovery_last_started_timestamp_seconds", metrics)
 
     def test_config_validation_rejects_invalid_numeric_settings(self):
         with tempfile.TemporaryDirectory() as tmp:

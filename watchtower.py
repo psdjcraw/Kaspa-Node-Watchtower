@@ -895,7 +895,8 @@ def alert(config: dict) -> int:
     write_status_page(status_page_path, report, state, benchmark_path, recovery_records)
     if canvas_status_page:
         write_status_page(Path(canvas_status_page), report, state, benchmark_path, recovery_records)
-    write_prometheus_metrics(metrics_path, report, benchmark_summary)
+    recovery_summary = build_recovery_summary(recovery_history_path(config))
+    write_prometheus_metrics(metrics_path, report, benchmark_summary, recovery_summary)
 
     if should_emit:
         print(format_alert(report, previous_status, previous_severity))
@@ -1300,11 +1301,43 @@ def add_prometheus_metric(
     lines.append(f"{name}{prometheus_labels(labels)} {number:g}")
 
 
-def format_prometheus_metrics(report: dict[str, Any], benchmark_summary: dict[str, Any]) -> str:
+def iso_timestamp_seconds(value: Any) -> float | None:
+    parsed = parse_iso_datetime(value)
+    return parsed.timestamp() if parsed else None
+
+
+def build_recovery_summary(path: Path) -> dict[str, Any]:
+    try:
+        records = load_jsonl(path)
+    except (OSError, json.JSONDecodeError):
+        records = []
+    executed = [item for item in records if item.get("action") == "executed"]
+    dry_runs = [item for item in records if item.get("action") == "dry_run"]
+    skipped = [item for item in records if item.get("action") == "skipped"]
+    unavailable = [item for item in records if item.get("action") == "unavailable"]
+    last = records[-1] if records else {}
+    return {
+        "attempts": len(records),
+        "executed": len(executed),
+        "dry_runs": len(dry_runs),
+        "skipped": len(skipped),
+        "unavailable": len(unavailable),
+        "last_started_at": last.get("started_at"),
+        "last_completed_at": last.get("completed_at"),
+        "last_exit_code": last.get("exit_code"),
+    }
+
+
+def format_prometheus_metrics(
+    report: dict[str, Any],
+    benchmark_summary: dict[str, Any],
+    recovery_summary: dict[str, Any] | None = None,
+) -> str:
     node_labels = {"node": report["node_name"]}
     grpc_metrics = report.get("grpc_metrics") or {}
     progress = report.get("progress") or {}
     disk = report.get("disk") or {}
+    recovery_summary = recovery_summary or {}
     severity_values = {"ok": 0, "warn": 1, "critical": 2}
     lines = [
         "# TYPE kaspa_watchtower_status_ok gauge",
@@ -1449,12 +1482,68 @@ def format_prometheus_metrics(report: dict[str, Any], benchmark_summary: dict[st
         benchmark_summary.get("disk_delta_gb"),
         node_labels,
     )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_recovery_attempts_total",
+        recovery_summary.get("attempts"),
+        node_labels,
+    )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_recovery_executed_total",
+        recovery_summary.get("executed"),
+        node_labels,
+    )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_recovery_dry_runs_total",
+        recovery_summary.get("dry_runs"),
+        node_labels,
+    )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_recovery_skipped_total",
+        recovery_summary.get("skipped"),
+        node_labels,
+    )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_recovery_unavailable_total",
+        recovery_summary.get("unavailable"),
+        node_labels,
+    )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_recovery_last_started_timestamp_seconds",
+        iso_timestamp_seconds(recovery_summary.get("last_started_at")),
+        node_labels,
+    )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_recovery_last_completed_timestamp_seconds",
+        iso_timestamp_seconds(recovery_summary.get("last_completed_at")),
+        node_labels,
+    )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_recovery_last_exit_code",
+        recovery_summary.get("last_exit_code"),
+        node_labels,
+    )
     return "\n".join(lines) + "\n"
 
 
-def write_prometheus_metrics(path: Path, report: dict[str, Any], benchmark_summary: dict[str, Any]) -> None:
+def write_prometheus_metrics(
+    path: Path,
+    report: dict[str, Any],
+    benchmark_summary: dict[str, Any],
+    recovery_summary: dict[str, Any] | None = None,
+) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(format_prometheus_metrics(report, benchmark_summary), encoding="utf-8")
+    path.write_text(
+        format_prometheus_metrics(report, benchmark_summary, recovery_summary),
+        encoding="utf-8",
+    )
 
 
 def prometheus(config: dict) -> int:
@@ -1462,7 +1551,8 @@ def prometheus(config: dict) -> int:
     benchmark_path = Path(config.get("benchmark_path") or DEFAULT_CONFIG["benchmark_path"])
     metrics_path = Path(config.get("prometheus_metrics_path") or DEFAULT_CONFIG["prometheus_metrics_path"])
     benchmark_summary = build_benchmark_summary(benchmark_path, limit=48)
-    write_prometheus_metrics(metrics_path, report, benchmark_summary)
+    recovery_summary = build_recovery_summary(recovery_history_path(config))
+    write_prometheus_metrics(metrics_path, report, benchmark_summary, recovery_summary)
     print(f"Prometheus metrics written: {metrics_path}")
     return 0 if report["status"] == "ok" else 1
 

@@ -294,6 +294,8 @@ Manual recovery when an alert requires it:
 
 Recovery attempts, skips, dry-runs, command exit codes, and post-recovery
 checks are recorded in `state/recovery-history.jsonl`.
+The Prometheus textfile also exposes recovery attempt counts and latest recovery
+timestamps for Grafana or alerting use.
 
 `--alert` writes state to `state/watchtower-state.json`. It emits output when
 status changes, and keeps emitting while the status remains `alert`.
