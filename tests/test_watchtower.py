@@ -162,6 +162,12 @@ class WatchtowerUnitTests(unittest.TestCase):
                 "block_rate_per_hour": 120,
                 "header_rate_per_hour": 180,
             },
+            "monitoring": {
+                "require_synced": True,
+                "require_relay_progress_when_unsynced": True,
+                "require_sync_progress_when_unsynced": True,
+                "sync_progress_stall_minutes": 30,
+            },
             "disk": {"free_gb": 100, "free_percent": 20},
         }
 
@@ -183,6 +189,8 @@ class WatchtowerUnitTests(unittest.TestCase):
         self.assertIn("kaspa_watchtower_process_fd_num", metrics)
         self.assertIn("kaspa_watchtower_sync_active", metrics)
         self.assertIn("kaspa_watchtower_sync_header_rate_per_hour", metrics)
+        self.assertIn("kaspa_watchtower_require_synced", metrics)
+        self.assertIn("kaspa_watchtower_sync_progress_stall_minutes", metrics)
         self.assertIn("kaspa_watchtower_recovery_attempts_total", metrics)
         self.assertIn("kaspa_watchtower_recovery_last_started_timestamp_seconds", metrics)
 

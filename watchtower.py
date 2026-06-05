@@ -489,6 +489,16 @@ def build_report(config: dict) -> dict[str, Any]:
         "latest_relay_block": latest_relay,
         "latest_throughput": latest_throughput,
         "progress": progress,
+        "monitoring": {
+            "require_synced": bool(thresholds.get("require_synced", True)),
+            "require_relay_progress_when_unsynced": bool(
+                thresholds.get("require_relay_progress_when_unsynced", False)
+            ),
+            "require_sync_progress_when_unsynced": bool(
+                thresholds.get("require_sync_progress_when_unsynced", True)
+            ),
+            "sync_progress_stall_minutes": float(thresholds.get("sync_progress_stall_minutes", 30)),
+        },
         "recovery": recovery_plan(config, severity),
     }
     return report
@@ -1585,6 +1595,7 @@ def format_prometheus_metrics(
     grpc_metrics = report.get("grpc_metrics") or {}
     progress = report.get("progress") or {}
     sync_progress = report.get("sync_progress") or {}
+    monitoring = report.get("monitoring") or {}
     disk = report.get("disk") or {}
     recovery_summary = recovery_summary or {}
     severity_values = {"ok": 0, "warn": 1, "critical": 2}
@@ -1661,6 +1672,25 @@ def format_prometheus_metrics(
     add_prometheus_metric(lines, "kaspa_watchtower_sync_daa_rate_per_hour", sync_progress.get("daa_rate_per_hour"), node_labels)
     add_prometheus_metric(lines, "kaspa_watchtower_sync_block_rate_per_hour", sync_progress.get("block_rate_per_hour"), node_labels)
     add_prometheus_metric(lines, "kaspa_watchtower_sync_header_rate_per_hour", sync_progress.get("header_rate_per_hour"), node_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_require_synced", monitoring.get("require_synced"), node_labels)
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_require_relay_progress_when_unsynced",
+        monitoring.get("require_relay_progress_when_unsynced"),
+        node_labels,
+    )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_require_sync_progress_when_unsynced",
+        monitoring.get("require_sync_progress_when_unsynced"),
+        node_labels,
+    )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_sync_progress_stall_minutes",
+        monitoring.get("sync_progress_stall_minutes"),
+        node_labels,
+    )
     add_prometheus_metric(lines, "kaspa_watchtower_mempool_size", grpc_metrics.get("mempool_size"), node_labels)
     add_prometheus_metric(lines, "kaspa_watchtower_tip_count", grpc_metrics.get("tip_count"), node_labels)
     add_prometheus_metric(

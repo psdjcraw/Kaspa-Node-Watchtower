@@ -65,6 +65,10 @@ printf 'sync_baseline_available: %s\n' "$(exporter_metric kaspa_watchtower_sync_
 printf 'sync_daa_rate_per_hour: %s\n' "$(exporter_metric kaspa_watchtower_sync_daa_rate_per_hour)"
 printf 'sync_block_rate_per_hour: %s\n' "$(exporter_metric kaspa_watchtower_sync_block_rate_per_hour)"
 printf 'sync_header_rate_per_hour: %s\n' "$(exporter_metric kaspa_watchtower_sync_header_rate_per_hour)"
+printf 'require_synced: %s\n' "$(exporter_metric kaspa_watchtower_require_synced)"
+printf 'require_relay_progress_when_unsynced: %s\n' "$(exporter_metric kaspa_watchtower_require_relay_progress_when_unsynced)"
+printf 'require_sync_progress_when_unsynced: %s\n' "$(exporter_metric kaspa_watchtower_require_sync_progress_when_unsynced)"
+printf 'sync_progress_stall_minutes: %s\n' "$(exporter_metric kaspa_watchtower_sync_progress_stall_minutes)"
 
 section "Prometheus"
 printf 'target status: '
@@ -80,6 +84,8 @@ printf 'sync_active query: %s\n' "$(prom_query 'kaspa_watchtower_sync_active')"
 printf 'sync_daa_rate query: %s\n' "$(prom_query 'kaspa_watchtower_sync_daa_rate_per_hour')"
 printf 'sync_block_rate query: %s\n' "$(prom_query 'kaspa_watchtower_sync_block_rate_per_hour')"
 printf 'sync_header_rate query: %s\n' "$(prom_query 'kaspa_watchtower_sync_header_rate_per_hour')"
+printf 'require_synced query: %s\n' "$(prom_query 'kaspa_watchtower_require_synced')"
+printf 'require_relay_progress_when_unsynced query: %s\n' "$(prom_query 'kaspa_watchtower_require_relay_progress_when_unsynced')"
 printf 'active alerts: '
 curl -fsS "$PROMETHEUS_URL/api/v1/alerts" |
   python3 -c 'import json, sys
