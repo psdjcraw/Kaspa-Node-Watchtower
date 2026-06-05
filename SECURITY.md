@@ -8,6 +8,12 @@ diagnostics and configuration as sensitive unless they have been sanitized.
 
 The `main` branch is the actively maintained version.
 
+## Automated Checks
+
+The repository runs smoke tests and CodeQL analysis on `main` and pull requests.
+Passing automation is not a substitute for reviewing local configs, generated
+diagnostics, or recovery commands before sharing them.
+
 ## Reporting Security Issues
 
 Do not post secrets, private hostnames, wallet data, unsanitized logs, SSH

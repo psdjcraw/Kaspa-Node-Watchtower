@@ -1,6 +1,7 @@
 # Kaspa Node Watchtower
 
 [![smoke](https://github.com/psdjcraw/Kaspa-Node-Watchtower/actions/workflows/smoke.yml/badge.svg)](https://github.com/psdjcraw/Kaspa-Node-Watchtower/actions/workflows/smoke.yml)
+[![codeql](https://github.com/psdjcraw/Kaspa-Node-Watchtower/actions/workflows/codeql.yml/badge.svg)](https://github.com/psdjcraw/Kaspa-Node-Watchtower/actions/workflows/codeql.yml)
 [![License](https://img.shields.io/github/license/psdjcraw/Kaspa-Node-Watchtower)](LICENSE)
 ![Python](https://img.shields.io/badge/python-3.12-blue)
 

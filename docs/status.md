@@ -12,6 +12,7 @@
 - Grafana recovery panels: recovery counts, latest recovery timestamps, and recovery trend
 - Grafana sync panels: mainnet sync monitor, sync rates, and sync deltas
 - GitHub Actions smoke workflow: `https://github.com/psdjcraw/Kaspa-Node-Watchtower/actions/workflows/smoke.yml`
+- GitHub Actions CodeQL workflow: `https://github.com/psdjcraw/Kaspa-Node-Watchtower/actions/workflows/codeql.yml`
 - Canvas status page: `/Users/psdjc/.openclaw/canvas/kaspa-watchtower/status.html`
 
 ## Local Services
