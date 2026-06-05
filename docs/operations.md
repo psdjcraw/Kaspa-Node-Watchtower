@@ -66,6 +66,12 @@ Operational snapshot:
 scripts/ops_snapshot.sh
 ```
 
+Diagnostic bundle:
+
+```bash
+scripts/collect_diagnostics.sh
+```
+
 Full local smoke test:
 
 ```bash

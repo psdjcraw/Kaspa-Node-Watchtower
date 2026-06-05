@@ -8,6 +8,12 @@ Run:
 scripts/ops_snapshot.sh
 ```
 
+Collect diagnostics:
+
+```bash
+scripts/collect_diagnostics.sh
+```
+
 Then run the full smoke test:
 
 ```bash
