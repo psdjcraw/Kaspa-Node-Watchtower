@@ -802,6 +802,68 @@ def html_row(cells: list[Any], tag: str = "td") -> str:
     return "<tr>" + "".join(f"<{tag}>{html.escape(str(cell))}</{tag}>" for cell in cells) + "</tr>"
 
 
+def css_percent(value: float | int | None) -> str:
+    if value is None:
+        return "0%"
+    return f"{max(0.0, min(100.0, float(value))):.1f}%"
+
+
+def compact_number(value: Any) -> str:
+    parsed = numeric(value)
+    if parsed is None:
+        return "unknown"
+    magnitude = abs(parsed)
+    if magnitude >= 1_000_000_000:
+        return f"{parsed / 1_000_000_000:.2f}B"
+    if magnitude >= 1_000_000:
+        return f"{parsed / 1_000_000:.2f}M"
+    if magnitude >= 1_000:
+        return f"{parsed / 1_000:.1f}K"
+    return str(int(parsed)) if parsed.is_integer() else f"{parsed:.2f}"
+
+
+def sparkline_svg(items: list[dict[str, Any]], key: str, color: str) -> str:
+    values = [numeric(item.get(key)) for item in items]
+    points = [value for value in values if value is not None]
+    if len(points) < 2:
+        return '<div class="empty-chart">Not enough history</div>'
+    width = 320
+    height = 92
+    pad = 10
+    low = min(points)
+    high = max(points)
+    span = high - low or 1
+    step = (width - pad * 2) / (len(points) - 1)
+    coords = []
+    for index, value in enumerate(points):
+        x = pad + step * index
+        y = height - pad - ((value - low) / span) * (height - pad * 2)
+        coords.append((x, y))
+    line = " ".join(f"{x:.1f},{y:.1f}" for x, y in coords)
+    area = f"{pad},{height - pad} {line} {width - pad},{height - pad}"
+    return f"""<svg class="sparkline" viewBox="0 0 {width} {height}" role="img" aria-label="{html.escape(key)} trend">
+  <polyline class="spark-area" points="{area}" fill="{html.escape(color)}" opacity="0.12"></polyline>
+  <polyline class="spark-line" points="{line}" fill="none" stroke="{html.escape(color)}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></polyline>
+</svg>"""
+
+
+def visual_card(label: str, value: Any, detail: str = "", tone: str = "neutral") -> str:
+    return f"""<section class="v-card {html.escape(tone)}">
+  <div class="v-label">{html.escape(str(label))}</div>
+  <div class="v-value">{html.escape(str(value))}</div>
+  <div class="v-detail">{html.escape(str(detail))}</div>
+</section>"""
+
+
+def check_pill(check: dict[str, Any]) -> str:
+    state = "ok" if check.get("ok") else "fail"
+    label = "OK" if check.get("ok") else "FAIL"
+    return f"""<div class="check-pill {state}">
+  <span>{html.escape(label)}</span>
+  <strong>{html.escape(str(check.get("name", "unknown")))}</strong>
+</div>"""
+
+
 def recent_recovery_records(config: dict, limit: int = 5) -> list[dict[str, Any]]:
     try:
         return load_jsonl(recovery_history_path(config))[-limit:]
@@ -878,38 +940,29 @@ def write_status_page(
     )
     if not recovery_rows:
         recovery_rows = html_row(["No recovery attempts recorded", "", "", "", "", ""])
-    metric_items = [
-        ("Severity", report["severity"]),
-        ("Peers", grpc_metrics.get("peer_count", "unknown")),
-        ("Active Peers", grpc_metrics.get("active_peers", "unknown")),
-        ("Outbound Peers", grpc_metrics.get("outbound_peer_count", "unknown")),
-        ("Inbound Peers", grpc_metrics.get("inbound_peer_count", "unknown")),
-        ("Synced", grpc_metrics.get("is_synced", "unknown")),
-        ("Network", grpc_metrics.get("network_id", "unknown")),
-        ("DAA Score", grpc_metrics.get("virtual_daa_score", "unknown")),
-        ("Block Count", grpc_metrics.get("block_count", "unknown")),
-        ("Header Count", grpc_metrics.get("header_count", "unknown")),
-        ("Sync Baseline", sync_progress.get("baseline_checked_at", "pending")),
-        ("Sync Header Rate", format_optional_rate(sync_progress.get("header_rate_per_hour"))),
-        ("Sync DAA Delta", format_delta(numeric(sync_progress.get("daa_delta")))),
-        ("Sync Block Delta", format_delta(numeric(sync_progress.get("block_delta")))),
-        ("Sync Header Delta", format_delta(numeric(sync_progress.get("header_delta")))),
-        ("Mempool", grpc_metrics.get("mempool_size", "unknown")),
-        ("Tips", grpc_metrics.get("tip_count", "unknown")),
-        ("Virtual Parents", grpc_metrics.get("virtual_parent_count", "unknown")),
-        ("Difficulty", grpc_metrics.get("difficulty", "unknown")),
-        ("Pruning Point", short_hash(grpc_metrics.get("pruning_point_hash"))),
-        ("Relay Blocks", progress.get("relay_blocks_in_window", 0)),
-        ("Disk Free", f"{report.get('disk', {}).get('free_gb', 'unknown')} GiB"),
-        ("Recovery", recovery.get("action", "none")),
-    ]
-    metrics_html = "\n".join(
-        f"""<section class="metric">
-  <div class="metric-label">{html.escape(str(label))}</div>
-  <div class="metric-value">{html.escape(str(value))}</div>
-</section>"""
-        for label, value in metric_items
+    disk = report.get("disk") or {}
+    checks_total = len(report["checks"])
+    checks_ok = sum(1 for check in report["checks"] if check.get("ok"))
+    checks_percent = (checks_ok / checks_total * 100) if checks_total else 0
+    ok_ratio = numeric(benchmark_summary.get("ok_ratio"))
+    ok_percent = (ok_ratio or 0) * 100
+    history_items = state.get("history", [])[-60:]
+    relay_chart = sparkline_svg(history_items, "relay_blocks_in_window", "#147d64")
+    daa_chart = sparkline_svg(history_items, "virtual_daa_score", "#3858e9")
+    peer_chart = sparkline_svg(history_items, "peer_count", "#b26a00")
+    check_pills = "\n".join(check_pill(check) for check in report["checks"])
+    visual_cards = "\n".join(
+        [
+            visual_card("Peers", grpc_metrics.get("peer_count", "unknown"), f"active {grpc_metrics.get('active_peers', 'unknown')}", "ok"),
+            visual_card("Relay Window", compact_number(progress.get("relay_blocks_in_window")), f"{progress.get('window_minutes', 'unknown')}m window", "ok"),
+            visual_card("DAA Score", compact_number(grpc_metrics.get("virtual_daa_score")), f"tips {grpc_metrics.get('tip_count', 'unknown')}", "neutral"),
+            visual_card("Mempool", compact_number(grpc_metrics.get("mempool_size")), "transactions waiting", "neutral"),
+            visual_card("Disk Free", format_gib(disk.get("free_gb")), f"{disk.get('free_percent', 'unknown')}% free", "warn"),
+            visual_card("Benchmark OK", format_ratio(ok_ratio), f"{benchmark_summary.get('snapshots')} snapshots", "ok"),
+        ]
     )
+    latest_relay_age = progress.get("latest_relay_age_seconds")
+    latest_relay_text = "unknown" if latest_relay_age is None else f"{latest_relay_age}s"
     page = f"""<!doctype html>
 <html lang="en">
 <head>
@@ -919,35 +972,50 @@ def write_status_page(
   <title>Kaspa Node Watchtower</title>
   <style>
     :root {{
-      --ink: #1f2933;
-      --muted: #65758b;
-      --line: #d7dde5;
+      --ink: #17202a;
+      --muted: #667085;
+      --line: #d8e0ea;
       --panel: #ffffff;
-      --page: #f6f8fb;
+      --page: #f4f7fb;
       --ok: #137333;
+      --ok-soft: #e7f6ee;
       --warn: #b26a00;
+      --warn-soft: #fff4df;
       --critical: #b3261e;
+      --critical-soft: #fdebea;
       --accent: #3858e9;
+      --accent-soft: #eaf0ff;
+      --teal: #147d64;
     }}
     * {{ box-sizing: border-box; }}
+    html {{ overflow-x: hidden; }}
     body {{
       margin: 0;
       background: var(--page);
       color: var(--ink);
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       letter-spacing: 0;
+      overflow-x: hidden;
     }}
-    main {{ max-width: 1180px; margin: 0 auto; padding: 22px; }}
-    header {{
+    main {{ width: 100%; max-width: 1180px; min-width: 0; margin: 0 auto; padding: 22px; }}
+    .hero {{
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 18px;
+      margin-bottom: 14px;
+      box-shadow: 0 10px 30px rgba(28, 39, 54, 0.06);
+    }}
+    .hero-top {{
       display: flex;
       justify-content: space-between;
       gap: 16px;
       align-items: flex-start;
-      margin-bottom: 18px;
+      margin-bottom: 16px;
     }}
     h1 {{ font-size: 24px; margin: 0 0 6px; line-height: 1.2; }}
-    h2 {{ font-size: 16px; margin: 0 0 10px; }}
-    .subtle {{ color: var(--muted); font-size: 13px; }}
+    h2 {{ font-size: 16px; margin: 0 0 12px; }}
+    .subtle {{ color: var(--muted); font-size: 13px; max-width: 100%; overflow-wrap: anywhere; word-break: break-word; }}
     .badge {{
       display: inline-flex;
       min-width: 92px;
@@ -962,65 +1030,165 @@ def write_status_page(
     .badge.ok {{ background: var(--ok); }}
     .badge.warn {{ background: var(--warn); }}
     .badge.critical {{ background: var(--critical); }}
-    .metrics {{
+    .hero-strip {{
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-      gap: 10px;
-      margin-bottom: 18px;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
     }}
-    .metric, .panel {{
+    .bar-block {{
+      display: grid;
+      gap: 7px;
+    }}
+    .bar-meta {{
+      display: flex;
+      justify-content: space-between;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+    }}
+    .bar {{
+      height: 10px;
+      border-radius: 999px;
+      overflow: hidden;
+      background: #e8edf4;
+    }}
+    .bar-fill {{
+      height: 100%;
+      width: var(--fill);
+      background: var(--teal);
+      border-radius: inherit;
+    }}
+    .bar-fill.ok {{ background: var(--ok); }}
+    .bar-fill.warn {{ background: var(--warn); }}
+    .visual-grid {{
+      display: grid;
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+      gap: 10px;
+      margin-bottom: 14px;
+    }}
+    .v-card, .panel {{
       background: var(--panel);
       border: 1px solid var(--line);
       border-radius: 8px;
       padding: 12px;
+      min-width: 0;
     }}
-    .metric-label {{ color: var(--muted); font-size: 12px; margin-bottom: 4px; }}
-    .metric-value {{ font-size: 18px; font-weight: 700; overflow-wrap: anywhere; }}
-    .layout {{ display: grid; grid-template-columns: 1.1fr 0.9fr; gap: 14px; }}
+    .v-card.ok {{ background: var(--ok-soft); border-color: #b9e3ca; }}
+    .v-card.warn {{ background: var(--warn-soft); border-color: #f4d493; }}
+    .v-label {{ color: var(--muted); font-size: 12px; margin-bottom: 5px; font-weight: 700; }}
+    .v-value {{ font-size: 22px; font-weight: 800; line-height: 1.1; overflow-wrap: anywhere; }}
+    .v-detail {{ color: var(--muted); font-size: 12px; margin-top: 5px; min-height: 16px; }}
+    .layout {{ display: grid; grid-template-columns: 1.1fr 0.9fr; gap: 14px; margin-bottom: 14px; }}
+    .chart-grid {{ display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-bottom: 14px; }}
+    .chart-head {{ display: flex; justify-content: space-between; gap: 10px; margin-bottom: 8px; min-width: 0; }}
+    .chart-value {{ font-size: 18px; font-weight: 800; overflow-wrap: anywhere; text-align: right; }}
+    .sparkline {{ width: 100%; height: 92px; display: block; }}
+    .empty-chart {{ height: 92px; display: grid; place-items: center; color: var(--muted); font-size: 13px; background: #f8fafc; border-radius: 8px; }}
+    .check-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 8px; }}
+    .check-pill {{
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 9px 10px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfcfe;
+      min-width: 0;
+    }}
+    .check-pill span {{
+      font-size: 11px;
+      font-weight: 800;
+      color: #fff;
+      border-radius: 999px;
+      padding: 3px 7px;
+      background: var(--ok);
+      flex: 0 0 auto;
+    }}
+    .check-pill.fail span {{ background: var(--critical); }}
+    .check-pill strong {{ font-size: 13px; overflow-wrap: anywhere; }}
+    .context-grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }}
+    .context-item {{ background: #f8fafc; border: 1px solid #edf1f6; border-radius: 8px; padding: 10px; min-width: 0; }}
+    .context-label {{ color: var(--muted); font-size: 12px; margin-bottom: 4px; }}
+    .context-value {{ font-size: 13px; font-weight: 700; overflow-wrap: anywhere; }}
     table {{ border-collapse: collapse; width: 100%; font-size: 13px; }}
     th, td {{ border-bottom: 1px solid var(--line); padding: 8px; text-align: left; vertical-align: top; }}
     th {{ color: var(--muted); font-size: 12px; font-weight: 700; }}
-    code {{ background: #eef2f6; padding: 2px 4px; border-radius: 4px; }}
+    code {{ background: #eef2f6; padding: 2px 4px; border-radius: 4px; overflow-wrap: anywhere; word-break: break-all; white-space: normal; }}
     .ok-text {{ color: var(--ok); font-weight: 700; }}
     .fail-text {{ color: var(--critical); font-weight: 700; }}
-    .notes {{ display: grid; gap: 8px; font-size: 13px; }}
+    .panel + .panel {{ margin-top: 14px; }}
     @media (max-width: 760px) {{
       main {{ padding: 14px; }}
-      header, .layout {{ display: block; }}
+      .hero-top, .hero-strip, .layout, .chart-grid, .context-grid {{ display: block; }}
+      .chart-head {{ display: block; }}
+      .chart-value {{ text-align: left; margin-bottom: 8px; }}
+      .visual-grid {{ display: block; }}
       .badge {{ margin-top: 10px; }}
-      .panel {{ margin-bottom: 12px; overflow-x: auto; }}
+      .v-card, .panel {{ margin-bottom: 12px; }}
+      .panel {{ overflow-x: auto; }}
+      .bar-block, .context-item {{ margin-bottom: 10px; }}
     }}
   </style>
 </head>
 <body>
   <main>
-    <header>
-      <div>
-        <h1>Kaspa Node Watchtower</h1>
-        <div class="subtle">{html.escape(report['node_name'])} · checked at <code>{html.escape(report['checked_at'])}</code> · auto-refresh 60s</div>
+    <section class="hero">
+      <div class="hero-top">
+        <div>
+          <h1>Kaspa Node Watchtower</h1>
+          <div class="subtle">{html.escape(report['node_name'])} · checked at <code>{html.escape(report['checked_at'])}</code> · auto-refresh 60s</div>
+        </div>
+        <div class="badge {html.escape(report['severity'])}">{html.escape(report['severity'])}</div>
       </div>
-      <div class="badge {html.escape(report['severity'])}">{html.escape(report['severity'])}</div>
-    </header>
-    <section class="metrics">
-      {metrics_html}
+      <div class="hero-strip">
+        <div class="bar-block">
+          <div class="bar-meta"><span>checks passing</span><span>{checks_ok}/{checks_total}</span></div>
+          <div class="bar"><div class="bar-fill ok" style="--fill: {css_percent(checks_percent)}"></div></div>
+        </div>
+        <div class="bar-block">
+          <div class="bar-meta"><span>benchmark OK ratio</span><span>{format_ratio(ok_ratio)}</span></div>
+          <div class="bar"><div class="bar-fill" style="--fill: {css_percent(ok_percent)}"></div></div>
+        </div>
+      </div>
+    </section>
+    <section class="visual-grid">
+      {visual_cards}
+    </section>
+    <section class="chart-grid">
+      <section class="panel">
+        <div class="chart-head"><h2>Relay Activity</h2><div class="chart-value">{compact_number(progress.get('relay_blocks_in_window'))}</div></div>
+        {relay_chart}
+      </section>
+      <section class="panel">
+        <div class="chart-head"><h2>DAA Score</h2><div class="chart-value">{compact_number(grpc_metrics.get('virtual_daa_score'))}</div></div>
+        {daa_chart}
+      </section>
+      <section class="panel">
+        <div class="chart-head"><h2>Peer Floor</h2><div class="chart-value">{format_optional_number(benchmark_summary.get('min_peer_count'))}</div></div>
+        {peer_chart}
+      </section>
     </section>
     <section class="layout">
       <section class="panel">
         <h2>Checks</h2>
-        <table>
-          <thead>{html_row(["State", "Check", "Detail"], "th")}</thead>
-          <tbody>{checks}</tbody>
-        </table>
+        <div class="check-grid">{check_pills}</div>
       </section>
       <section class="panel">
         <h2>Run Context</h2>
-        <div class="notes">
-          <div>Failed checks: <code>{html.escape(failure_text)}</code></div>
-          <div>Last alert: <code>{html.escape(str(last_alert_at))}</code></div>
-          <div>Latest throughput: <code>{html.escape(str(report.get('latest_throughput') or 'unknown'))}</code></div>
-          <div>Recovery mode: <code>{html.escape(str(recovery.get('mode', 'unknown')))}</code></div>
+        <div class="context-grid">
+          <div class="context-item"><div class="context-label">Failed checks</div><div class="context-value">{html.escape(failure_text)}</div></div>
+          <div class="context-item"><div class="context-label">Latest relay age</div><div class="context-value">{html.escape(latest_relay_text)}</div></div>
+          <div class="context-item"><div class="context-label">Last alert</div><div class="context-value">{html.escape(str(last_alert_at))}</div></div>
+          <div class="context-item"><div class="context-label">Recovery mode</div><div class="context-value">{html.escape(str(recovery.get('mode', 'unknown')))}</div></div>
         </div>
       </section>
+    </section>
+    <section class="panel">
+      <h2>Check Details</h2>
+      <table>
+        <thead>{html_row(["State", "Check", "Detail"], "th")}</thead>
+        <tbody>{checks}</tbody>
+      </table>
     </section>
     <section class="panel">
       <h2>Benchmark Trend</h2>

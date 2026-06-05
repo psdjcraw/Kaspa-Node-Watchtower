@@ -8,6 +8,8 @@ All notable changes to Kaspa Node Watchtower are tracked here.
 
 - Benchmark stability metrics for Prometheus and the status dashboard, including
   OK ratio, severity counts, minimum peers, and minimum disk free space.
+- Visual status dashboard layout with health bars, compact metric cards, and
+  history sparklines for local `status.html` and canvas output.
 - Development version reporting through `watchtower.py --version` and
   `make version`.
 - Bootstrap script and `make bootstrap` target for virtualenv dependency
