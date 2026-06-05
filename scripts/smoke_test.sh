@@ -31,6 +31,9 @@ if [ -f "config.json" ]; then
   test -s state/watchtower.prom
   ok "Prometheus textfile"
 
+  "$PYTHON_BIN" watchtower.py -c config.json --prune-state >/dev/null
+  ok "state retention"
+
   ./run_watchtower.sh >/dev/null
   ok "alert wrapper"
 

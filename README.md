@@ -94,6 +94,12 @@ Save a benchmark snapshot and compare recent snapshots:
 .venv/bin/python watchtower.py -c config.json --benchmark-report
 ```
 
+Apply retention limits to state files:
+
+```bash
+.venv/bin/python watchtower.py -c config.json --prune-state
+```
+
 Cron-friendly benchmark snapshot mode:
 
 ```bash

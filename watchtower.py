@@ -30,6 +30,10 @@ DEFAULT_CONFIG = {
     "canvas_status_page_path": "",
     "benchmark_path": "state/benchmarks.jsonl",
     "prometheus_metrics_path": "state/watchtower.prom",
+    "retention": {
+        "state_history_entries": 100,
+        "benchmark_entries": 1000,
+    },
     "thresholds": {
         "alert_repeat_minutes": 60,
         "stale_log_minutes": 15,
@@ -824,7 +828,8 @@ def alert(config: dict) -> int:
     should_emit = should_emit_alert(state, report, repeat_minutes)
     history = state.get("history", [])
     history.append(history_item(report))
-    history = history[-100:]
+    history_limit = positive_int((config.get("retention") or {}).get("state_history_entries"), 100)
+    history = history[-history_limit:]
     state.update(
         {
             "status": report["status"],
@@ -983,6 +988,14 @@ def append_jsonl(path: Path, item: dict[str, Any]) -> None:
         handle.write("\n")
 
 
+def positive_int(value: Any, default: int) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return default
+    return parsed if parsed > 0 else default
+
+
 def load_jsonl(path: Path) -> list[dict[str, Any]]:
     if not path.exists():
         return []
@@ -994,6 +1007,23 @@ def load_jsonl(path: Path) -> list[dict[str, Any]]:
                 continue
             items.append(json.loads(line))
     return items
+
+
+def save_jsonl(path: Path, items: list[dict[str, Any]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as handle:
+        for item in items:
+            handle.write(json.dumps(item, sort_keys=True))
+            handle.write("\n")
+
+
+def prune_jsonl(path: Path, limit: int) -> int:
+    items = load_jsonl(path)
+    if len(items) <= limit:
+        return 0
+    pruned = len(items) - limit
+    save_jsonl(path, items[-limit:])
+    return pruned
 
 
 def format_benchmark_snapshot(item: dict[str, Any], path: Path) -> str:
@@ -1027,7 +1057,11 @@ def benchmark_snapshot(config: dict) -> int:
     path = Path(config.get("benchmark_path") or DEFAULT_CONFIG["benchmark_path"])
     item = benchmark_item(report)
     append_jsonl(path, item)
+    benchmark_limit = positive_int((config.get("retention") or {}).get("benchmark_entries"), 1000)
+    pruned = prune_jsonl(path, benchmark_limit)
     print(format_benchmark_snapshot(item, path))
+    if pruned:
+        print(f"Benchmark retention pruned {pruned} old snapshots; limit={benchmark_limit}")
     return 0 if report["status"] == "ok" else 1
 
 
@@ -1387,6 +1421,26 @@ def validate_config(config: dict) -> int:
     return 0 if all(check.ok for check in checks) else 1
 
 
+def prune_state(config: dict) -> int:
+    state_path = Path(config.get("state_path") or DEFAULT_CONFIG["state_path"])
+    benchmark_path = Path(config.get("benchmark_path") or DEFAULT_CONFIG["benchmark_path"])
+    retention = config.get("retention") or {}
+    history_limit = positive_int(retention.get("state_history_entries"), 100)
+    benchmark_limit = positive_int(retention.get("benchmark_entries"), 1000)
+
+    state = load_state(state_path)
+    history = state.get("history", [])
+    pruned_history = max(0, len(history) - history_limit)
+    if pruned_history:
+        state["history"] = history[-history_limit:]
+        save_state(state_path, state)
+
+    pruned_benchmarks = prune_jsonl(benchmark_path, benchmark_limit)
+    print(f"State retention: history_pruned={pruned_history} limit={history_limit} path={state_path}")
+    print(f"Benchmark retention: snapshots_pruned={pruned_benchmarks} limit={benchmark_limit} path={benchmark_path}")
+    return 0
+
+
 def recover(config: dict, *, force: bool = False, dry_run: bool = False) -> int:
     report = build_report(config)
     recovery = config.get("recovery", {})
@@ -1435,6 +1489,7 @@ def main() -> int:
     parser.add_argument("--benchmark-limit", type=int, default=100, help="Number of recent benchmark snapshots to include.")
     parser.add_argument("--prometheus", action="store_true", help="Write Prometheus textfile metrics.")
     parser.add_argument("--validate-config", action="store_true", help="Validate config paths, endpoints, and commands.")
+    parser.add_argument("--prune-state", action="store_true", help="Apply configured retention limits to local state files.")
     args = parser.parse_args()
     config = load_config(args.config)
     if args.json:
@@ -1457,6 +1512,8 @@ def main() -> int:
         return prometheus(config)
     if args.validate_config:
         return validate_config(config)
+    if args.prune_state:
+        return prune_state(config)
     return status(config)
 
 

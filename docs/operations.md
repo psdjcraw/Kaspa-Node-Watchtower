@@ -132,9 +132,19 @@ Benchmark report:
 .venv/bin/python watchtower.py -c config.json --benchmark-report
 ```
 
+Apply retention limits:
+
+```bash
+.venv/bin/python watchtower.py -c config.json --prune-state
+```
+
 Use benchmark snapshots before and after `rusty-kaspa` upgrades or configuration
 changes. The report compares DAA score, block count, relay progress, peer state,
 severity counts, and disk free space across the saved window.
+
+Retention defaults keep the latest `100` alert/status history entries and latest
+`1000` benchmark snapshots. Benchmark snapshot runs prune old snapshots
+automatically after appending a new one.
 
 Prometheus textfile metrics:
 
