@@ -108,6 +108,8 @@ Export history to SQLite:
 scripts/export_history_sqlite.py
 ```
 
+This imports benchmark snapshots, upgrade checkpoints, and recovery attempts.
+
 Apply retention limits to state files:
 
 ```bash

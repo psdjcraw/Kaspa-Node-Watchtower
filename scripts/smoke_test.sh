@@ -54,6 +54,18 @@ if [ -f "config.json" ]; then
 
   scripts/export_history_sqlite.py >/dev/null
   test -s state/watchtower-history.sqlite
+  "$PYTHON_BIN" - <<'PY'
+import sqlite3
+
+with sqlite3.connect("state/watchtower-history.sqlite") as connection:
+    tables = {
+        row[0]
+        for row in connection.execute(
+            "select name from sqlite_master where type = 'table'"
+        )
+    }
+assert "recovery_attempts" in tables
+PY
   ok "SQLite history export"
 else
   ok "config.json absent; skipped live checks"

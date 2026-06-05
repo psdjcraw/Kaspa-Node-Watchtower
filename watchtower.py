@@ -623,11 +623,19 @@ def html_row(cells: list[Any], tag: str = "td") -> str:
     return "<tr>" + "".join(f"<{tag}>{html.escape(str(cell))}</{tag}>" for cell in cells) + "</tr>"
 
 
+def recent_recovery_records(config: dict, limit: int = 5) -> list[dict[str, Any]]:
+    try:
+        return load_jsonl(recovery_history_path(config))[-limit:]
+    except (OSError, json.JSONDecodeError):
+        return []
+
+
 def write_status_page(
     path: Path,
     report: dict[str, Any],
     state: dict[str, Any],
     benchmark_path: Path | None = None,
+    recovery_records: list[dict[str, Any]] | None = None,
 ) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     checks = "\n".join(
@@ -672,6 +680,21 @@ def write_status_page(
             ("Disk Free Delta", benchmark_summary["disk_delta"]),
         ]
     )
+    recovery_rows = "\n".join(
+        html_row(
+            [
+                item.get("started_at", ""),
+                item.get("action", ""),
+                item.get("severity_before", ""),
+                item.get("severity_after", ""),
+                ",".join(item.get("failed_checks_before") or []),
+                item.get("reason", ""),
+            ]
+        )
+        for item in reversed(recovery_records or [])
+    )
+    if not recovery_rows:
+        recovery_rows = html_row(["No recovery attempts recorded", "", "", "", "", ""])
     metric_items = [
         ("Severity", report["severity"]),
         ("Peers", grpc_metrics.get("peer_count", "unknown")),
@@ -818,6 +841,13 @@ def write_status_page(
       </table>
     </section>
     <section class="panel">
+      <h2>Recent Recovery</h2>
+      <table>
+        <thead>{html_row(["Started At", "Action", "Before", "After", "Failed Before", "Reason"], "th")}</thead>
+        <tbody>{recovery_rows}</tbody>
+      </table>
+    </section>
+    <section class="panel">
       <h2>Recent History</h2>
       <table>
         <thead>{html_row(["Checked At", "Severity", "Failed", "Peers", "Relay Blocks", "DAA"], "th")}</thead>
@@ -861,9 +891,10 @@ def alert(config: dict) -> int:
     if should_emit:
         state["last_alert_at"] = report["checked_at"]
     save_state(state_path, state)
-    write_status_page(status_page_path, report, state, benchmark_path)
+    recovery_records = recent_recovery_records(config)
+    write_status_page(status_page_path, report, state, benchmark_path, recovery_records)
     if canvas_status_page:
-        write_status_page(Path(canvas_status_page), report, state, benchmark_path)
+        write_status_page(Path(canvas_status_page), report, state, benchmark_path, recovery_records)
     write_prometheus_metrics(metrics_path, report, benchmark_summary)
 
     if should_emit:

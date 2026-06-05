@@ -156,6 +156,9 @@ SQLite history export:
 scripts/export_history_sqlite.py
 ```
 
+The export includes benchmark snapshots, upgrade checkpoints, and recovery
+attempts in `state/watchtower-history.sqlite`.
+
 Apply retention limits:
 
 ```bash

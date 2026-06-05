@@ -55,6 +55,26 @@ UPGRADE_COLUMNS = [
     "data_json",
 ]
 
+RECOVERY_COLUMNS = [
+    "started_at",
+    "completed_at",
+    "node_name",
+    "action",
+    "reason",
+    "mode",
+    "force",
+    "dry_run",
+    "status_before",
+    "severity_before",
+    "failed_checks_before",
+    "status_after",
+    "severity_after",
+    "failed_checks_after",
+    "exit_code",
+    "restart_command",
+    "data_json",
+]
+
 
 def load_jsonl(path: Path) -> list[dict[str, Any]]:
     if not path.exists():
@@ -71,6 +91,10 @@ def load_jsonl(path: Path) -> list[dict[str, Any]]:
 def value(item: dict[str, Any], key: str) -> Any:
     if key == "data_json":
         return json.dumps(item, sort_keys=True)
+    if key in {"failed_checks_before", "failed_checks_after", "restart_command"}:
+        return json.dumps(item.get(key) or [], sort_keys=True)
+    if key in {"force", "dry_run"}:
+        return 1 if item.get(key) else 0
     return item.get(key)
 
 
@@ -121,6 +145,26 @@ def create_schema(connection: sqlite3.Connection) -> None:
           process_fd_num integer,
           data_json text not null
         );
+
+        create table if not exists recovery_attempts (
+          started_at text primary key,
+          completed_at text,
+          node_name text,
+          action text,
+          reason text,
+          mode text,
+          force integer,
+          dry_run integer,
+          status_before text,
+          severity_before text,
+          failed_checks_before text,
+          status_after text,
+          severity_after text,
+          failed_checks_after text,
+          exit_code integer,
+          restart_command text,
+          data_json text not null
+        );
         """
     )
 
@@ -155,6 +199,7 @@ def export(args: argparse.Namespace) -> int:
     args.db.parent.mkdir(parents=True, exist_ok=True)
     benchmark_items = load_jsonl(args.benchmarks)
     upgrade_items = load_jsonl(args.upgrades)
+    recovery_items = load_jsonl(args.recovery)
     with sqlite3.connect(args.db) as connection:
         create_schema(connection)
         benchmark_imported = upsert_items(
@@ -171,13 +216,22 @@ def export(args: argparse.Namespace) -> int:
             "recorded_at",
             upgrade_items,
         )
+        recovery_imported = upsert_items(
+            connection,
+            "recovery_attempts",
+            RECOVERY_COLUMNS,
+            "started_at",
+            recovery_items,
+        )
         connection.commit()
         benchmark_count = table_count(connection, "benchmark_snapshots")
         upgrade_count = table_count(connection, "upgrade_checkpoints")
+        recovery_count = table_count(connection, "recovery_attempts")
 
     print(f"SQLite history written: {args.db}")
     print(f"benchmark_snapshots imported={benchmark_imported} total={benchmark_count}")
     print(f"upgrade_checkpoints imported={upgrade_imported} total={upgrade_count}")
+    print(f"recovery_attempts imported={recovery_imported} total={recovery_count}")
     return 0
 
 
@@ -186,6 +240,7 @@ def main() -> int:
     parser.add_argument("--db", type=Path, default=Path("state/watchtower-history.sqlite"))
     parser.add_argument("--benchmarks", type=Path, default=Path("state/benchmarks.jsonl"))
     parser.add_argument("--upgrades", type=Path, default=Path("state/upgrade-checkpoints.jsonl"))
+    parser.add_argument("--recovery", type=Path, default=Path("state/recovery-history.jsonl"))
     args = parser.parse_args()
     return export(args)
 
