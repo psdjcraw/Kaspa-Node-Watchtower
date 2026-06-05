@@ -665,6 +665,183 @@
       ],
       "title": "Recovery Trend",
       "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "options": {
+                "0": {
+                  "text": "waiting"
+                },
+                "1": {
+                  "text": "active"
+                }
+              },
+              "type": "value"
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "gray",
+                "value": null
+              },
+              {
+                "color": "blue",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 8,
+        "x": 0,
+        "y": 24
+      },
+      "id": 13,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "targets": [
+        {
+          "expr": "kaspa_watchtower_sync_active{node=\"$node\"}",
+          "legendFormat": "sync active",
+          "refId": "A"
+        },
+        {
+          "expr": "kaspa_watchtower_sync_baseline_available{node=\"$node\"}",
+          "legendFormat": "baseline",
+          "refId": "B"
+        }
+      ],
+      "title": "Sync Monitor",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 2
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 8,
+        "x": 8,
+        "y": 24
+      },
+      "id": 14,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "expr": "kaspa_watchtower_sync_daa_rate_per_hour{node=\"$node\"}",
+          "legendFormat": "DAA / h",
+          "refId": "A"
+        },
+        {
+          "expr": "kaspa_watchtower_sync_block_rate_per_hour{node=\"$node\"}",
+          "legendFormat": "blocks / h",
+          "refId": "B"
+        },
+        {
+          "expr": "kaspa_watchtower_sync_header_rate_per_hour{node=\"$node\"}",
+          "legendFormat": "headers / h",
+          "refId": "C"
+        }
+      ],
+      "title": "Sync Rates",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 8,
+        "x": 16,
+        "y": 24
+      },
+      "id": 15,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "expr": "kaspa_watchtower_sync_daa_delta{node=\"$node\"}",
+          "legendFormat": "DAA delta",
+          "refId": "A"
+        },
+        {
+          "expr": "kaspa_watchtower_sync_block_delta{node=\"$node\"}",
+          "legendFormat": "block delta",
+          "refId": "B"
+        },
+        {
+          "expr": "kaspa_watchtower_sync_header_delta{node=\"$node\"}",
+          "legendFormat": "header delta",
+          "refId": "C"
+        }
+      ],
+      "title": "Sync Deltas",
+      "type": "timeseries"
     }
   ],
   "refresh": "30s",
@@ -679,8 +856,8 @@
       {
         "current": {
           "selected": false,
-          "text": "kaspa-tn10-local",
-          "value": "kaspa-tn10-local"
+          "text": "kaspa-mainnet-local",
+          "value": "kaspa-mainnet-local"
         },
         "datasource": {
           "type": "prometheus",

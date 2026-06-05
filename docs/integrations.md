@@ -63,6 +63,9 @@ Dashboard JSON:
 grafana/kaspa-watchtower.json
 ```
 
+The dashboard includes node health, DAG/relay progress, benchmark rates,
+recovery history, and mainnet bootstrap sync progress panels.
+
 For the current local stack, copy it to:
 
 ```text
