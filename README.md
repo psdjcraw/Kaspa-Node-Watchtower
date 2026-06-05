@@ -87,6 +87,15 @@ Cron-friendly alert mode:
 ./run_watchtower.sh
 ```
 
+Common operator commands are also available through `make`:
+
+```bash
+make help
+make status
+make smoke
+make diagnostics-archive
+```
+
 Save a benchmark snapshot and compare recent snapshots:
 
 ```bash

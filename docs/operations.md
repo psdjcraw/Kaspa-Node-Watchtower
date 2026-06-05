@@ -54,6 +54,15 @@ Integration verification:
 scripts/check_integrations.sh
 ```
 
+Makefile command index:
+
+```bash
+make help
+make status
+make smoke
+make diagnostics-archive
+```
+
 GitHub Actions smoke status:
 
 ```bash
