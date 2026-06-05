@@ -225,3 +225,7 @@ See `docs/operations.md` for alert criteria and the Discord cron plan.
 See `docs/integrations.md` for Prometheus/Grafana integration steps.
 See `docs/status.md` for the active deployment map.
 See `docs/runbook.md` for failure handling.
+
+## License
+
+Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE).
