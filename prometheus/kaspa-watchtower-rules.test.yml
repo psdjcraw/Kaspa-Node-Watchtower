@@ -95,6 +95,66 @@ tests:
         exp_alerts: []
 
   - interval: 1m
+    input_series:
+      - series: 'kaspa_watchtower_sync_active{job="kaspa-watchtower",node="test"}'
+        values: '1+0x40'
+      - series: 'kaspa_watchtower_sync_baseline_available{job="kaspa-watchtower",node="test"}'
+        values: '1+0x40'
+      - series: 'kaspa_watchtower_sync_daa_delta{job="kaspa-watchtower",node="test"}'
+        values: '0+0x40'
+      - series: 'kaspa_watchtower_sync_block_delta{job="kaspa-watchtower",node="test"}'
+        values: '0+0x40'
+      - series: 'kaspa_watchtower_sync_header_delta{job="kaspa-watchtower",node="test"}'
+        values: '0+0x40'
+    alert_rule_test:
+      - eval_time: 35m
+        alertname: KaspaMainnetSyncProgressStalled
+        exp_alerts:
+          - exp_labels:
+              alertname: KaspaMainnetSyncProgressStalled
+              job: kaspa-watchtower
+              node: test
+              service: kaspa-watchtower
+              severity: warning
+            exp_annotations:
+              summary: "Kaspa mainnet sync progress stalled"
+              description: "Mainnet bootstrap sync counters did not advance for node test."
+
+  - interval: 1m
+    input_series:
+      - series: 'kaspa_watchtower_sync_active{job="kaspa-watchtower",node="test"}'
+        values: '1+0x40'
+      - series: 'kaspa_watchtower_sync_baseline_available{job="kaspa-watchtower",node="test"}'
+        values: '1+0x40'
+      - series: 'kaspa_watchtower_sync_daa_delta{job="kaspa-watchtower",node="test"}'
+        values: '10+0x40'
+      - series: 'kaspa_watchtower_sync_block_delta{job="kaspa-watchtower",node="test"}'
+        values: '0+0x40'
+      - series: 'kaspa_watchtower_sync_header_delta{job="kaspa-watchtower",node="test"}'
+        values: '0+0x40'
+    alert_rule_test:
+      - eval_time: 35m
+        alertname: KaspaMainnetSyncProgressStalled
+        exp_alerts: []
+
+  - interval: 1m
+    input_series:
+      - series: 'kaspa_watchtower_sync_active{job="kaspa-watchtower",node="test"}'
+        values: '1+0x40'
+      - series: 'kaspa_watchtower_sync_baseline_available{job="kaspa-watchtower",node="test"}'
+        values: '0+0x40'
+      - series: 'kaspa_watchtower_sync_daa_delta{job="kaspa-watchtower",node="test"}'
+        values: '0+0x40'
+      - series: 'kaspa_watchtower_sync_block_delta{job="kaspa-watchtower",node="test"}'
+        values: '0+0x40'
+      - series: 'kaspa_watchtower_sync_header_delta{job="kaspa-watchtower",node="test"}'
+        values: '0+0x40'
+    alert_rule_test:
+      - eval_time: 35m
+        alertname: KaspaMainnetSyncProgressStalled
+        exp_alerts: []
+
+  - interval: 1m
     input_series: []
     alert_rule_test:
       - eval_time: 3m

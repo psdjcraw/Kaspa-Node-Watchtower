@@ -295,6 +295,7 @@ The local `asus-traffic-monitor` Prometheus stack has the rule file copied to
 - `KaspaWatchtowerWarning`
 - `KaspaNodePeerCountLow`
 - `KaspaRelayProgressStalled`
+- `KaspaMainnetSyncProgressStalled`
 - `KaspaWatchtowerMetricsStale`
 - `KaspaWatchtowerRecoveryUnavailable`
 - `KaspaWatchtowerRecoveryCommandFailed`

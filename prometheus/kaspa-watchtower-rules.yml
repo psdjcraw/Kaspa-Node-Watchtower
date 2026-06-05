@@ -51,6 +51,21 @@ groups:
           summary: "Kaspa relay block progress stalled"
           description: "No relay blocks were observed in the recent watchtower window for node {{ $labels.node }}."
 
+      - alert: KaspaMainnetSyncProgressStalled
+        expr: |
+          (kaspa_watchtower_sync_active{job="kaspa-watchtower"} == 1)
+          and on(job,node) (kaspa_watchtower_sync_baseline_available{job="kaspa-watchtower"} == 1)
+          and on(job,node) (kaspa_watchtower_sync_daa_delta{job="kaspa-watchtower"} < 1)
+          and on(job,node) (kaspa_watchtower_sync_block_delta{job="kaspa-watchtower"} < 1)
+          and on(job,node) (kaspa_watchtower_sync_header_delta{job="kaspa-watchtower"} < 1)
+        for: 30m
+        labels:
+          severity: warning
+          service: kaspa-watchtower
+        annotations:
+          summary: "Kaspa mainnet sync progress stalled"
+          description: "Mainnet bootstrap sync counters did not advance for node {{ $labels.node }}."
+
       - alert: KaspaWatchtowerMetricsStale
         expr: time() - timestamp(kaspa_watchtower_status_ok{job="kaspa-watchtower"}) > 180
         for: 2m

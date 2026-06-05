@@ -29,6 +29,15 @@ else:
     print(result[0].get("value", ["", "missing"])[1])'
 }
 
+exporter_metric() {
+  local metric="$1"
+  curl -fsS "$EXPORTER_URL/metrics" |
+    awk -v metric="$metric" '
+      $1 ~ ("^" metric "(\\{|$)") {print $2; found=1; exit}
+      END {if (!found) print "missing"}
+    '
+}
+
 section "Watchtower"
 "$PYTHON_BIN" watchtower.py -c config.json --summary
 
@@ -49,20 +58,13 @@ fi
 section "Exporter"
 printf 'health: '
 curl -fsS "$EXPORTER_URL/-/healthy"
-printf 'status_ok: '
-curl -fsS "$EXPORTER_URL/metrics" | awk '/^kaspa_watchtower_status_ok/ {print $2; exit}'
-printf 'peer_count: '
-curl -fsS "$EXPORTER_URL/metrics" | awk '/^kaspa_watchtower_peer_count/ {print $2; exit}'
-printf 'sync_active: '
-curl -fsS "$EXPORTER_URL/metrics" | awk '/^kaspa_watchtower_sync_active/ {print $2; exit}'
-printf 'sync_baseline_available: '
-curl -fsS "$EXPORTER_URL/metrics" | awk '/^kaspa_watchtower_sync_baseline_available/ {print $2; exit}'
-printf 'sync_daa_rate_per_hour: '
-curl -fsS "$EXPORTER_URL/metrics" | awk '/^kaspa_watchtower_sync_daa_rate_per_hour/ {print $2; found=1; exit} END {if (!found) print "missing"}'
-printf 'sync_block_rate_per_hour: '
-curl -fsS "$EXPORTER_URL/metrics" | awk '/^kaspa_watchtower_sync_block_rate_per_hour/ {print $2; found=1; exit} END {if (!found) print "missing"}'
-printf 'sync_header_rate_per_hour: '
-curl -fsS "$EXPORTER_URL/metrics" | awk '/^kaspa_watchtower_sync_header_rate_per_hour/ {print $2; found=1; exit} END {if (!found) print "missing"}'
+printf 'status_ok: %s\n' "$(exporter_metric kaspa_watchtower_status_ok)"
+printf 'peer_count: %s\n' "$(exporter_metric kaspa_watchtower_peer_count)"
+printf 'sync_active: %s\n' "$(exporter_metric kaspa_watchtower_sync_active)"
+printf 'sync_baseline_available: %s\n' "$(exporter_metric kaspa_watchtower_sync_baseline_available)"
+printf 'sync_daa_rate_per_hour: %s\n' "$(exporter_metric kaspa_watchtower_sync_daa_rate_per_hour)"
+printf 'sync_block_rate_per_hour: %s\n' "$(exporter_metric kaspa_watchtower_sync_block_rate_per_hour)"
+printf 'sync_header_rate_per_hour: %s\n' "$(exporter_metric kaspa_watchtower_sync_header_rate_per_hour)"
 
 section "Prometheus"
 printf 'target status: '
