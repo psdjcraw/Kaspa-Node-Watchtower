@@ -1,5 +1,9 @@
 # Kaspa Node Watchtower
 
+[![smoke](https://github.com/psdjcraw/Kaspa-Node-Watchtower/actions/workflows/smoke.yml/badge.svg)](https://github.com/psdjcraw/Kaspa-Node-Watchtower/actions/workflows/smoke.yml)
+[![License](https://img.shields.io/github/license/psdjcraw/Kaspa-Node-Watchtower)](LICENSE)
+![Python](https://img.shields.io/badge/python-3.12-blue)
+
 Lightweight monitoring and reporting tools for a local Kaspa node.
 
 ## Goal
