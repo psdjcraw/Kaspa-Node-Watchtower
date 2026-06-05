@@ -94,6 +94,15 @@ Use benchmark snapshots before and after `rusty-kaspa` upgrades or configuration
 changes. The report compares DAA score, block count, relay progress, peer state,
 severity counts, and disk free space across the saved window.
 
+Prometheus textfile metrics:
+
+```bash
+.venv/bin/python watchtower.py -c config.json --prometheus
+```
+
+Alert-mode runs also refresh `state/watchtower.prom`, so the cron health check
+keeps the textfile fresh for local scraping or textfile collectors.
+
 Manual recovery dry-run:
 
 ```bash
@@ -120,6 +129,12 @@ open state/status.html
 
 The generated status page includes the latest health checks, recent check
 history, and a benchmark trend section from the latest saved snapshots.
+
+Prometheus textfile metrics:
+
+```text
+state/watchtower.prom
+```
 
 Canvas-hosted status page file:
 

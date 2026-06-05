@@ -19,10 +19,11 @@ explorers or hosted APIs.
 - Concise `--summary` output for quick Discord/operator status checks
 - Benchmark snapshots and reports for version/configuration comparison
 - Benchmark trend section in the generated status dashboard
+- Prometheus textfile metrics for local scraping or textfile collectors
 
 ## Planned Features
 
-- Export benchmark data to Prometheus or a long-lived metrics store
+- Push benchmark history to a long-lived metrics store
 
 ## Current Context
 
@@ -91,6 +92,12 @@ Cron-friendly benchmark snapshot mode:
 
 ```bash
 ./run_benchmark_snapshot.sh
+```
+
+Write Prometheus textfile metrics:
+
+```bash
+.venv/bin/python watchtower.py -c config.json --prometheus
 ```
 
 See `docs/operations.md` for alert criteria and the Discord cron plan.

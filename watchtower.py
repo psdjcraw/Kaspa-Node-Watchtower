@@ -29,6 +29,7 @@ DEFAULT_CONFIG = {
     "status_page_path": "state/status.html",
     "canvas_status_page_path": "",
     "benchmark_path": "state/benchmarks.jsonl",
+    "prometheus_metrics_path": "state/watchtower.prom",
     "thresholds": {
         "alert_repeat_minutes": 60,
         "stale_log_minutes": 15,
@@ -813,6 +814,8 @@ def alert(config: dict) -> int:
     status_page_path = Path(config.get("status_page_path") or DEFAULT_CONFIG["status_page_path"])
     canvas_status_page = config.get("canvas_status_page_path") or DEFAULT_CONFIG["canvas_status_page_path"]
     benchmark_path = Path(config.get("benchmark_path") or DEFAULT_CONFIG["benchmark_path"])
+    metrics_path = Path(config.get("prometheus_metrics_path") or DEFAULT_CONFIG["prometheus_metrics_path"])
+    benchmark_summary = build_benchmark_summary(benchmark_path, limit=48)
     thresholds = config.get("thresholds", {})
     repeat_minutes = float(thresholds.get("alert_repeat_minutes", 60))
     state = load_state(state_path)
@@ -837,6 +840,7 @@ def alert(config: dict) -> int:
     write_status_page(status_page_path, report, state, benchmark_path)
     if canvas_status_page:
         write_status_page(Path(canvas_status_page), report, state, benchmark_path)
+    write_prometheus_metrics(metrics_path, report, benchmark_summary)
 
     if should_emit:
         print(format_alert(report, previous_status, previous_severity))
@@ -1045,14 +1049,19 @@ def build_benchmark_summary(path: Path, *, limit: int) -> dict[str, Any]:
             "window": "need at least 2 snapshots",
             "daa_delta": "unknown",
             "daa_rate": "unknown",
+            "daa_rate_per_hour": None,
             "block_delta": "unknown",
             "block_rate": "unknown",
+            "block_rate_per_hour": None,
             "relay_rate": "unknown",
+            "relay_rate_per_min": None,
             "latest_peer_state": "unknown",
             "latest_status": "unknown",
             "latest_severity": "unknown",
             "severity_counts": "{}",
             "disk_delta": "unknown",
+            "disk_delta_gb": None,
+            "window_hours": None,
         }
 
     first = items[0]
@@ -1067,14 +1076,19 @@ def build_benchmark_summary(path: Path, *, limit: int) -> dict[str, Any]:
             "window": "invalid timestamps",
             "daa_delta": "unknown",
             "daa_rate": "unknown",
+            "daa_rate_per_hour": None,
             "block_delta": "unknown",
             "block_rate": "unknown",
+            "block_rate_per_hour": None,
             "relay_rate": "unknown",
+            "relay_rate_per_min": None,
             "latest_peer_state": "unknown",
             "latest_status": "unknown",
             "latest_severity": "unknown",
             "severity_counts": "{}",
             "disk_delta": "unknown",
+            "disk_delta_gb": None,
+            "window_hours": None,
         }
 
     elapsed_seconds = max(0.0, (last_at - first_at).total_seconds())
@@ -1097,6 +1111,11 @@ def build_benchmark_summary(path: Path, *, limit: int) -> dict[str, Any]:
         severities[severity] = severities.get(severity, 0) + 1
 
     disk_delta_text = "unknown" if disk_delta is None else f"{disk_delta:+.2f} GiB"
+    daa_rate_per_hour = None if daa_delta is None or elapsed_hours <= 0 else daa_delta / elapsed_hours
+    block_rate_per_hour = (
+        None if block_delta is None or elapsed_hours <= 0 else block_delta / elapsed_hours
+    )
+    relay_rate_per_min = None if relay_minutes <= 0 else relay_blocks / relay_minutes
     latest_peer_state = (
         f"peers={last.get('peer_count')} "
         f"active={last.get('active_peers')} "
@@ -1109,14 +1128,19 @@ def build_benchmark_summary(path: Path, *, limit: int) -> dict[str, Any]:
         "window": f"{first.get('checked_at')} -> {last.get('checked_at')} ({elapsed_hours:.2f}h)",
         "daa_delta": daa_delta if daa_delta is not None else "unknown",
         "daa_rate": format_rate(daa_delta, elapsed_hours),
+        "daa_rate_per_hour": daa_rate_per_hour,
         "block_delta": block_delta if block_delta is not None else "unknown",
         "block_rate": format_rate(block_delta, elapsed_hours),
+        "block_rate_per_hour": block_rate_per_hour,
         "relay_rate": relay_rate,
+        "relay_rate_per_min": relay_rate_per_min,
         "latest_peer_state": latest_peer_state,
         "latest_status": last.get("status"),
         "latest_severity": last.get("severity"),
         "severity_counts": json.dumps(severities, sort_keys=True),
         "disk_delta": disk_delta_text,
+        "disk_delta_gb": disk_delta,
+        "window_hours": elapsed_hours,
     }
 
 
@@ -1140,6 +1164,163 @@ def benchmark_report(config: dict, *, limit: int) -> int:
     ]
     print("\n".join(lines))
     return 0 if summary["latest_status"] == "ok" else 1
+
+
+def prometheus_label_value(value: Any) -> str:
+    return str(value).replace("\\", "\\\\").replace("\n", "\\n").replace('"', '\\"')
+
+
+def prometheus_labels(labels: dict[str, Any]) -> str:
+    if not labels:
+        return ""
+    content = ",".join(
+        f'{key}="{prometheus_label_value(value)}"' for key, value in sorted(labels.items())
+    )
+    return "{" + content + "}"
+
+
+def prometheus_number(value: Any) -> float | None:
+    if isinstance(value, bool):
+        return 1.0 if value else 0.0
+    return numeric(value)
+
+
+def add_prometheus_metric(
+    lines: list[str],
+    name: str,
+    value: Any,
+    labels: dict[str, Any],
+) -> None:
+    number = prometheus_number(value)
+    if number is None:
+        return
+    lines.append(f"{name}{prometheus_labels(labels)} {number:g}")
+
+
+def format_prometheus_metrics(report: dict[str, Any], benchmark_summary: dict[str, Any]) -> str:
+    node_labels = {"node": report["node_name"]}
+    grpc_metrics = report.get("grpc_metrics") or {}
+    progress = report.get("progress") or {}
+    disk = report.get("disk") or {}
+    severity_values = {"ok": 0, "warn": 1, "critical": 2}
+    lines = [
+        "# TYPE kaspa_watchtower_status_ok gauge",
+        "# TYPE kaspa_watchtower_severity_value gauge",
+        "# TYPE kaspa_watchtower_check_ok gauge",
+    ]
+    add_prometheus_metric(lines, "kaspa_watchtower_status_ok", report["status"] == "ok", node_labels)
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_severity_value",
+        severity_values.get(report["severity"], -1),
+        node_labels,
+    )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_failed_checks",
+        len(failed_check_names(report)),
+        node_labels,
+    )
+    for check in report["checks"]:
+        add_prometheus_metric(
+            lines,
+            "kaspa_watchtower_check_ok",
+            check.get("ok"),
+            {**node_labels, "check": check.get("name", "unknown")},
+        )
+
+    add_prometheus_metric(lines, "kaspa_watchtower_peer_count", grpc_metrics.get("peer_count"), node_labels)
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_active_peer_count",
+        grpc_metrics.get("active_peers"),
+        node_labels,
+    )
+    add_prometheus_metric(lines, "kaspa_watchtower_synced", grpc_metrics.get("is_synced"), node_labels)
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_virtual_daa_score",
+        grpc_metrics.get("virtual_daa_score"),
+        node_labels,
+    )
+    add_prometheus_metric(lines, "kaspa_watchtower_block_count", grpc_metrics.get("block_count"), node_labels)
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_relay_blocks_window",
+        progress.get("relay_blocks_in_window"),
+        node_labels,
+    )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_relay_events_window",
+        progress.get("relay_events_in_window"),
+        node_labels,
+    )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_latest_relay_age_seconds",
+        progress.get("latest_relay_age_seconds"),
+        node_labels,
+    )
+    add_prometheus_metric(lines, "kaspa_watchtower_disk_free_gb", disk.get("free_gb"), node_labels)
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_disk_free_percent",
+        disk.get("free_percent"),
+        node_labels,
+    )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_benchmark_snapshots",
+        benchmark_summary.get("snapshots"),
+        node_labels,
+    )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_benchmark_window_hours",
+        benchmark_summary.get("window_hours"),
+        node_labels,
+    )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_benchmark_daa_rate_per_hour",
+        benchmark_summary.get("daa_rate_per_hour"),
+        node_labels,
+    )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_benchmark_block_rate_per_hour",
+        benchmark_summary.get("block_rate_per_hour"),
+        node_labels,
+    )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_benchmark_relay_rate_per_min",
+        benchmark_summary.get("relay_rate_per_min"),
+        node_labels,
+    )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_benchmark_disk_free_delta_gb",
+        benchmark_summary.get("disk_delta_gb"),
+        node_labels,
+    )
+    return "\n".join(lines) + "\n"
+
+
+def write_prometheus_metrics(path: Path, report: dict[str, Any], benchmark_summary: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(format_prometheus_metrics(report, benchmark_summary), encoding="utf-8")
+
+
+def prometheus(config: dict) -> int:
+    report = build_report(config)
+    benchmark_path = Path(config.get("benchmark_path") or DEFAULT_CONFIG["benchmark_path"])
+    metrics_path = Path(config.get("prometheus_metrics_path") or DEFAULT_CONFIG["prometheus_metrics_path"])
+    benchmark_summary = build_benchmark_summary(benchmark_path, limit=48)
+    write_prometheus_metrics(metrics_path, report, benchmark_summary)
+    print(f"Prometheus metrics written: {metrics_path}")
+    return 0 if report["status"] == "ok" else 1
 
 
 def recover(config: dict, *, force: bool = False, dry_run: bool = False) -> int:
@@ -1188,6 +1369,7 @@ def main() -> int:
     parser.add_argument("--benchmark-snapshot", action="store_true", help="Append a benchmark snapshot to the JSONL benchmark log.")
     parser.add_argument("--benchmark-report", action="store_true", help="Print a benchmark report from saved snapshots.")
     parser.add_argument("--benchmark-limit", type=int, default=100, help="Number of recent benchmark snapshots to include.")
+    parser.add_argument("--prometheus", action="store_true", help="Write Prometheus textfile metrics.")
     args = parser.parse_args()
     config = load_config(args.config)
     if args.json:
@@ -1206,6 +1388,8 @@ def main() -> int:
         return benchmark_snapshot(config)
     if args.benchmark_report:
         return benchmark_report(config, limit=args.benchmark_limit)
+    if args.prometheus:
+        return prometheus(config)
     return status(config)
 
 
