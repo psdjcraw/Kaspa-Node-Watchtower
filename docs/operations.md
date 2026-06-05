@@ -76,6 +76,19 @@ HTML status page:
 open state/status.html
 ```
 
+Simulation test without touching the live node:
+
+```bash
+jq '.state_path="state/sim-watchtower-state.json"
+  | .status_page_path="state/sim-status.html"
+  | .thresholds.min_peer_count=999' config.json > /tmp/kaspa-watchtower-sim.json
+.venv/bin/python watchtower.py -c /tmp/kaspa-watchtower-sim.json --alert
+.venv/bin/python watchtower.py -c /tmp/kaspa-watchtower-sim.json --alert
+```
+
+The first simulated run should print a `critical` alert. The second run should
+stay quiet because repeat suppression is active.
+
 ## Git Push
 
 This repository uses the registered GitHub deploy key at:

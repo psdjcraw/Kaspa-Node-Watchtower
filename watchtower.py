@@ -697,24 +697,38 @@ def format_alert(
     previous_status: str | None = None,
     previous_severity: str | None = None,
 ) -> str:
+    failed_checks = [check for check in report["checks"] if not check["ok"]]
+    if report["severity"] == "ok" and previous_status and previous_status != "ok":
+        title = f"Kaspa watchtower: {report['node_name']} recovered"
+    elif report["severity"] == "critical":
+        title = f"Kaspa watchtower: {report['node_name']} critical"
+    elif report["severity"] == "warn":
+        title = f"Kaspa watchtower: {report['node_name']} warning"
+    else:
+        title = f"Kaspa watchtower: {report['node_name']} ok"
+
     lines = [
-        f"Kaspa watchtower: {report['node_name']} is {report['severity']}",
+        title,
         f"checked_at={report['checked_at']}",
     ]
     if previous_status:
         lines.append(f"previous_status={previous_status}")
     if previous_severity:
         lines.append(f"previous_severity={previous_severity}")
-    for check in report["checks"]:
-        if not check["ok"] or report["status"] == "ok":
-            mark = "OK" if check["ok"] else "ALERT"
-            lines.append(f"{mark} {check['name']}: {check['detail']}")
+
+    if failed_checks:
+        lines.append("원인:")
+        for check in failed_checks:
+            lines.append(f"- {check['name']}: {check['detail']}")
+    elif report["severity"] == "ok":
+        lines.append("상태: 모든 체크 정상")
+
     if report["latest_throughput"]:
-        lines.append(report["latest_throughput"])
+        lines.append(f"Throughput: {report['latest_throughput']}")
     grpc_metrics = report.get("grpc_metrics") or {}
     if grpc_metrics.get("ok"):
         lines.append(
-            "gRPC metrics: "
+            "gRPC: "
             f"synced={grpc_metrics.get('is_synced')} "
             f"peers={grpc_metrics.get('peer_count')} "
             f"network={grpc_metrics.get('network_id')} "
@@ -722,7 +736,7 @@ def format_alert(
         )
     progress = report["progress"]
     lines.append(
-        "Relay progress: "
+        "Progress: "
         f"{progress['relay_blocks_in_window']} blocks / "
         f"{progress['relay_events_in_window']} events in "
         f"{progress['window_minutes']:g}m"
