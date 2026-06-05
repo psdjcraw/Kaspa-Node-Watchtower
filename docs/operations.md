@@ -279,6 +279,9 @@ Manual recovery when an alert requires it:
 .venv/bin/python watchtower.py -c config.json --recover
 ```
 
+Recovery attempts, skips, dry-runs, command exit codes, and post-recovery
+checks are recorded in `state/recovery-history.jsonl`.
+
 `--alert` writes state to `state/watchtower-state.json`. It emits output when
 status changes, and keeps emitting while the status remains `alert`.
 

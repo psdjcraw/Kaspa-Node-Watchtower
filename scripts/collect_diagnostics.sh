@@ -85,6 +85,7 @@ if [ "$CREATE_ARCHIVE" -eq 1 ]; then
     state/status.html \
     state/watchtower.prom \
     state/watchtower-state.json \
+    state/recovery-history.jsonl \
     state/last-smoke-test.txt \
     state/last-benchmark-snapshot.txt \
     state/prometheus-alert-state.json

@@ -11,6 +11,7 @@
   "canvas_status_page_path": "/Users/psdjc/.openclaw/canvas/kaspa-watchtower/status.html",
   "benchmark_path": "state/benchmarks.jsonl",
   "prometheus_metrics_path": "state/watchtower.prom",
+  "recovery_history_path": "state/recovery-history.jsonl",
   "retention": {
     "state_history_entries": 100,
     "benchmark_entries": 1000
@@ -28,6 +29,7 @@
   },
   "recovery": {
     "mode": "manual",
+    "post_recovery_wait_seconds": 20,
     "restart_command": [
       "launchctl",
       "kickstart",

@@ -12,6 +12,7 @@ import re
 import shutil
 import socket
 import subprocess
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
@@ -30,6 +31,7 @@ DEFAULT_CONFIG = {
     "canvas_status_page_path": "",
     "benchmark_path": "state/benchmarks.jsonl",
     "prometheus_metrics_path": "state/watchtower.prom",
+    "recovery_history_path": "state/recovery-history.jsonl",
     "retention": {
         "state_history_entries": 100,
         "benchmark_entries": 1000,
@@ -48,6 +50,7 @@ DEFAULT_CONFIG = {
     "recovery": {
         "mode": "manual",
         "restart_command": [],
+        "post_recovery_wait_seconds": 20,
     },
 }
 
@@ -1500,7 +1503,13 @@ def config_validation_checks(config: dict) -> list[Check]:
         Check("status_page_path", path_parent_writable(config.get("status_page_path") or DEFAULT_CONFIG["status_page_path"]), config.get("status_page_path") or DEFAULT_CONFIG["status_page_path"]),
         Check("benchmark_path", path_parent_writable(config.get("benchmark_path") or DEFAULT_CONFIG["benchmark_path"]), config.get("benchmark_path") or DEFAULT_CONFIG["benchmark_path"]),
         Check("prometheus_metrics_path", path_parent_writable(config.get("prometheus_metrics_path") or DEFAULT_CONFIG["prometheus_metrics_path"]), config.get("prometheus_metrics_path") or DEFAULT_CONFIG["prometheus_metrics_path"]),
+        Check("recovery_history_path", path_parent_writable(config.get("recovery_history_path") or DEFAULT_CONFIG["recovery_history_path"]), config.get("recovery_history_path") or DEFAULT_CONFIG["recovery_history_path"]),
         Check("recovery.mode", recovery_mode in {"manual"}, str(recovery_mode)),
+        Check(
+            "recovery.post_recovery_wait_seconds",
+            number_between_config(recovery.get("post_recovery_wait_seconds", 20), 0),
+            str(recovery.get("post_recovery_wait_seconds", 20)),
+        ),
     ]
     threshold_specs = [
         ("alert_repeat_minutes", lambda value: number_between_config(value, 1)),
@@ -1573,29 +1582,65 @@ def prune_state(config: dict) -> int:
     return 0
 
 
+def recovery_history_path(config: dict) -> Path:
+    return Path(config.get("recovery_history_path") or DEFAULT_CONFIG["recovery_history_path"])
+
+
+def append_recovery_record(config: dict, record: dict[str, Any]) -> Path:
+    path = recovery_history_path(config)
+    append_jsonl(path, record)
+    return path
+
+
+def report_recovery_record(config: dict, record: dict[str, Any]) -> None:
+    path = append_recovery_record(config, record)
+    print(f"Recovery record written: {path}")
+
+
 def recover(config: dict, *, force: bool = False, dry_run: bool = False) -> int:
     report = build_report(config)
     recovery = config.get("recovery", {})
     restart_command = recovery.get("restart_command") or []
     mode = recovery.get("mode", "manual")
+    record: dict[str, Any] = {
+        "started_at": dt.datetime.now().astimezone().isoformat(),
+        "node_name": report.get("node_name"),
+        "status_before": report.get("status"),
+        "severity_before": report.get("severity"),
+        "failed_checks_before": failed_check_names(report),
+        "mode": mode,
+        "force": force,
+        "dry_run": dry_run,
+        "restart_command": restart_command,
+    }
 
     if not restart_command:
+        record.update({"action": "unavailable", "reason": "restart_command is not configured"})
         print("Recovery unavailable: restart_command is not configured")
+        report_recovery_record(config, record)
         return 2
     if mode != "manual":
+        record.update({"action": "unavailable", "reason": f"unsupported mode={mode}"})
         print(f"Recovery unavailable: unsupported mode={mode}")
+        report_recovery_record(config, record)
         return 2
     if report["severity"] == "ok" and not force:
+        record.update({"action": "skipped", "reason": "node is healthy"})
         print("Recovery skipped: node is healthy; use --force-recover to override")
+        report_recovery_record(config, record)
         return 0
 
     print(f"Recovery target: {report['node_name']} severity={report['severity']}")
     print("Recovery command: " + " ".join(restart_command))
     if dry_run:
+        record.update({"action": "dry_run", "completed_at": dt.datetime.now().astimezone().isoformat()})
         print("Recovery dry-run: command not executed")
+        report_recovery_record(config, record)
         return 0
 
+    record["action"] = "executed"
     completed = run_command_result(restart_command)
+    record["exit_code"] = completed.returncode
     if completed.stdout.strip():
         print(completed.stdout.strip())
     if completed.stderr.strip():
@@ -1604,6 +1649,27 @@ def recover(config: dict, *, force: bool = False, dry_run: bool = False) -> int:
         print("Recovery command completed")
     else:
         print(f"Recovery command failed with exit code {completed.returncode}")
+        record["completed_at"] = dt.datetime.now().astimezone().isoformat()
+        report_recovery_record(config, record)
+        return completed.returncode
+
+    wait_seconds = float(recovery.get("post_recovery_wait_seconds", 20))
+    if wait_seconds > 0:
+        print(f"Post-recovery check waiting {wait_seconds:g}s")
+        time.sleep(wait_seconds)
+    after = build_report(config)
+    record.update(
+        {
+            "completed_at": dt.datetime.now().astimezone().isoformat(),
+            "status_after": after.get("status"),
+            "severity_after": after.get("severity"),
+            "failed_checks_after": failed_check_names(after),
+        }
+    )
+    print(f"Post-recovery status: {after['status']} severity={after['severity']}")
+    report_recovery_record(config, record)
+    if after["status"] != "ok":
+        return 1
     return completed.returncode
 
 

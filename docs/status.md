@@ -41,6 +41,7 @@
 - Benchmark JSONL: `state/benchmarks.jsonl`
 - Upgrade checkpoints: `state/upgrade-checkpoints.jsonl`
 - SQLite history: `state/watchtower-history.sqlite`
+- Recovery history: `state/recovery-history.jsonl`
 - Prometheus textfile: `state/watchtower.prom`
 - Last benchmark output: `state/last-benchmark-snapshot.txt`
 - Last smoke output: `state/last-smoke-test.txt`
