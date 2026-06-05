@@ -1,0 +1,46 @@
+name: Feature request
+description: Suggest a new capability or improvement.
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What operator problem would this solve?
+      placeholder: It is hard to tell whether...
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Describe the behavior, command, metric, alert, or dashboard change.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: What workarounds or other designs have you considered?
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Health checks
+        - gRPC metrics
+        - Prometheus/Grafana
+        - Alerts
+        - Recovery
+        - Benchmarks
+        - Documentation
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Add links, examples, screenshots, or sanitized output.

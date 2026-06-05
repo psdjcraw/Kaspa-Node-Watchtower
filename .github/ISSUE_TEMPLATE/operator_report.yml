@@ -1,0 +1,59 @@
+name: Operator report
+description: Share a sanitized node operation report, alert, or diagnostics finding.
+title: "[Operator]: "
+labels:
+  - operator-report
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this for operational findings that may improve the watchtower,
+        docs, alerts, dashboards, or recovery guidance. Do not include private
+        hostnames, credentials, wallet data, or unsanitized logs.
+  - type: input
+    id: network
+    attributes:
+      label: Kaspa network
+      placeholder: mainnet, testnet 10, simnet, devnet
+    validations:
+      required: true
+  - type: dropdown
+    id: state
+    attributes:
+      label: Node state
+      options:
+        - Initial block download
+        - Catching up
+        - Relay mode
+        - Recovering
+        - Unknown
+    validations:
+      required: true
+  - type: textarea
+    id: report
+    attributes:
+      label: Sanitized report
+      description: Paste the relevant watchtower summary, alert, or diagnostics excerpt.
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: impact
+    attributes:
+      label: Impact
+      description: What did this affect for node operation or monitoring?
+    validations:
+      required: true
+  - type: textarea
+    id: suggested-change
+    attributes:
+      label: Suggested change
+      description: What should the project change based on this report?
+  - type: textarea
+    id: checks
+    attributes:
+      label: Checks run
+      placeholder: |
+        - `make summary`: pass/fail/not run
+        - `make validate`: pass/fail/not run
+        - `make integrations`: pass/fail/not run

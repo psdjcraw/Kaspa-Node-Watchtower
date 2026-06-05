@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Kaspa Node Watchtower documentation
+    url: https://github.com/psdjcraw/Kaspa-Node-Watchtower#readme
+    about: Check the README, runbook, and integration docs before filing an issue.
