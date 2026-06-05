@@ -112,4 +112,10 @@ Endpoint:
 http://127.0.0.1:9660/metrics
 ```
 
+Grafana dashboard JSON:
+
+```text
+grafana/kaspa-watchtower.json
+```
+
 See `docs/operations.md` for alert criteria and the Discord cron plan.

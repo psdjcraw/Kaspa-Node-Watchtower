@@ -127,6 +127,25 @@ Prometheus scrape target from the existing Docker stack:
           - host.docker.internal:9660
 ```
 
+The local `asus-traffic-monitor` Prometheus config has this scrape job applied.
+Prometheus target health can be checked at:
+
+```text
+http://127.0.0.1:9090/targets?search=kaspa-watchtower
+```
+
+Grafana dashboard:
+
+```text
+grafana/kaspa-watchtower.json
+```
+
+Provisioned local Grafana URL:
+
+```text
+http://127.0.0.1:3000/d/kaspa-watchtower/kaspa-watchtower
+```
+
 Manual recovery dry-run:
 
 ```bash
