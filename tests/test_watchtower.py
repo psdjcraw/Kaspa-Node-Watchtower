@@ -336,6 +336,7 @@ class WatchtowerUnitTests(unittest.TestCase):
 
         self.assertIn("sync completed", text)
         self.assertIn("상태: mainnet sync completed", text)
+        self.assertIn("require_synced=true", text)
 
     def test_config_validation_rejects_invalid_numeric_settings(self):
         with tempfile.TemporaryDirectory() as tmp:

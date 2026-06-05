@@ -1096,6 +1096,7 @@ def format_alert(
             lines.append(f"- {check['name']}: {check['detail']}")
     elif event == "sync_completed":
         lines.append("상태: mainnet sync completed")
+        lines.append("Next: set thresholds.require_synced=true for strict production monitoring")
     elif report["severity"] == "ok":
         lines.append("상태: 모든 체크 정상")
 

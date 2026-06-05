@@ -100,6 +100,19 @@ for the configured `sync_progress_stall_minutes` window.
 After the node reaches `is_synced=true`, re-enable `require_synced=true` for
 strict production monitoring if needed.
 
+When the watchtower announces sync completion, update `config.json`:
+
+```json
+"require_synced": true
+```
+
+Then run:
+
+```bash
+.venv/bin/python watchtower.py -c config.json --validate-config
+./run_watchtower.sh
+```
+
 ## `block_progress` Failed
 
 Check recent relay activity:
