@@ -150,6 +150,12 @@ scripts/upgrade_checkpoint.py after --label post-upgrade
 scripts/upgrade_checkpoint.py report
 ```
 
+SQLite history export:
+
+```bash
+scripts/export_history_sqlite.py
+```
+
 Apply retention limits:
 
 ```bash
