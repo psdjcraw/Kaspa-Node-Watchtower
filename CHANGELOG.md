@@ -16,6 +16,8 @@ All notable changes to Kaspa Node Watchtower are tracked here.
   recent SQLite history summaries across benchmark, recovery, and upgrade data.
 - Sanitized sample status reports for healthy, bootstrap, critical RPC/gRPC
   failure, and disk pressure states.
+- Grafana panels for relay freshness, bootstrap progress rates, and recovery
+  action mix.
 - Development version reporting through `watchtower.py --version` and
   `make version`.
 - Bootstrap script and `make bootstrap` target for virtualenv dependency

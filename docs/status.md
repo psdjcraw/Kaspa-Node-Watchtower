@@ -9,8 +9,9 @@
 - Metrics exporter: `http://127.0.0.1:9660/metrics`
 - Prometheus target: `kaspa-watchtower` at `host.docker.internal:9660`
 - Grafana dashboard: `http://127.0.0.1:3000/d/kaspa-watchtower/kaspa-watchtower`
-- Grafana recovery panels: recovery counts, latest recovery timestamps, and recovery trend
-- Grafana sync panels: mainnet sync monitor, sync rates, and sync deltas
+- Grafana recovery panels: recovery counts, latest recovery timestamps, recovery trend, and recovery action mix
+- Grafana sync panels: mainnet sync monitor, sync rates, sync deltas, and bootstrap progress rates
+- Grafana relay panels: relay window progress and latest relay freshness
 - GitHub Actions smoke workflow: `https://github.com/psdjcraw/Kaspa-Node-Watchtower/actions/workflows/smoke.yml`
 - GitHub Actions CodeQL workflow: `https://github.com/psdjcraw/Kaspa-Node-Watchtower/actions/workflows/codeql.yml`
 - Canvas status page: `/Users/psdjc/.openclaw/canvas/kaspa-watchtower/status.html`

@@ -1064,6 +1064,181 @@
       ],
       "title": "Benchmark Floor",
       "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 60
+              },
+              {
+                "color": "red",
+                "value": 300
+              }
+            ]
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 8,
+        "x": 0,
+        "y": 39
+      },
+      "id": 19,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "targets": [
+        {
+          "expr": "kaspa_watchtower_latest_relay_age_seconds{node=\"$node\"}",
+          "legendFormat": "latest relay age",
+          "refId": "A"
+        }
+      ],
+      "title": "Relay Freshness",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 2,
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 8,
+        "x": 8,
+        "y": 39
+      },
+      "id": 20,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "expr": "kaspa_watchtower_sync_daa_rate_per_hour{node=\"$node\"}",
+          "legendFormat": "DAA / h",
+          "refId": "A"
+        },
+        {
+          "expr": "kaspa_watchtower_sync_block_rate_per_hour{node=\"$node\"}",
+          "legendFormat": "blocks / h",
+          "refId": "B"
+        },
+        {
+          "expr": "kaspa_watchtower_sync_header_rate_per_hour{node=\"$node\"}",
+          "legendFormat": "headers / h",
+          "refId": "C"
+        },
+        {
+          "expr": "kaspa_watchtower_sync_elapsed_minutes{node=\"$node\"}",
+          "legendFormat": "elapsed minutes",
+          "refId": "D"
+        }
+      ],
+      "title": "Bootstrap Progress Rates",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 8,
+        "x": 16,
+        "y": 39
+      },
+      "id": 21,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "expr": "kaspa_watchtower_recovery_executed_total{node=\"$node\"}",
+          "legendFormat": "executed",
+          "refId": "A"
+        },
+        {
+          "expr": "kaspa_watchtower_recovery_dry_runs_total{node=\"$node\"}",
+          "legendFormat": "dry-runs",
+          "refId": "B"
+        },
+        {
+          "expr": "kaspa_watchtower_recovery_skipped_total{node=\"$node\"}",
+          "legendFormat": "skipped",
+          "refId": "C"
+        },
+        {
+          "expr": "kaspa_watchtower_recovery_unavailable_total{node=\"$node\"}",
+          "legendFormat": "unavailable",
+          "refId": "D"
+        }
+      ],
+      "title": "Recovery Action Mix",
+      "type": "timeseries"
     }
   ],
   "refresh": "30s",
@@ -1112,6 +1287,6 @@
   "timezone": "browser",
   "title": "Kaspa Watchtower",
   "uid": "kaspa-watchtower",
-  "version": 4,
+  "version": 5,
   "weekStart": ""
 }
