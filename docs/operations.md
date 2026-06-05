@@ -54,6 +54,12 @@ Integration verification:
 scripts/check_integrations.sh
 ```
 
+Full local smoke test:
+
+```bash
+scripts/smoke_test.sh
+```
+
 Human-readable status:
 
 ```bash

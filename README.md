@@ -130,5 +130,11 @@ Run alert rule tests:
 prometheus/run_rule_tests.sh
 ```
 
+Run the full local smoke test:
+
+```bash
+scripts/smoke_test.sh
+```
+
 See `docs/operations.md` for alert criteria and the Discord cron plan.
 See `docs/integrations.md` for Prometheus/Grafana integration steps.
