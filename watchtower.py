@@ -4,14 +4,16 @@
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 import json
 import os
 import re
 import shutil
+import socket
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
+from typing import Any, Iterable
 
 
 DEFAULT_CONFIG = {
@@ -21,6 +23,13 @@ DEFAULT_CONFIG = {
     "log_path": "",
     "data_dir": "",
     "rpc_endpoint": "",
+    "state_path": "state/watchtower-state.json",
+    "thresholds": {
+        "stale_log_minutes": 15,
+        "disk_free_gb_min": 20,
+        "disk_free_percent_min": 5,
+        "require_rpc": True,
+    },
 }
 
 
@@ -28,6 +37,16 @@ DEFAULT_CONFIG = {
 class IbdCompletion:
     timestamp: str
     blocks: int
+
+
+@dataclass(frozen=True)
+class Check:
+    name: str
+    ok: bool
+    detail: str
+
+    def as_dict(self) -> dict[str, Any]:
+        return {"name": self.name, "ok": self.ok, "detail": self.detail}
 
 
 def load_config(path: Path | None) -> dict:
@@ -63,6 +82,25 @@ def dir_size(path: str) -> str:
     return output.split()[0] if output else "unknown"
 
 
+def disk_usage(path: str) -> dict[str, Any]:
+    if not path:
+        return {"configured": False}
+    target = Path(path)
+    if not target.exists():
+        return {"configured": True, "exists": False}
+    usage = shutil.disk_usage(target)
+    free_gb = usage.free / (1024**3)
+    total_gb = usage.total / (1024**3)
+    free_percent = (usage.free / usage.total) * 100 if usage.total else 0
+    return {
+        "configured": True,
+        "exists": True,
+        "free_gb": round(free_gb, 2),
+        "total_gb": round(total_gb, 2),
+        "free_percent": round(free_percent, 2),
+    }
+
+
 def tail_lines(path: Path, max_bytes: int = 2_000_000) -> list[str]:
     size = path.stat().st_size
     with path.open("rb") as handle:
@@ -81,6 +119,39 @@ def parse_ibd_completions(lines: Iterable[str]) -> list[IbdCompletion]:
         if match:
             completions.append(IbdCompletion(match.group(1), int(match.group(2))))
     return completions
+
+
+def parse_log_timestamp(line: str) -> dt.datetime | None:
+    match = re.match(r"^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d+[+-]\d{2}:\d{2})", line)
+    if not match:
+        return None
+    return dt.datetime.strptime(match.group(1), "%Y-%m-%d %H:%M:%S.%f%z")
+
+
+def latest_log_timestamp(lines: Iterable[str]) -> dt.datetime | None:
+    latest = None
+    for line in lines:
+        parsed = parse_log_timestamp(line)
+        if parsed is not None:
+            latest = parsed
+    return latest
+
+
+def check_tcp_endpoint(endpoint: str, timeout: float = 2.0) -> dict[str, Any]:
+    if not endpoint:
+        return {"configured": False, "ok": False, "detail": "not configured"}
+    if ":" not in endpoint:
+        return {"configured": True, "ok": False, "detail": "invalid endpoint"}
+    host, port_text = endpoint.rsplit(":", 1)
+    try:
+        port = int(port_text)
+    except ValueError:
+        return {"configured": True, "ok": False, "detail": "invalid port"}
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return {"configured": True, "ok": True, "detail": f"tcp connect ok to {endpoint}"}
+    except OSError as exc:
+        return {"configured": True, "ok": False, "detail": f"tcp connect failed to {endpoint}: {exc}"}
 
 
 def parse_trusted_blocks(lines: Iterable[str]) -> int:
@@ -107,48 +178,194 @@ def format_processes(processes: list[str]) -> str:
     return "\n".join(f"  {line}" for line in processes)
 
 
-def status(config: dict) -> int:
+def build_report(config: dict) -> dict[str, Any]:
     log_path = Path(config.get("log_path") or "")
     processes = find_processes(config["process_match"])
+    thresholds = config.get("thresholds", {})
+    disk = disk_usage(config.get("data_dir", ""))
+    rpc = check_tcp_endpoint(config.get("rpc_endpoint") or "")
 
-    print(f"Kaspa Node Watchtower: {config['node_name']}")
-    print(f"RPC endpoint: {config.get('rpc_endpoint') or 'not configured'}")
-    print(f"Process match: {config['process_match']}")
+    checks = [
+        Check("process", bool(processes), "running" if processes else "not running"),
+        Check("data_dir", disk.get("exists", False), dir_size(config.get("data_dir", ""))),
+    ]
+
+    require_rpc = bool(thresholds.get("require_rpc", True))
+    if rpc["configured"] or require_rpc:
+        checks.append(Check("rpc_tcp", bool(rpc.get("ok")), rpc["detail"]))
+
+    min_free_gb = float(thresholds.get("disk_free_gb_min", 0))
+    min_free_percent = float(thresholds.get("disk_free_percent_min", 0))
+    if disk.get("exists"):
+        free_gb = float(disk["free_gb"])
+        free_percent = float(disk["free_percent"])
+        disk_ok = free_gb >= min_free_gb and free_percent >= min_free_percent
+        checks.append(
+            Check(
+                "disk_free",
+                disk_ok,
+                f"{free_gb:.2f} GiB free ({free_percent:.2f}%)",
+            )
+        )
+
+    log = {"path": str(log_path), "exists": log_path.exists()}
+    completions: list[IbdCompletion] = []
+    trusted_blocks = 0
+    latest_relay = None
+    latest_throughput = None
+    if log_path.exists():
+        lines = tail_lines(log_path, int(config["log_scan_bytes"]))
+        completions = parse_ibd_completions(lines)
+        trusted_blocks = parse_trusted_blocks(lines)
+        latest_relay = latest_matching(lines, " via relay")
+        latest_throughput = latest_matching(lines, "Tx throughput stats:")
+        latest_timestamp = latest_log_timestamp(lines)
+        if latest_timestamp is not None:
+            now = dt.datetime.now(latest_timestamp.tzinfo)
+            age_seconds = max(0.0, (now - latest_timestamp).total_seconds())
+            log["latest_timestamp"] = latest_timestamp.isoformat()
+            log["age_seconds"] = round(age_seconds, 1)
+            stale_limit = float(thresholds.get("stale_log_minutes", 15)) * 60
+            checks.append(
+                Check(
+                    "log_freshness",
+                    age_seconds <= stale_limit,
+                    f"latest log is {age_seconds:.1f}s old",
+                )
+            )
+    else:
+        checks.append(Check("log_file", False, f"missing ({log_path})"))
+
+    ok = all(check.ok for check in checks)
+    status_text = "ok" if ok else "alert"
+    report = {
+        "node_name": config["node_name"],
+        "status": status_text,
+        "checked_at": dt.datetime.now().astimezone().isoformat(),
+        "process_match": config["process_match"],
+        "processes": processes,
+        "rpc_endpoint": config.get("rpc_endpoint") or "",
+        "rpc": rpc,
+        "data_dir": config.get("data_dir") or "",
+        "data_dir_size": dir_size(config.get("data_dir", "")),
+        "disk": disk,
+        "log": log,
+        "checks": [check.as_dict() for check in checks],
+        "ibd_completed_blocks": sum(item.blocks for item in completions),
+        "ibd_completion_events": len(completions),
+        "latest_ibd_completion": completions[-1].__dict__ if completions else None,
+        "trusted_blocks_observed": trusted_blocks,
+        "latest_relay_block": latest_relay,
+        "latest_throughput": latest_throughput,
+    }
+    return report
+
+
+def status(config: dict) -> int:
+    report = build_report(config)
+
+    print(f"Kaspa Node Watchtower: {report['node_name']}")
+    print(f"Status: {report['status']}")
+    print(f"Checked at: {report['checked_at']}")
+    print(f"RPC endpoint: {report['rpc_endpoint'] or 'not configured'}")
+    print(f"Process match: {report['process_match']}")
     print("Processes:")
-    print(format_processes(processes))
-    print(f"Data dir size: {dir_size(config.get('data_dir', ''))}")
+    print(format_processes(report["processes"]))
+    print(f"Data dir size: {report['data_dir_size']}")
+    if report["disk"].get("exists"):
+        print(
+            "Disk free: "
+            f"{report['disk']['free_gb']:.2f} GiB "
+            f"({report['disk']['free_percent']:.2f}%)"
+        )
+    print(f"Log file: {report['log']['path']}")
+    if not report["log"]["exists"]:
+        print("Log status: missing")
+    elif "latest_timestamp" in report["log"]:
+        print(f"Latest log timestamp: {report['log']['latest_timestamp']}")
+        print(f"Latest log age: {report['log']['age_seconds']}s")
+    print("Checks:")
+    for check in report["checks"]:
+        mark = "OK" if check["ok"] else "ALERT"
+        print(f"  {mark} {check['name']}: {check['detail']}")
+    print(f"IBD/catch-up completed block bodies: {report['ibd_completed_blocks']:,}")
+    print(f"IBD completion events: {report['ibd_completion_events']}")
+    latest_ibd = report["latest_ibd_completion"]
+    if latest_ibd:
+        print(f"Latest IBD completion: {latest_ibd['timestamp']} ({latest_ibd['blocks']:,} blocks)")
+    print(f"Trusted blocks observed: {report['trusted_blocks_observed']:,}")
+    if report["latest_relay_block"]:
+        print(f"Latest relay block: {report['latest_relay_block']}")
+    if report["latest_throughput"]:
+        print(f"Latest throughput: {report['latest_throughput']}")
 
-    if not log_path.exists():
-        print(f"Log file: missing ({log_path})")
-        return 2
+    return 0 if report["status"] == "ok" else 1
 
-    lines = tail_lines(log_path, int(config["log_scan_bytes"]))
-    completions = parse_ibd_completions(lines)
-    trusted_blocks = parse_trusted_blocks(lines)
-    ibd_total = sum(item.blocks for item in completions)
 
-    print(f"Log file: {log_path}")
-    print(f"IBD/catch-up completed block bodies: {ibd_total:,}")
-    print(f"IBD completion events: {len(completions)}")
-    if completions:
-        print(f"Latest IBD completion: {completions[-1].timestamp} ({completions[-1].blocks:,} blocks)")
-    print(f"Trusted blocks observed: {trusted_blocks:,}")
+def load_state(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {}
+    with path.open("r", encoding="utf-8") as handle:
+        return json.load(handle)
 
-    latest_relay = latest_matching(lines, " via relay")
-    latest_throughput = latest_matching(lines, "Tx throughput stats:")
-    if latest_relay:
-        print(f"Latest relay block: {latest_relay}")
-    if latest_throughput:
-        print(f"Latest throughput: {latest_throughput}")
 
-    return 0 if processes else 1
+def save_state(path: Path, state: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as handle:
+        json.dump(state, handle, indent=2, sort_keys=True)
+        handle.write("\n")
+
+
+def alert(config: dict) -> int:
+    report = build_report(config)
+    state_path = Path(config.get("state_path") or DEFAULT_CONFIG["state_path"])
+    state = load_state(state_path)
+    previous_status = state.get("status")
+    should_emit = previous_status != report["status"] or report["status"] != "ok"
+    state.update(
+        {
+            "status": report["status"],
+            "checked_at": report["checked_at"],
+            "last_report": report,
+        }
+    )
+    save_state(state_path, state)
+
+    if should_emit:
+        print(format_alert(report, previous_status))
+    return 0 if report["status"] == "ok" else 1
+
+
+def format_alert(report: dict[str, Any], previous_status: str | None = None) -> str:
+    lines = [
+        f"Kaspa watchtower: {report['node_name']} is {report['status']}",
+        f"checked_at={report['checked_at']}",
+    ]
+    if previous_status:
+        lines.append(f"previous_status={previous_status}")
+    for check in report["checks"]:
+        if not check["ok"] or report["status"] == "ok":
+            mark = "OK" if check["ok"] else "ALERT"
+            lines.append(f"{mark} {check['name']}: {check['detail']}")
+    if report["latest_throughput"]:
+        lines.append(report["latest_throughput"])
+    return "\n".join(lines)
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Report local Kaspa node health.")
     parser.add_argument("-c", "--config", type=Path, help="Path to config JSON.")
+    parser.add_argument("--json", action="store_true", help="Print a JSON health report.")
+    parser.add_argument("--alert", action="store_true", help="Print only alert transition output and update state.")
     args = parser.parse_args()
-    return status(load_config(args.config))
+    config = load_config(args.config)
+    if args.json:
+        report = build_report(config)
+        print(json.dumps(report, indent=2, sort_keys=True))
+        return 0 if report["status"] == "ok" else 1
+    if args.alert:
+        return alert(config)
+    return status(config)
 
 
 if __name__ == "__main__":

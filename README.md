@@ -8,11 +8,16 @@ Kaspa Node Watchtower watches a local `kaspad` process, summarizes sync progress
 and helps operators understand node health without relying only on external
 explorers or hosted APIs.
 
+## Features
+
+- Node health checks: process, RPC TCP, disk free space, data directory, and log freshness
+- Sync reports: IBD start/end time, processed blocks, headers, and throughput
+- Alert-mode output for Discord/OpenClaw cron
+- JSON output for later dashboards or exporters
+
 ## Planned Features
 
-- Node health checks: process, RPC, peers, disk, CPU, and memory
-- Sync reports: IBD start/end time, processed blocks, headers, and throughput
-- Discord alerts for stalled sync, peer loss, disk growth, or RPC failure
+- Peer count via a real Kaspa RPC client
 - Local dashboard for recent logs and operational status
 - Version-to-version sync benchmark reports
 
@@ -27,7 +32,7 @@ Initial target environment:
 
 ## Status
 
-Early development.
+First working local watchtower.
 
 ## Quick Start
 
@@ -37,9 +42,24 @@ Run the local status reporter:
 python3 watchtower.py -c config.example.json
 ```
 
-The first version reads local process state, data directory size, and recent
-`kaspad` logs. It reports IBD/catch-up completion counts, trusted block counts,
-latest relay activity, and latest transaction throughput stats.
+For the current local node:
+
+```bash
+python3 watchtower.py -c config.json
+```
+
+The reporter reads local process state, RPC TCP reachability, data directory
+size/free space, and recent `kaspad` logs. It reports IBD/catch-up completion
+counts, trusted block counts, latest relay activity, and latest transaction
+throughput stats.
 
 For local edits, copy `config.example.json` to `config.json` and adjust paths.
 `config.json` is ignored by git.
+
+Cron-friendly alert mode:
+
+```bash
+./run_watchtower.sh
+```
+
+See `docs/operations.md` for alert criteria and the Discord cron plan.
