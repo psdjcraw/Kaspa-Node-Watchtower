@@ -78,6 +78,45 @@ class WatchtowerUnitTests(unittest.TestCase):
             self.assertEqual(summary["relay_rate"], "6.00/min")
             self.assertEqual(json.loads(summary["severity_counts"]), {"ok": 2})
 
+    def test_prometheus_metrics_include_extended_grpc_values(self):
+        report = {
+            "node_name": "test-node",
+            "status": "ok",
+            "severity": "ok",
+            "checks": [{"name": "grpc_metrics", "ok": True}],
+            "grpc_metrics": {
+                "peer_count": 8,
+                "outbound_peer_count": 7,
+                "inbound_peer_count": 1,
+                "active_peers": 8,
+                "is_synced": True,
+                "virtual_daa_score": 100,
+                "block_count": 200,
+                "header_count": 210,
+                "mempool_size": 3,
+                "tip_count": 4,
+                "virtual_parent_count": 2,
+                "difficulty": 12.5,
+                "process": {
+                    "resident_set_gib": 1.25,
+                    "cpu_usage": 0.5,
+                    "fd_num": 42,
+                },
+            },
+            "progress": {
+                "relay_blocks_in_window": 10,
+                "relay_events_in_window": 5,
+                "latest_relay_age_seconds": 1,
+            },
+            "disk": {"free_gb": 100, "free_percent": 20},
+        }
+
+        metrics = watchtower.format_prometheus_metrics(report, {"snapshots": 0})
+
+        self.assertIn("kaspa_watchtower_mempool_size", metrics)
+        self.assertIn("kaspa_watchtower_tip_count", metrics)
+        self.assertIn("kaspa_watchtower_process_fd_num", metrics)
+
     def test_config_validation_rejects_invalid_numeric_settings(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)

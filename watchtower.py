@@ -503,7 +503,10 @@ def status(config: dict) -> int:
             f"synced={grpc_metrics.get('is_synced')} "
             f"peers={grpc_metrics.get('peer_count')} "
             f"network={grpc_metrics.get('network_id')} "
-            f"daa={grpc_metrics.get('virtual_daa_score')}"
+            f"daa={grpc_metrics.get('virtual_daa_score')} "
+            f"mempool={grpc_metrics.get('mempool_size')} "
+            f"tips={grpc_metrics.get('tip_count')} "
+            f"pruning={short_hash(grpc_metrics.get('pruning_point_hash'))}"
         )
     progress = report["progress"]
     print(
@@ -559,6 +562,11 @@ def numeric(value: Any) -> float | None:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def short_hash(value: Any, length: int = 12) -> str:
+    text = str(value or "")
+    return text[:length] if text else "unknown"
 
 
 def history_item(report: dict[str, Any]) -> dict[str, Any]:
@@ -665,10 +673,18 @@ def write_status_page(
         ("Severity", report["severity"]),
         ("Peers", grpc_metrics.get("peer_count", "unknown")),
         ("Active Peers", grpc_metrics.get("active_peers", "unknown")),
+        ("Outbound Peers", grpc_metrics.get("outbound_peer_count", "unknown")),
+        ("Inbound Peers", grpc_metrics.get("inbound_peer_count", "unknown")),
         ("Synced", grpc_metrics.get("is_synced", "unknown")),
         ("Network", grpc_metrics.get("network_id", "unknown")),
         ("DAA Score", grpc_metrics.get("virtual_daa_score", "unknown")),
         ("Block Count", grpc_metrics.get("block_count", "unknown")),
+        ("Header Count", grpc_metrics.get("header_count", "unknown")),
+        ("Mempool", grpc_metrics.get("mempool_size", "unknown")),
+        ("Tips", grpc_metrics.get("tip_count", "unknown")),
+        ("Virtual Parents", grpc_metrics.get("virtual_parent_count", "unknown")),
+        ("Difficulty", grpc_metrics.get("difficulty", "unknown")),
+        ("Pruning Point", short_hash(grpc_metrics.get("pruning_point_hash"))),
         ("Relay Blocks", progress.get("relay_blocks_in_window", 0)),
         ("Disk Free", f"{report.get('disk', {}).get('free_gb', 'unknown')} GiB"),
         ("Recovery", recovery.get("action", "none")),
@@ -932,7 +948,16 @@ def format_summary(report: dict[str, Any]) -> str:
             f"peers={grpc_metrics.get('peer_count', 'unknown')} "
             f"active={grpc_metrics.get('active_peers', 'unknown')} "
             f"network={grpc_metrics.get('network_id', 'unknown')} "
-            f"daa={grpc_metrics.get('virtual_daa_score', 'unknown')}"
+            f"daa={grpc_metrics.get('virtual_daa_score', 'unknown')} "
+            f"mempool={grpc_metrics.get('mempool_size', 'unknown')} "
+            f"tips={grpc_metrics.get('tip_count', 'unknown')}"
+        ),
+        (
+            "dag="
+            f"headers={grpc_metrics.get('header_count', 'unknown')} "
+            f"virtual_parents={grpc_metrics.get('virtual_parent_count', 'unknown')} "
+            f"difficulty={grpc_metrics.get('difficulty', 'unknown')} "
+            f"pruning={short_hash(grpc_metrics.get('pruning_point_hash'))}"
         ),
         (
             "progress="
@@ -972,6 +997,16 @@ def benchmark_item(report: dict[str, Any]) -> dict[str, Any]:
         "virtual_daa_score": grpc_metrics.get("virtual_daa_score"),
         "block_count": grpc_metrics.get("block_count"),
         "header_count": grpc_metrics.get("header_count"),
+        "mempool_size": grpc_metrics.get("mempool_size"),
+        "tip_count": grpc_metrics.get("tip_count"),
+        "virtual_parent_count": grpc_metrics.get("virtual_parent_count"),
+        "difficulty": grpc_metrics.get("difficulty"),
+        "pruning_point_hash": grpc_metrics.get("pruning_point_hash"),
+        "outbound_peer_count": grpc_metrics.get("outbound_peer_count"),
+        "inbound_peer_count": grpc_metrics.get("inbound_peer_count"),
+        "process_resident_set_gib": (grpc_metrics.get("process") or {}).get("resident_set_gib"),
+        "process_cpu_usage": (grpc_metrics.get("process") or {}).get("cpu_usage"),
+        "process_fd_num": (grpc_metrics.get("process") or {}).get("fd_num"),
         "relay_blocks_in_window": progress.get("relay_blocks_in_window"),
         "relay_events_in_window": progress.get("relay_events_in_window"),
         "progress_window_minutes": progress.get("window_minutes"),
@@ -1266,6 +1301,18 @@ def format_prometheus_metrics(report: dict[str, Any], benchmark_summary: dict[st
     add_prometheus_metric(lines, "kaspa_watchtower_peer_count", grpc_metrics.get("peer_count"), node_labels)
     add_prometheus_metric(
         lines,
+        "kaspa_watchtower_outbound_peer_count",
+        grpc_metrics.get("outbound_peer_count"),
+        node_labels,
+    )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_inbound_peer_count",
+        grpc_metrics.get("inbound_peer_count"),
+        node_labels,
+    )
+    add_prometheus_metric(
+        lines,
         "kaspa_watchtower_active_peer_count",
         grpc_metrics.get("active_peers"),
         node_labels,
@@ -1278,6 +1325,35 @@ def format_prometheus_metrics(report: dict[str, Any], benchmark_summary: dict[st
         node_labels,
     )
     add_prometheus_metric(lines, "kaspa_watchtower_block_count", grpc_metrics.get("block_count"), node_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_header_count", grpc_metrics.get("header_count"), node_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_mempool_size", grpc_metrics.get("mempool_size"), node_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_tip_count", grpc_metrics.get("tip_count"), node_labels)
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_virtual_parent_count",
+        grpc_metrics.get("virtual_parent_count"),
+        node_labels,
+    )
+    add_prometheus_metric(lines, "kaspa_watchtower_difficulty", grpc_metrics.get("difficulty"), node_labels)
+    process = grpc_metrics.get("process") or {}
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_process_resident_set_gib",
+        process.get("resident_set_gib"),
+        node_labels,
+    )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_process_cpu_usage",
+        process.get("cpu_usage"),
+        node_labels,
+    )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_process_fd_num",
+        process.get("fd_num"),
+        node_labels,
+    )
     add_prometheus_metric(
         lines,
         "kaspa_watchtower_relay_blocks_window",
