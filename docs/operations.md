@@ -60,6 +60,7 @@ Makefile command index:
 make help
 make status
 make smoke
+make daily-report
 make diagnostics-archive
 ```
 
@@ -316,8 +317,9 @@ Daily report:
 ```
 
 The daily report prints the current node summary, benchmark trend, integration
-status, GitHub Actions status, and dashboard locations. Unlike alert and smoke
-wrappers, it intentionally emits output while healthy.
+status, GitHub Actions status, recent recovery attempts, SQLite history counts,
+and dashboard locations. Unlike alert and smoke wrappers, it intentionally emits
+output while healthy.
 
 Prometheus textfile metrics:
 

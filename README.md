@@ -93,6 +93,7 @@ Common operator commands are also available through `make`:
 make help
 make status
 make smoke
+make daily-report
 make diagnostics-archive
 ```
 
@@ -217,6 +218,7 @@ Generate a daily operator report:
 
 ```bash
 ./run_daily_report.sh
+make daily-report
 ```
 
 See `docs/operations.md` for alert criteria and the Discord cron plan.
