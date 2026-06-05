@@ -28,3 +28,18 @@ Initial target environment:
 ## Status
 
 Early development.
+
+## Quick Start
+
+Run the local status reporter:
+
+```bash
+python3 watchtower.py -c config.example.json
+```
+
+The first version reads local process state, data directory size, and recent
+`kaspad` logs. It reports IBD/catch-up completion counts, trusted block counts,
+latest relay activity, and latest transaction throughput stats.
+
+For local edits, copy `config.example.json` to `config.json` and adjust paths.
+`config.json` is ignored by git.
