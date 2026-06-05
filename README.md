@@ -136,5 +136,11 @@ Run the full local smoke test:
 scripts/smoke_test.sh
 ```
 
+Cron-friendly smoke test:
+
+```bash
+./run_smoke_test.sh
+```
+
 See `docs/operations.md` for alert criteria and the Discord cron plan.
 See `docs/integrations.md` for Prometheus/Grafana integration steps.

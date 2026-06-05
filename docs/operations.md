@@ -60,6 +60,12 @@ Full local smoke test:
 scripts/smoke_test.sh
 ```
 
+Cron-friendly smoke test:
+
+```bash
+./run_smoke_test.sh
+```
+
 Human-readable status:
 
 ```bash
@@ -283,3 +289,14 @@ cd /Users/psdjc/.openclaw/workspace/Kaspa-Node-Watchtowe && ./run_benchmark_snap
 The benchmark wrapper writes the latest snapshot output to
 `state/last-benchmark-snapshot.txt`, appends structured data to
 `state/benchmarks.jsonl`, and prints only when the snapshot command fails.
+
+OpenClaw cron job `a7e56678-da5c-43dd-8d04-0f3e6e21f1cd`
+(`kaspa-watchtower-daily-smoke-test`) runs the full smoke test daily at 03:20
+KST in an isolated session. It executes:
+
+```bash
+cd /Users/psdjc/.openclaw/workspace/Kaspa-Node-Watchtowe && ./run_smoke_test.sh
+```
+
+The smoke test wrapper writes the latest successful output to
+`state/last-smoke-test.txt` and prints only when the smoke test fails.
