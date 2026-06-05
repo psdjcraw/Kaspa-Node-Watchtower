@@ -37,6 +37,9 @@ if [ -f "config.json" ]; then
   "$PYTHON_BIN" watchtower.py -c config.json --prune-state >/dev/null
   ok "state retention"
 
+  scripts/simulate_failures.sh >/dev/null
+  ok "failure simulations"
+
   ./run_watchtower.sh >/dev/null
   ok "alert wrapper"
 

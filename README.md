@@ -154,6 +154,12 @@ Run the full local smoke test:
 scripts/smoke_test.sh
 ```
 
+Run local failure simulations without touching the live node:
+
+```bash
+scripts/simulate_failures.sh
+```
+
 Collect a local diagnostics bundle:
 
 ```bash

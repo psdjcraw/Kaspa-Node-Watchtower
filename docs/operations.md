@@ -310,15 +310,12 @@ openclaw nodes canvas present --node <node> --target /kaspa-watchtower/status.ht
 Simulation test without touching the live node:
 
 ```bash
-jq '.state_path="state/sim-watchtower-state.json"
-  | .status_page_path="state/sim-status.html"
-  | .thresholds.min_peer_count=999' config.json > /tmp/kaspa-watchtower-sim.json
-.venv/bin/python watchtower.py -c /tmp/kaspa-watchtower-sim.json --alert
-.venv/bin/python watchtower.py -c /tmp/kaspa-watchtower-sim.json --alert
+scripts/simulate_failures.sh
 ```
 
-The first simulated run should print a `critical` alert. The second run should
-stay quiet because repeat suppression is active.
+The simulation script uses temporary config/state files. It verifies peer-count
+critical alerts, relay-progress warnings, RPC critical alerts, repeat
+suppression, recovered transitions, and recovery dry-run output.
 
 ## Git Push
 
