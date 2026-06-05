@@ -112,6 +112,10 @@ def run_command(args: list[str]) -> str:
     return completed.stdout.strip()
 
 
+def run_command_result(args: list[str]) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(args, check=False, text=True, capture_output=True)
+
+
 def find_processes(match: str) -> list[str]:
     output = run_command(["ps", "-axo", "pid,pcpu,pmem,etime,command"])
     lines = []
@@ -751,11 +755,48 @@ def format_alert(
     return "\n".join(lines)
 
 
+def recover(config: dict, *, force: bool = False, dry_run: bool = False) -> int:
+    report = build_report(config)
+    recovery = config.get("recovery", {})
+    restart_command = recovery.get("restart_command") or []
+    mode = recovery.get("mode", "manual")
+
+    if not restart_command:
+        print("Recovery unavailable: restart_command is not configured")
+        return 2
+    if mode != "manual":
+        print(f"Recovery unavailable: unsupported mode={mode}")
+        return 2
+    if report["severity"] == "ok" and not force:
+        print("Recovery skipped: node is healthy; use --force-recover to override")
+        return 0
+
+    print(f"Recovery target: {report['node_name']} severity={report['severity']}")
+    print("Recovery command: " + " ".join(restart_command))
+    if dry_run:
+        print("Recovery dry-run: command not executed")
+        return 0
+
+    completed = run_command_result(restart_command)
+    if completed.stdout.strip():
+        print(completed.stdout.strip())
+    if completed.stderr.strip():
+        print(completed.stderr.strip())
+    if completed.returncode == 0:
+        print("Recovery command completed")
+    else:
+        print(f"Recovery command failed with exit code {completed.returncode}")
+    return completed.returncode
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Report local Kaspa node health.")
     parser.add_argument("-c", "--config", type=Path, help="Path to config JSON.")
     parser.add_argument("--json", action="store_true", help="Print a JSON health report.")
     parser.add_argument("--alert", action="store_true", help="Print only alert transition output and update state.")
+    parser.add_argument("--recover", action="store_true", help="Run the configured manual recovery command when unhealthy.")
+    parser.add_argument("--force-recover", action="store_true", help="Run recovery even when the current report is healthy.")
+    parser.add_argument("--dry-run", action="store_true", help="Show recovery command without executing it.")
     args = parser.parse_args()
     config = load_config(args.config)
     if args.json:
@@ -764,6 +805,8 @@ def main() -> int:
         return 0 if report["status"] == "ok" else 1
     if args.alert:
         return alert(config)
+    if args.recover:
+        return recover(config, force=args.force_recover, dry_run=args.dry_run)
     return status(config)
 
 

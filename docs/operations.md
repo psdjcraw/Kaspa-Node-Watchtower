@@ -43,6 +43,8 @@ Recovery:
 - Current mode is `manual`.
 - The watchtower can include the configured restart command in alert context,
   but it does not restart the healthy node automatically.
+- Manual recovery command is available through `--recover`.
+- A healthy node is never restarted unless `--force-recover` is explicitly used.
 
 ## Commands
 
@@ -62,6 +64,18 @@ Alert mode for cron:
 
 ```bash
 ./run_watchtower.sh
+```
+
+Manual recovery dry-run:
+
+```bash
+.venv/bin/python watchtower.py -c config.json --recover --dry-run
+```
+
+Manual recovery when an alert requires it:
+
+```bash
+.venv/bin/python watchtower.py -c config.json --recover
 ```
 
 `--alert` writes state to `state/watchtower-state.json`. It emits output when
