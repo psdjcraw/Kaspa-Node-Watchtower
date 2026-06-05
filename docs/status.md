@@ -29,6 +29,8 @@
   `kaspa-watchtower-daily-smoke-test`, daily at 03:20 KST
 - `c5e0794e-f65f-420b-b07a-4918bef137ae`:
   `kaspa-watchtower-daily-operator-report`, daily at 09:10 KST
+- `919e380f-9a3e-403f-b741-6241d5a60233`:
+  `kaspa-watchtower-prometheus-alert-bridge`, every 5 minutes
 
 ## Files
 
@@ -40,6 +42,7 @@
 - Prometheus textfile: `state/watchtower.prom`
 - Last benchmark output: `state/last-benchmark-snapshot.txt`
 - Last smoke output: `state/last-smoke-test.txt`
+- Prometheus alert bridge state: `state/prometheus-alert-state.json`
 
 ## One-Command Snapshot
 

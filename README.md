@@ -175,6 +175,12 @@ Check the latest GitHub Actions smoke run:
 scripts/check_ci_status.sh
 ```
 
+Check Prometheus alert state:
+
+```bash
+scripts/check_prometheus_alerts.sh
+```
+
 Cron-friendly smoke test:
 
 ```bash

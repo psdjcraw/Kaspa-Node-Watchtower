@@ -219,6 +219,12 @@ Prometheus alert rule tests:
 prometheus/run_rule_tests.sh
 ```
 
+Prometheus alert bridge:
+
+```bash
+scripts/check_prometheus_alerts.sh
+```
+
 Unit tests:
 
 ```bash

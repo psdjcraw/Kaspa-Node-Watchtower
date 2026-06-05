@@ -48,6 +48,9 @@ if [ -f "config.json" ]; then
 
   scripts/check_integrations.sh >/dev/null
   ok "external integrations"
+
+  scripts/check_prometheus_alerts.sh >/dev/null
+  ok "Prometheus alert bridge"
 else
   ok "config.json absent; skipped live checks"
 fi
