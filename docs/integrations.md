@@ -66,6 +66,16 @@ grafana/kaspa-watchtower.json
 The dashboard includes node health, DAG/relay progress, benchmark rates,
 recovery history, and mainnet bootstrap sync progress panels.
 
+Benchmark stability metrics are also exported for longer-window panels and
+alerts:
+
+- `kaspa_watchtower_benchmark_ok_ratio`
+- `kaspa_watchtower_benchmark_ok_snapshots`
+- `kaspa_watchtower_benchmark_warn_snapshots`
+- `kaspa_watchtower_benchmark_critical_snapshots`
+- `kaspa_watchtower_benchmark_min_peer_count`
+- `kaspa_watchtower_benchmark_min_disk_free_gb`
+
 For the current local stack, copy it to:
 
 ```text

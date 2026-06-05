@@ -925,6 +925,145 @@
       ],
       "title": "Monitoring Mode",
       "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "OK ratio"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percentunit"
+              },
+              {
+                "id": "min",
+                "value": 0
+              },
+              {
+                "id": "max",
+                "value": 1
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 12,
+        "x": 0,
+        "y": 34
+      },
+      "id": 17,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "targets": [
+        {
+          "expr": "kaspa_watchtower_benchmark_ok_ratio{node=\"$node\"}",
+          "legendFormat": "OK ratio",
+          "refId": "A"
+        },
+        {
+          "expr": "kaspa_watchtower_benchmark_ok_snapshots{node=\"$node\"}",
+          "legendFormat": "OK snapshots",
+          "refId": "B"
+        },
+        {
+          "expr": "kaspa_watchtower_benchmark_warn_snapshots{node=\"$node\"}",
+          "legendFormat": "warn snapshots",
+          "refId": "C"
+        },
+        {
+          "expr": "kaspa_watchtower_benchmark_critical_snapshots{node=\"$node\"}",
+          "legendFormat": "critical snapshots",
+          "refId": "D"
+        }
+      ],
+      "title": "Benchmark Stability",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "min disk free"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "gbytes"
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 12,
+        "x": 12,
+        "y": 34
+      },
+      "id": 18,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "expr": "kaspa_watchtower_benchmark_min_peer_count{node=\"$node\"}",
+          "legendFormat": "min peers",
+          "refId": "A"
+        },
+        {
+          "expr": "kaspa_watchtower_benchmark_min_disk_free_gb{node=\"$node\"}",
+          "legendFormat": "min disk free",
+          "refId": "B"
+        }
+      ],
+      "title": "Benchmark Floor",
+      "type": "timeseries"
     }
   ],
   "refresh": "30s",
@@ -973,6 +1112,6 @@
   "timezone": "browser",
   "title": "Kaspa Watchtower",
   "uid": "kaspa-watchtower",
-  "version": 3,
+  "version": 4,
   "weekStart": ""
 }

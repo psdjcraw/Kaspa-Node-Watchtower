@@ -79,6 +79,12 @@ class WatchtowerUnitTests(unittest.TestCase):
             self.assertEqual(summary["block_delta"], 60)
             self.assertEqual(summary["relay_rate"], "6.00/min")
             self.assertEqual(json.loads(summary["severity_counts"]), {"ok": 2})
+            self.assertEqual(summary["ok_snapshots"], 2)
+            self.assertEqual(summary["warn_snapshots"], 0)
+            self.assertEqual(summary["critical_snapshots"], 0)
+            self.assertEqual(summary["ok_ratio"], 1.0)
+            self.assertEqual(summary["min_peer_count"], 8)
+            self.assertEqual(summary["min_disk_free_gb"], 299.5)
 
     def test_benchmark_summary_filters_to_latest_node_and_network(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -182,7 +188,17 @@ class WatchtowerUnitTests(unittest.TestCase):
             "last_exit_code": 0,
         }
 
-        metrics = watchtower.format_prometheus_metrics(report, {"snapshots": 0}, recovery_summary)
+        benchmark_summary = {
+            "snapshots": 2,
+            "ok_snapshots": 2,
+            "warn_snapshots": 0,
+            "critical_snapshots": 0,
+            "ok_ratio": 1.0,
+            "min_peer_count": 8,
+            "min_disk_free_gb": 99.5,
+        }
+
+        metrics = watchtower.format_prometheus_metrics(report, benchmark_summary, recovery_summary)
 
         self.assertIn("kaspa_watchtower_mempool_size", metrics)
         self.assertIn("kaspa_watchtower_tip_count", metrics)
@@ -193,6 +209,9 @@ class WatchtowerUnitTests(unittest.TestCase):
         self.assertIn("kaspa_watchtower_sync_progress_stall_minutes", metrics)
         self.assertIn("kaspa_watchtower_recovery_attempts_total", metrics)
         self.assertIn("kaspa_watchtower_recovery_last_started_timestamp_seconds", metrics)
+        self.assertIn("kaspa_watchtower_benchmark_ok_ratio", metrics)
+        self.assertIn("kaspa_watchtower_benchmark_min_peer_count", metrics)
+        self.assertIn("kaspa_watchtower_benchmark_min_disk_free_gb", metrics)
 
     def test_unsynced_bootstrap_skips_sync_and_relay_progress_requirements(self):
         with tempfile.TemporaryDirectory() as tmp:

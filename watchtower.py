@@ -633,6 +633,27 @@ def format_optional_rate(value: Any) -> str:
     return f"{parsed:.2f}/h"
 
 
+def format_optional_number(value: Any) -> str:
+    parsed = numeric(value)
+    if parsed is None:
+        return "unknown"
+    return str(int(parsed)) if parsed.is_integer() else f"{parsed:.2f}"
+
+
+def format_ratio(value: Any) -> str:
+    parsed = numeric(value)
+    if parsed is None:
+        return "unknown"
+    return f"{parsed * 100:.1f}%"
+
+
+def format_gib(value: Any) -> str:
+    parsed = numeric(value)
+    if parsed is None:
+        return "unknown"
+    return f"{parsed:.2f} GiB"
+
+
 def short_hash(value: Any, length: int = 12) -> str:
     text = str(value or "")
     return text[:length] if text else "unknown"
@@ -836,6 +857,9 @@ def write_status_page(
             ("Relay Average", benchmark_summary["relay_rate"]),
             ("Latest Peer State", benchmark_summary["latest_peer_state"]),
             ("Severity Counts", benchmark_summary["severity_counts"]),
+            ("OK Ratio", format_ratio(benchmark_summary.get("ok_ratio"))),
+            ("Minimum Peers", format_optional_number(benchmark_summary.get("min_peer_count"))),
+            ("Minimum Disk Free", format_gib(benchmark_summary.get("min_disk_free_gb"))),
             ("Disk Free Delta", benchmark_summary["disk_delta"]),
         ]
     )
@@ -1421,6 +1445,12 @@ def build_benchmark_summary(path: Path, *, limit: int) -> dict[str, Any]:
             "latest_status": "unknown",
             "latest_severity": "unknown",
             "severity_counts": "{}",
+            "ok_snapshots": 0,
+            "warn_snapshots": 0,
+            "critical_snapshots": 0,
+            "ok_ratio": None,
+            "min_peer_count": None,
+            "min_disk_free_gb": None,
             "disk_delta": "unknown",
             "disk_delta_gb": None,
             "window_hours": None,
@@ -1448,6 +1478,12 @@ def build_benchmark_summary(path: Path, *, limit: int) -> dict[str, Any]:
             "latest_status": "unknown",
             "latest_severity": "unknown",
             "severity_counts": "{}",
+            "ok_snapshots": 0,
+            "warn_snapshots": 0,
+            "critical_snapshots": 0,
+            "ok_ratio": None,
+            "min_peer_count": None,
+            "min_disk_free_gb": None,
             "disk_delta": "unknown",
             "disk_delta_gb": None,
             "window_hours": None,
@@ -1471,6 +1507,13 @@ def build_benchmark_summary(path: Path, *, limit: int) -> dict[str, Any]:
     for item in items:
         severity = str(item.get("severity") or "unknown")
         severities[severity] = severities.get(severity, 0) + 1
+    peer_counts = [value for value in (numeric(item.get("peer_count")) for item in items) if value is not None]
+    disk_free_values = [
+        value for value in (numeric(item.get("disk_free_gb")) for item in items) if value is not None
+    ]
+    ok_snapshots = severities.get("ok", 0)
+    warn_snapshots = severities.get("warn", 0)
+    critical_snapshots = severities.get("critical", 0)
 
     disk_delta_text = "unknown" if disk_delta is None else f"{disk_delta:+.2f} GiB"
     daa_rate_per_hour = None if daa_delta is None or elapsed_hours <= 0 else daa_delta / elapsed_hours
@@ -1500,6 +1543,12 @@ def build_benchmark_summary(path: Path, *, limit: int) -> dict[str, Any]:
         "latest_status": last.get("status"),
         "latest_severity": last.get("severity"),
         "severity_counts": json.dumps(severities, sort_keys=True),
+        "ok_snapshots": ok_snapshots,
+        "warn_snapshots": warn_snapshots,
+        "critical_snapshots": critical_snapshots,
+        "ok_ratio": ok_snapshots / len(items),
+        "min_peer_count": min(peer_counts) if peer_counts else None,
+        "min_disk_free_gb": min(disk_free_values) if disk_free_values else None,
         "disk_delta": disk_delta_text,
         "disk_delta_gb": disk_delta,
         "window_hours": elapsed_hours,
@@ -1522,6 +1571,9 @@ def benchmark_report(config: dict, *, limit: int) -> int:
         f"latest_{summary['latest_peer_state']}",
         f"latest_status={summary['latest_status']} severity={summary['latest_severity']}",
         f"severity_counts={summary['severity_counts']}",
+        f"ok_ratio={format_ratio(summary.get('ok_ratio'))}",
+        f"min_peer_count={format_optional_number(summary.get('min_peer_count'))}",
+        f"min_disk_free={format_gib(summary.get('min_disk_free_gb'))}",
         f"disk_free_delta={summary['disk_delta']}",
     ]
     print("\n".join(lines))
@@ -1772,6 +1824,42 @@ def format_prometheus_metrics(
         lines,
         "kaspa_watchtower_benchmark_relay_rate_per_min",
         benchmark_summary.get("relay_rate_per_min"),
+        node_labels,
+    )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_benchmark_ok_snapshots",
+        benchmark_summary.get("ok_snapshots"),
+        node_labels,
+    )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_benchmark_warn_snapshots",
+        benchmark_summary.get("warn_snapshots"),
+        node_labels,
+    )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_benchmark_critical_snapshots",
+        benchmark_summary.get("critical_snapshots"),
+        node_labels,
+    )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_benchmark_ok_ratio",
+        benchmark_summary.get("ok_ratio"),
+        node_labels,
+    )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_benchmark_min_peer_count",
+        benchmark_summary.get("min_peer_count"),
+        node_labels,
+    )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_benchmark_min_disk_free_gb",
+        benchmark_summary.get("min_disk_free_gb"),
         node_labels,
     )
     add_prometheus_metric(
