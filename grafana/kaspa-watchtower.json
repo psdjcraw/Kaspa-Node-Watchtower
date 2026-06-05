@@ -507,6 +507,164 @@
       ],
       "title": "Checks",
       "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 8,
+        "x": 0,
+        "y": 19
+      },
+      "id": 10,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "targets": [
+        {
+          "expr": "kaspa_watchtower_recovery_attempts_total{node=\"$node\"}",
+          "legendFormat": "attempts",
+          "refId": "A"
+        },
+        {
+          "expr": "kaspa_watchtower_recovery_executed_total{node=\"$node\"}",
+          "legendFormat": "executed",
+          "refId": "B"
+        },
+        {
+          "expr": "kaspa_watchtower_recovery_dry_runs_total{node=\"$node\"}",
+          "legendFormat": "dry-runs",
+          "refId": "C"
+        },
+        {
+          "expr": "kaspa_watchtower_recovery_skipped_total{node=\"$node\"}",
+          "legendFormat": "skipped",
+          "refId": "D"
+        }
+      ],
+      "title": "Recovery Counts",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "dateTimeAsIso"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 8,
+        "x": 8,
+        "y": 19
+      },
+      "id": 11,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "targets": [
+        {
+          "expr": "kaspa_watchtower_recovery_last_started_timestamp_seconds{node=\"$node\"} * 1000",
+          "legendFormat": "last started",
+          "refId": "A"
+        },
+        {
+          "expr": "kaspa_watchtower_recovery_last_completed_timestamp_seconds{node=\"$node\"} * 1000",
+          "legendFormat": "last completed",
+          "refId": "B"
+        }
+      ],
+      "title": "Last Recovery",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 8,
+        "x": 16,
+        "y": 19
+      },
+      "id": 12,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "expr": "kaspa_watchtower_recovery_attempts_total{node=\"$node\"}",
+          "legendFormat": "attempts",
+          "refId": "A"
+        },
+        {
+          "expr": "kaspa_watchtower_recovery_executed_total{node=\"$node\"}",
+          "legendFormat": "executed",
+          "refId": "B"
+        },
+        {
+          "expr": "kaspa_watchtower_recovery_skipped_total{node=\"$node\"}",
+          "legendFormat": "skipped",
+          "refId": "C"
+        }
+      ],
+      "title": "Recovery Trend",
+      "type": "timeseries"
     }
   ],
   "refresh": "30s",
@@ -555,6 +713,6 @@
   "timezone": "browser",
   "title": "Kaspa Watchtower",
   "uid": "kaspa-watchtower",
-  "version": 1,
+  "version": 2,
   "weekStart": ""
 }
