@@ -78,6 +78,12 @@ Cron-friendly smoke test:
 ./run_smoke_test.sh
 ```
 
+Daily operator report:
+
+```bash
+./run_daily_report.sh
+```
+
 Human-readable status:
 
 ```bash
@@ -241,6 +247,16 @@ open state/status.html
 
 The generated status page includes the latest health checks, recent check
 history, and a benchmark trend section from the latest saved snapshots.
+
+Daily report:
+
+```bash
+./run_daily_report.sh
+```
+
+The daily report prints the current node summary, benchmark trend, integration
+status, GitHub Actions status, and dashboard locations. Unlike alert and smoke
+wrappers, it intentionally emits output while healthy.
 
 Prometheus textfile metrics:
 

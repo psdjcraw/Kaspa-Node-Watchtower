@@ -27,6 +27,8 @@
   `kaspa-watchtower-benchmark-snapshots`, every 30 minutes
 - `a7e56678-da5c-43dd-8d04-0f3e6e21f1cd`:
   `kaspa-watchtower-daily-smoke-test`, daily at 03:20 KST
+- `c5e0794e-f65f-420b-b07a-4918bef137ae`:
+  `kaspa-watchtower-daily-operator-report`, daily at 09:10 KST
 
 ## Files
 
@@ -55,4 +57,10 @@ scripts/smoke_test.sh
 
 ```bash
 scripts/check_ci_status.sh
+```
+
+## Daily Report
+
+```bash
+./run_daily_report.sh
 ```
