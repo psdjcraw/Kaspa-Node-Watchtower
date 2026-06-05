@@ -14,6 +14,9 @@ ok() {
 "$PYTHON_BIN" -m py_compile watchtower.py kaspa_grpc_probe.py prometheus_file_server.py
 ok "Python compile"
 
+"$PYTHON_BIN" -m unittest discover -s tests >/dev/null
+ok "unit tests"
+
 python3 -m json.tool grafana/kaspa-watchtower.json >/dev/null
 ok "Grafana dashboard JSON"
 

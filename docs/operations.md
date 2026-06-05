@@ -210,6 +210,12 @@ Prometheus alert rule tests:
 prometheus/run_rule_tests.sh
 ```
 
+Unit tests:
+
+```bash
+python3 -m unittest discover -s tests
+```
+
 GitHub Actions:
 
 ```text

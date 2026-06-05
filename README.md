@@ -142,6 +142,12 @@ Run alert rule tests:
 prometheus/run_rule_tests.sh
 ```
 
+Run unit tests:
+
+```bash
+python3 -m unittest discover -s tests
+```
+
 Run the full local smoke test:
 
 ```bash
