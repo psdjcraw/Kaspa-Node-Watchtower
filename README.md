@@ -142,6 +142,9 @@ Run the full local smoke test:
 scripts/smoke_test.sh
 ```
 
+GitHub Actions runs the static smoke workflow in `.github/workflows/smoke.yml`
+on pushes to `main` and pull requests.
+
 Cron-friendly smoke test:
 
 ```bash

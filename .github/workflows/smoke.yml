@@ -1,0 +1,30 @@
+name: smoke
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  static-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Compile Python
+        run: python -m py_compile watchtower.py kaspa_grpc_probe.py prometheus_file_server.py
+
+      - name: Validate JSON files
+        run: |
+          python -m json.tool config.example.json >/dev/null
+          python -m json.tool grafana/kaspa-watchtower.json >/dev/null
+
+      - name: Test Prometheus alert rules
+        run: prometheus/run_rule_tests.sh
