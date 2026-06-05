@@ -309,6 +309,34 @@ class WatchtowerUnitTests(unittest.TestCase):
         self.assertIn("sync_rates=daa=20.00/h blocks=10.00/h headers=0.00/h", text)
         self.assertIn("benchmark_window=a -> b (0.50h)", text)
 
+    def test_format_alert_reports_sync_completed_event(self):
+        report = {
+            "node_name": "kaspa-mainnet-local",
+            "checked_at": "2026-06-05T22:30:00+09:00",
+            "severity": "ok",
+            "status": "ok",
+            "checks": [],
+            "latest_throughput": None,
+            "grpc_metrics": {
+                "ok": True,
+                "is_synced": True,
+                "peer_count": 8,
+                "network_id": "mainnet",
+                "virtual_daa_score": 500,
+            },
+            "progress": {
+                "relay_blocks_in_window": 10,
+                "relay_events_in_window": 5,
+                "window_minutes": 10,
+            },
+            "recovery": {"action": "none"},
+        }
+
+        text = watchtower.format_alert(report, "ok", "ok", event="sync_completed")
+
+        self.assertIn("sync completed", text)
+        self.assertIn("상태: mainnet sync completed", text)
+
     def test_config_validation_rejects_invalid_numeric_settings(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)

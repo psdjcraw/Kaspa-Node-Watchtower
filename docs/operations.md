@@ -49,6 +49,8 @@ Mainnet bootstrap mode:
 Alert repeat suppression:
 
 - Status or severity transitions are announced immediately.
+- Mainnet sync completion (`isSynced=false` -> `true`) is announced once even
+  when bootstrap mode keeps severity at `ok`.
 - Ongoing non-OK states repeat at most once every `60` minutes.
 - Healthy repeated checks stay quiet.
 

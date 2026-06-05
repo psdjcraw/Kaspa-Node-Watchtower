@@ -1029,7 +1029,12 @@ def alert(config: dict) -> int:
     apply_stateful_checks(report, state, config)
     previous_status = state.get("status")
     previous_severity = state.get("severity")
-    should_emit = should_emit_alert(state, report, repeat_minutes)
+    previous_report = state.get("last_report") or {}
+    previous_synced = (previous_report.get("grpc_metrics") or {}).get("is_synced")
+    current_synced = (report.get("grpc_metrics") or {}).get("is_synced")
+    sync_completed = previous_synced is False and current_synced is True
+    event = "sync_completed" if sync_completed else None
+    should_emit = should_emit_alert(state, report, repeat_minutes) or sync_completed
     history = state.get("history", [])
     history.append(history_item(report))
     history_limit = positive_int((config.get("retention") or {}).get("state_history_entries"), 100)
@@ -1054,7 +1059,7 @@ def alert(config: dict) -> int:
     write_prometheus_metrics(metrics_path, report, benchmark_summary, recovery_summary)
 
     if should_emit:
-        print(format_alert(report, previous_status, previous_severity))
+        print(format_alert(report, previous_status, previous_severity, event=event))
     return 0 if report["status"] == "ok" else 1
 
 
@@ -1062,9 +1067,12 @@ def format_alert(
     report: dict[str, Any],
     previous_status: str | None = None,
     previous_severity: str | None = None,
+    event: str | None = None,
 ) -> str:
     failed_checks = [check for check in report["checks"] if not check["ok"]]
-    if report["severity"] == "ok" and previous_status and previous_status != "ok":
+    if event == "sync_completed":
+        title = f"Kaspa watchtower: {report['node_name']} sync completed"
+    elif report["severity"] == "ok" and previous_status and previous_status != "ok":
         title = f"Kaspa watchtower: {report['node_name']} recovered"
     elif report["severity"] == "critical":
         title = f"Kaspa watchtower: {report['node_name']} critical"
@@ -1086,6 +1094,8 @@ def format_alert(
         lines.append("원인:")
         for check in failed_checks:
             lines.append(f"- {check['name']}: {check['detail']}")
+    elif event == "sync_completed":
+        lines.append("상태: mainnet sync completed")
     elif report["severity"] == "ok":
         lines.append("상태: 모든 체크 정상")
 
