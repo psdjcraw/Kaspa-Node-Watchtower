@@ -41,6 +41,12 @@ Open the dashboard:
 http://127.0.0.1:3000/d/kaspa-watchtower/kaspa-watchtower
 ```
 
+Compare the live output with sanitized examples:
+
+```text
+docs/sample-status-reports.md
+```
+
 ## `process` Failed
 
 Confirm `kaspad` is down:

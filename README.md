@@ -63,6 +63,7 @@ Current target environment:
 - [Prometheus/Grafana integrations](docs/integrations.md)
 - [Failure handling runbook](docs/runbook.md)
 - [Deployment status](docs/status.md)
+- [Sample status reports](docs/sample-status-reports.md)
 - [Roadmap](ROADMAP.md)
 - [Contributing guide](CONTRIBUTING.md)
 - [Security policy](SECURITY.md)

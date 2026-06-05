@@ -76,3 +76,9 @@ KASPA_WATCHTOWER_GITHUB_WORKFLOW=codeql.yml scripts/check_ci_status.sh
 ```bash
 ./run_daily_report.sh
 ```
+
+## Sample Reports
+
+Use [sample status reports](sample-status-reports.md) to compare healthy,
+bootstrap, critical RPC/gRPC failure, and disk pressure outputs against live
+watchtower summaries.

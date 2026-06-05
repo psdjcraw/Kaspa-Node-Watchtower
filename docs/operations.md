@@ -93,6 +93,12 @@ Operational snapshot:
 scripts/ops_snapshot.sh
 ```
 
+Sanitized status examples:
+
+```text
+docs/sample-status-reports.md
+```
+
 Diagnostic bundle:
 
 ```bash

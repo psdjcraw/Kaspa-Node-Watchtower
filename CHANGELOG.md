@@ -14,6 +14,8 @@ All notable changes to Kaspa Node Watchtower are tracked here.
   installing, restarting, and verifying the Prometheus exporter LaunchAgent.
 - `make history-report` and `scripts/export_history_sqlite.py --summary` for
   recent SQLite history summaries across benchmark, recovery, and upgrade data.
+- Sanitized sample status reports for healthy, bootstrap, critical RPC/gRPC
+  failure, and disk pressure states.
 - Development version reporting through `watchtower.py --version` and
   `make version`.
 - Bootstrap script and `make bootstrap` target for virtualenv dependency
