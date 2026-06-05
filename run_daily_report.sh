@@ -18,6 +18,34 @@ date '+generated_at=%Y-%m-%dT%H:%M:%S%z'
 section "Node Summary"
 "$PYTHON_BIN" watchtower.py -c config.json --summary
 
+section "Mainnet Sync Progress"
+"$PYTHON_BIN" - "$PYTHON_BIN" <<'PY'
+import json
+import subprocess
+import sys
+
+completed = subprocess.run(
+    [sys.argv[1], "watchtower.py", "-c", "config.json", "--json"],
+    check=False,
+    text=True,
+    capture_output=True,
+)
+if completed.returncode not in (0, 1):
+    print(completed.stderr.strip() or "sync progress unavailable")
+    raise SystemExit(0)
+
+report = json.loads(completed.stdout)
+sync = report.get("sync_progress") or {}
+grpc = report.get("grpc_metrics") or {}
+print(f"network={grpc.get('network_id')} synced={grpc.get('is_synced')}")
+print(f"baseline={sync.get('baseline_checked_at', 'pending')}")
+print(f"detail={sync.get('detail', 'unknown')}")
+for key in ("daa", "block", "header"):
+    delta = sync.get(f"{key}_delta", "unknown")
+    rate = sync.get(f"{key}_rate_per_hour", "unknown")
+    print(f"{key}_delta={delta} {key}_rate_per_hour={rate}")
+PY
+
 section "Benchmark Trend"
 "$PYTHON_BIN" watchtower.py -c config.json --benchmark-report
 
@@ -66,7 +94,8 @@ section "Integrations"
 scripts/check_integrations.sh
 
 section "GitHub Actions"
-scripts/check_ci_status.sh
+KASPA_WATCHTOWER_GITHUB_WORKFLOW=smoke.yml scripts/check_ci_status.sh
+KASPA_WATCHTOWER_GITHUB_WORKFLOW=codeql.yml scripts/check_ci_status.sh
 
 section "Dashboard"
 printf 'status_html=%s\n' "state/status.html"

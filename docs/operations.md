@@ -334,10 +334,10 @@ Daily report:
 ./run_daily_report.sh
 ```
 
-The daily report prints the current node summary, benchmark trend, integration
-status, GitHub Actions status, recent recovery attempts, SQLite history counts,
-and dashboard locations. Unlike alert and smoke wrappers, it intentionally emits
-output while healthy.
+The daily report prints the current node summary, mainnet sync progress,
+benchmark trend, integration status, GitHub Actions status, recent recovery
+attempts, SQLite history counts, and dashboard locations. Unlike alert and smoke
+wrappers, it intentionally emits output while healthy.
 
 Prometheus textfile metrics:
 

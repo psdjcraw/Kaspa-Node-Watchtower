@@ -267,6 +267,9 @@ Generate a daily operator report:
 make daily-report
 ```
 
+The daily report includes node health, mainnet sync progress, benchmark trends,
+integration status, and smoke/CodeQL workflow status.
+
 See [Documentation](#documentation) for setup, integrations, operations,
 security, roadmap, and release history.
 

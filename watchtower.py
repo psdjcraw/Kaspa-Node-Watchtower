@@ -1318,6 +1318,16 @@ def build_benchmark_summary(path: Path, *, limit: int) -> dict[str, Any]:
     items = load_jsonl(path)
     if limit > 0:
         items = items[-limit:]
+    if items:
+        latest = items[-1]
+        latest_node = latest.get("node_name")
+        latest_network = latest.get("network_id")
+        items = [
+            item
+            for item in items
+            if (not latest_node or item.get("node_name") == latest_node)
+            and (not latest_network or item.get("network_id") == latest_network)
+        ]
     if len(items) < 2:
         return {
             "ok": False,

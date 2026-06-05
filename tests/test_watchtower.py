@@ -80,6 +80,47 @@ class WatchtowerUnitTests(unittest.TestCase):
             self.assertEqual(summary["relay_rate"], "6.00/min")
             self.assertEqual(json.loads(summary["severity_counts"]), {"ok": 2})
 
+    def test_benchmark_summary_filters_to_latest_node_and_network(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "benchmarks.jsonl"
+            items = [
+                {
+                    "checked_at": "2026-06-05T10:00:00+09:00",
+                    "node_name": "kaspa-tn10-local",
+                    "network_id": "testnet-10",
+                    "virtual_daa_score": 5000,
+                    "block_count": 9000,
+                    "status": "ok",
+                    "severity": "ok",
+                },
+                {
+                    "checked_at": "2026-06-05T11:00:00+09:00",
+                    "node_name": "kaspa-mainnet-local",
+                    "network_id": "mainnet",
+                    "virtual_daa_score": 100,
+                    "block_count": 200,
+                    "status": "ok",
+                    "severity": "ok",
+                },
+                {
+                    "checked_at": "2026-06-05T12:00:00+09:00",
+                    "node_name": "kaspa-mainnet-local",
+                    "network_id": "mainnet",
+                    "virtual_daa_score": 160,
+                    "block_count": 260,
+                    "status": "ok",
+                    "severity": "ok",
+                },
+            ]
+            watchtower.save_jsonl(path, items)
+
+            summary = watchtower.build_benchmark_summary(path, limit=100)
+
+            self.assertTrue(summary["ok"])
+            self.assertEqual(summary["snapshots"], 2)
+            self.assertEqual(summary["daa_delta"], 60)
+            self.assertEqual(summary["block_delta"], 60)
+
     def test_prometheus_metrics_include_extended_grpc_values(self):
         report = {
             "node_name": "test-node",
