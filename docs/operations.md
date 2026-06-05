@@ -45,6 +45,20 @@ Alert mode for cron:
 `--alert` writes state to `state/watchtower-state.json`. It emits output when
 status changes, and keeps emitting while the status remains `alert`.
 
+## Git Push
+
+This repository uses the registered GitHub deploy key at:
+
+```bash
+/Users/psdjc/.ssh/openclaw_git_20260605_ed25519
+```
+
+The local repo config should keep:
+
+```bash
+git config core.sshCommand "ssh -i /Users/psdjc/.ssh/openclaw_git_20260605_ed25519 -o IdentitiesOnly=yes"
+```
+
 ## Discord Cron Plan
 
 OpenClaw cron job `d370358a-e1f3-4456-9818-68537c558f88`
