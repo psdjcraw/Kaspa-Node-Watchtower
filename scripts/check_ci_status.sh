@@ -9,7 +9,7 @@ GITHUB_BRANCH="${KASPA_WATCHTOWER_GITHUB_BRANCH:-main}"
 API_URL="https://api.github.com/repos/$GITHUB_REPOSITORY/actions/workflows/$GITHUB_WORKFLOW/runs"
 GITHUB_API_TOKEN="${GITHUB_TOKEN:-${GH_TOKEN:-}}"
 
-curl_args=(-fsS -G "$API_URL" --data-urlencode "branch=$GITHUB_BRANCH" --data-urlencode "per_page=1")
+curl_args=(-fsSL -G "$API_URL" --data-urlencode "branch=$GITHUB_BRANCH" --data-urlencode "per_page=1")
 if [ -n "$GITHUB_API_TOKEN" ]; then
   curl_args=(-H "Authorization: Bearer $GITHUB_API_TOKEN" "${curl_args[@]}")
 fi

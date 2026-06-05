@@ -38,6 +38,8 @@ check_prometheus_rules() {
     grep -q '"name":"kaspa-watchtower"'
   curl -fsS "$PROMETHEUS_URL/api/v1/rules" |
     grep -q '"name":"KaspaWatchtowerCritical"'
+  curl -fsS "$PROMETHEUS_URL/api/v1/rules" |
+    grep -q '"name":"KaspaWatchtowerRecoveryCommandFailed"'
   ok "Prometheus watchtower alert rules"
 }
 

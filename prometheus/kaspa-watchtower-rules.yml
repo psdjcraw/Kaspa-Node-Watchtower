@@ -60,3 +60,22 @@ groups:
         annotations:
           summary: "Kaspa watchtower metrics are stale"
           description: "Prometheus sample age is above 180 seconds for node {{ $labels.node }}."
+
+      - alert: KaspaWatchtowerRecoveryUnavailable
+        expr: increase(kaspa_watchtower_recovery_unavailable_total{job="kaspa-watchtower"}[30m]) > 0
+        labels:
+          severity: warning
+          service: kaspa-watchtower
+        annotations:
+          summary: "Kaspa watchtower recovery was unavailable"
+          description: "A recovery request could not run for node {{ $labels.node }}."
+
+      - alert: KaspaWatchtowerRecoveryCommandFailed
+        expr: kaspa_watchtower_recovery_last_exit_code{job="kaspa-watchtower"} != 0
+        for: 2m
+        labels:
+          severity: critical
+          service: kaspa-watchtower
+        annotations:
+          summary: "Kaspa watchtower recovery command failed"
+          description: "The latest recovery command returned a non-zero exit code for node {{ $labels.node }}."

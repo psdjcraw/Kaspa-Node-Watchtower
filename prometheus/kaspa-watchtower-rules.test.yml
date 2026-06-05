@@ -93,3 +93,39 @@ tests:
             exp_annotations:
               summary: "Kaspa watchtower metrics are missing"
               description: "Prometheus has not scraped kaspa_watchtower_status_ok for 2 minutes."
+
+  - interval: 1m
+    input_series:
+      - series: 'kaspa_watchtower_recovery_unavailable_total{job="kaspa-watchtower",node="test"}'
+        values: '0 0 1 1 1 1'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: KaspaWatchtowerRecoveryUnavailable
+        exp_alerts:
+          - exp_labels:
+              alertname: KaspaWatchtowerRecoveryUnavailable
+              job: kaspa-watchtower
+              node: test
+              service: kaspa-watchtower
+              severity: warning
+            exp_annotations:
+              summary: "Kaspa watchtower recovery was unavailable"
+              description: "A recovery request could not run for node test."
+
+  - interval: 1m
+    input_series:
+      - series: 'kaspa_watchtower_recovery_last_exit_code{job="kaspa-watchtower",node="test"}'
+        values: '1+0x5'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: KaspaWatchtowerRecoveryCommandFailed
+        exp_alerts:
+          - exp_labels:
+              alertname: KaspaWatchtowerRecoveryCommandFailed
+              job: kaspa-watchtower
+              node: test
+              service: kaspa-watchtower
+              severity: critical
+            exp_annotations:
+              summary: "Kaspa watchtower recovery command failed"
+              description: "The latest recovery command returned a non-zero exit code for node test."
