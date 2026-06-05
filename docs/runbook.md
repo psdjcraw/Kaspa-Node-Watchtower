@@ -12,6 +12,7 @@ Collect diagnostics:
 
 ```bash
 scripts/collect_diagnostics.sh
+scripts/collect_diagnostics.sh --archive
 ```
 
 Then run the full smoke test:

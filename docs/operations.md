@@ -70,6 +70,7 @@ Diagnostic bundle:
 
 ```bash
 scripts/collect_diagnostics.sh
+scripts/collect_diagnostics.sh --archive
 ```
 
 Full local smoke test:

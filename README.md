@@ -172,6 +172,7 @@ Collect a local diagnostics bundle:
 
 ```bash
 scripts/collect_diagnostics.sh
+scripts/collect_diagnostics.sh --archive
 ```
 
 GitHub Actions runs the static smoke workflow in `.github/workflows/smoke.yml`
