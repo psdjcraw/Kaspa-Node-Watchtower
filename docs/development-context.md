@@ -1,6 +1,25 @@
 # Development Context
 
-Kaspa Node Watchtower started from a local `rusty-kaspa` testnet node run.
+Kaspa Node Watchtower started from a local `rusty-kaspa` testnet node run and
+was later switched to the mainnet Toccata release.
+
+Current node context:
+
+- Binary: `/Users/psdjc/kaspa/rusty-kaspa-v2.0.0/bin/kaspad`
+- Version: `kaspad 2.0.0`
+- Network: mainnet
+- RPC: `127.0.0.1:16110`
+- P2P: `0.0.0.0:16111`
+- Data directory: `/Users/psdjc/kaspa/rusty-kaspa-mainnet-data/kaspa-mainnet/datadir`
+- Log file: `/Users/psdjc/kaspa/rusty-kaspa-mainnet-data/kaspa-mainnet/logs/rusty-kaspa.log`
+- Launchd label: `com.openclaw.kaspad-mainnet`
+
+Mainnet switch:
+
+- Release: `Mainnet Toccata Release - v2.0.0`
+- Started locally at `2026-06-05 21:36:46 +09:00`
+- Testnet launchd label `com.openclaw.kaspad-tn10` was stopped, but testnet
+  data was preserved.
 
 Observed node context:
 

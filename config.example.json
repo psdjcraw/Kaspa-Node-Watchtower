@@ -1,11 +1,11 @@
 {
-  "node_name": "kaspa-tn10-local",
+  "node_name": "kaspa-mainnet-local",
   "process_match": "kaspad",
   "log_scan_bytes": 100000000,
-  "log_path": "/Users/psdjc/kaspa/rusty-kaspa-tn10-data/kaspa-testnet-10/logs/rusty-kaspa.log",
-  "data_dir": "/Users/psdjc/kaspa/rusty-kaspa-tn10-data/kaspa-testnet-10/datadir",
-  "rpc_endpoint": "127.0.0.1:16210",
-  "grpc_endpoint": "127.0.0.1:16210",
+  "log_path": "/Users/psdjc/kaspa/rusty-kaspa-mainnet-data/kaspa-mainnet/logs/rusty-kaspa.log",
+  "data_dir": "/Users/psdjc/kaspa/rusty-kaspa-mainnet-data/kaspa-mainnet/datadir",
+  "rpc_endpoint": "127.0.0.1:16110",
+  "grpc_endpoint": "127.0.0.1:16110",
   "state_path": "state/watchtower-state.json",
   "status_page_path": "state/status.html",
   "canvas_status_page_path": "/Users/psdjc/.openclaw/canvas/kaspa-watchtower/status.html",
@@ -34,7 +34,7 @@
       "launchctl",
       "kickstart",
       "-k",
-      "gui/501/com.openclaw.kaspad-tn10"
+      "gui/501/com.openclaw.kaspad-mainnet"
     ]
   }
 }
