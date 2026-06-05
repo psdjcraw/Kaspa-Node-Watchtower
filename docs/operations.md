@@ -25,6 +25,8 @@ The local watchtower reports an alert when any of these fail:
 - The latest `kaspad` log timestamp is older than `15 minutes`.
 - No relay-accepted blocks appear in the latest `10 minutes`, unless the node
   is still unsynced and `require_relay_progress_when_unsynced=false`.
+- Unsynced mainnet progress has no DAA, block, or header movement for the
+  configured `sync_progress_stall_minutes` window.
 - The configured log file is missing.
 
 Severity mapping:
@@ -39,6 +41,8 @@ Mainnet bootstrap mode:
   `require_relay_progress_when_unsynced=false`.
 - This keeps RPC, gRPC, process, peer, disk, and log checks active while avoiding
   false recovery alerts before relay progress starts.
+- `require_sync_progress_when_unsynced=true` still watches for stalled sync by
+  comparing saved DAA, block, and header counters over a `30` minute window.
 - When the node reaches `isSynced=true`, set `require_synced=true` if strict
   production sync enforcement is desired.
 

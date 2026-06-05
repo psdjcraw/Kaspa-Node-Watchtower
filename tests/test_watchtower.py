@@ -180,6 +180,43 @@ class WatchtowerUnitTests(unittest.TestCase):
             self.assertTrue(checks["block_progress"]["ok"])
             self.assertIn("skipped while unsynced", checks["block_progress"]["detail"])
 
+    def test_unsynced_sync_progress_stall_warns(self):
+        config = copy.deepcopy(watchtower.DEFAULT_CONFIG)
+        checked_at = "2026-06-05T22:00:00+09:00"
+        report = {
+            "node_name": "mainnet-bootstrap",
+            "status": "ok",
+            "severity": "ok",
+            "checked_at": checked_at,
+            "checks": [{"name": "process", "ok": True, "detail": "running"}],
+            "grpc_metrics": {
+                "ok": True,
+                "is_synced": False,
+                "network_id": "mainnet",
+                "virtual_daa_score": 100,
+                "block_count": 200,
+                "header_count": 300,
+            },
+        }
+        state = {
+            "history": [
+                {
+                    "checked_at": "2026-06-05T21:20:00+09:00",
+                    "network_id": "mainnet",
+                    "virtual_daa_score": 100,
+                    "block_count": 200,
+                    "header_count": 300,
+                }
+            ]
+        }
+
+        watchtower.apply_stateful_checks(report, state, config)
+
+        checks = {check["name"]: check for check in report["checks"]}
+        self.assertEqual(report["severity"], "warn")
+        self.assertFalse(checks["sync_progress"]["ok"])
+        self.assertIn("daa_delta=+0", checks["sync_progress"]["detail"])
+
     def test_config_validation_rejects_invalid_numeric_settings(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)

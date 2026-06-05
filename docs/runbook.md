@@ -90,10 +90,13 @@ If a newly switched mainnet node has peers and RPC/gRPC works, but
 
 ```json
 "require_synced": false,
-"require_relay_progress_when_unsynced": false
+"require_relay_progress_when_unsynced": false,
+"require_sync_progress_when_unsynced": true
 ```
 
 This prevents expected initial sync catch-up from triggering recovery alerts.
+The watchtower still warns if saved DAA, block, and header counters do not move
+for the configured `sync_progress_stall_minutes` window.
 After the node reaches `is_synced=true`, re-enable `require_synced=true` for
 strict production monitoring if needed.
 

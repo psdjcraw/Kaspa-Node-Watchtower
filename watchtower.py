@@ -47,6 +47,11 @@ DEFAULT_CONFIG = {
         "require_grpc_metrics": True,
         "require_synced": True,
         "require_relay_progress_when_unsynced": False,
+        "require_sync_progress_when_unsynced": True,
+        "sync_progress_stall_minutes": 30,
+        "min_sync_daa_delta": 1,
+        "min_sync_block_delta": 1,
+        "min_sync_header_delta": 1,
         "disk_free_gb_min": 20,
         "disk_free_percent_min": 5,
         "require_rpc": True,
@@ -110,6 +115,17 @@ def summarize_severity(checks: list[Check]) -> str:
     if any(name in CRITICAL_CHECKS for name in failed):
         return "critical"
     return "warn"
+
+
+def recalculate_report_health(report: dict[str, Any], config: dict) -> None:
+    checks = [
+        Check(str(check["name"]), bool(check["ok"]), str(check["detail"]))
+        for check in report.get("checks", [])
+    ]
+    severity = summarize_severity(checks)
+    report["severity"] = severity
+    report["status"] = "ok" if severity == "ok" else "alert"
+    report["recovery"] = recovery_plan(config, severity)
 
 
 def load_config(path: Path | None) -> dict:
@@ -478,8 +494,16 @@ def build_report(config: dict) -> dict[str, Any]:
     return report
 
 
-def status(config: dict) -> int:
+def build_stateful_report(config: dict) -> tuple[dict[str, Any], dict[str, Any]]:
     report = build_report(config)
+    state_path = Path(config.get("state_path") or DEFAULT_CONFIG["state_path"])
+    state = load_state(state_path)
+    apply_stateful_checks(report, state, config)
+    return report, state
+
+
+def status(config: dict) -> int:
+    report, _state = build_stateful_report(config)
 
     print(f"Kaspa Node Watchtower: {report['node_name']}")
     print(f"Status: {report['status']}")
@@ -584,6 +608,14 @@ def numeric(value: Any) -> float | None:
         return None
 
 
+def format_delta(value: float | None) -> str:
+    if value is None:
+        return "unknown"
+    if value.is_integer():
+        return f"{int(value):+d}"
+    return f"{value:+.2f}"
+
+
 def short_hash(value: Any, length: int = 12) -> str:
     text = str(value or "")
     return text[:length] if text else "unknown"
@@ -599,9 +631,81 @@ def history_item(report: dict[str, Any]) -> dict[str, Any]:
         "failed_checks": failed_check_names(report),
         "peer_count": grpc_metrics.get("peer_count"),
         "is_synced": grpc_metrics.get("is_synced"),
+        "network_id": grpc_metrics.get("network_id"),
         "virtual_daa_score": grpc_metrics.get("virtual_daa_score"),
+        "block_count": grpc_metrics.get("block_count"),
+        "header_count": grpc_metrics.get("header_count"),
         "relay_blocks_in_window": progress.get("relay_blocks_in_window"),
     }
+
+
+def apply_stateful_checks(report: dict[str, Any], state: dict[str, Any], config: dict) -> None:
+    thresholds = config.get("thresholds", {})
+    grpc_metrics = report.get("grpc_metrics") or {}
+    if not grpc_metrics.get("ok"):
+        return
+    if bool(grpc_metrics.get("is_synced")):
+        return
+    if not bool(thresholds.get("require_sync_progress_when_unsynced", True)):
+        return
+
+    checked_at = parse_iso_datetime(report.get("checked_at"))
+    network_id = grpc_metrics.get("network_id")
+    if checked_at is None or not network_id:
+        return
+
+    stall_minutes = float(thresholds.get("sync_progress_stall_minutes", 30))
+    cutoff = checked_at - dt.timedelta(minutes=stall_minutes)
+    candidates = []
+    for item in state.get("history", []):
+        if item.get("network_id") != network_id:
+            continue
+        item_at = parse_iso_datetime(item.get("checked_at"))
+        if item_at is not None and item_at <= cutoff:
+            candidates.append((item_at, item))
+
+    if not candidates:
+        detail = f"baseline pending for {stall_minutes:g}m unsynced window"
+        report["checks"].append(Check("sync_progress", True, detail).as_dict())
+        recalculate_report_health(report, config)
+        return
+
+    baseline_at, baseline = candidates[-1]
+    current_values = {
+        "daa": numeric(grpc_metrics.get("virtual_daa_score")),
+        "block": numeric(grpc_metrics.get("block_count")),
+        "header": numeric(grpc_metrics.get("header_count")),
+    }
+    baseline_values = {
+        "daa": numeric(baseline.get("virtual_daa_score")),
+        "block": numeric(baseline.get("block_count")),
+        "header": numeric(baseline.get("header_count")),
+    }
+    deltas = {
+        key: (
+            None
+            if current_values[key] is None or baseline_values[key] is None
+            else current_values[key] - baseline_values[key]
+        )
+        for key in current_values
+    }
+    ok = any(
+        delta is not None and delta >= minimum
+        for delta, minimum in (
+            (deltas["daa"], float(thresholds.get("min_sync_daa_delta", 1))),
+            (deltas["block"], float(thresholds.get("min_sync_block_delta", 1))),
+            (deltas["header"], float(thresholds.get("min_sync_header_delta", 1))),
+        )
+    )
+    elapsed_minutes = max(0.0, (checked_at - baseline_at).total_seconds() / 60)
+    detail = (
+        f"daa_delta={format_delta(deltas['daa'])} "
+        f"block_delta={format_delta(deltas['block'])} "
+        f"header_delta={format_delta(deltas['header'])} "
+        f"over {elapsed_minutes:.1f}m"
+    )
+    report["checks"].append(Check("sync_progress", ok, detail).as_dict())
+    recalculate_report_health(report, config)
 
 
 def should_emit_alert(
@@ -879,7 +983,6 @@ def write_status_page(
 
 
 def alert(config: dict) -> int:
-    report = build_report(config)
     state_path = Path(config.get("state_path") or DEFAULT_CONFIG["state_path"])
     status_page_path = Path(config.get("status_page_path") or DEFAULT_CONFIG["status_page_path"])
     canvas_status_page = config.get("canvas_status_page_path") or DEFAULT_CONFIG["canvas_status_page_path"]
@@ -889,6 +992,8 @@ def alert(config: dict) -> int:
     thresholds = config.get("thresholds", {})
     repeat_minutes = float(thresholds.get("alert_repeat_minutes", 60))
     state = load_state(state_path)
+    report = build_report(config)
+    apply_stateful_checks(report, state, config)
     previous_status = state.get("status")
     previous_severity = state.get("severity")
     should_emit = should_emit_alert(state, report, repeat_minutes)
@@ -1564,7 +1669,7 @@ def write_prometheus_metrics(
 
 
 def prometheus(config: dict) -> int:
-    report = build_report(config)
+    report, _state = build_stateful_report(config)
     benchmark_path = Path(config.get("benchmark_path") or DEFAULT_CONFIG["benchmark_path"])
     metrics_path = Path(config.get("prometheus_metrics_path") or DEFAULT_CONFIG["prometheus_metrics_path"])
     benchmark_summary = build_benchmark_summary(benchmark_path, limit=48)
@@ -1661,6 +1766,11 @@ def config_validation_checks(config: dict) -> list[Check]:
         ("require_grpc_metrics", lambda value: isinstance(value, bool)),
         ("require_synced", lambda value: isinstance(value, bool)),
         ("require_relay_progress_when_unsynced", lambda value: isinstance(value, bool)),
+        ("require_sync_progress_when_unsynced", lambda value: isinstance(value, bool)),
+        ("sync_progress_stall_minutes", lambda value: number_between_config(value, 1)),
+        ("min_sync_daa_delta", non_negative_int_config),
+        ("min_sync_block_delta", non_negative_int_config),
+        ("min_sync_header_delta", non_negative_int_config),
     ]
     for key, validator in threshold_specs:
         value = nested_config_value(config, "thresholds", key)
@@ -1832,11 +1942,11 @@ def main() -> int:
     args = parser.parse_args()
     config = load_config(args.config)
     if args.json:
-        report = build_report(config)
+        report, _state = build_stateful_report(config)
         print(json.dumps(report, indent=2, sort_keys=True))
         return 0 if report["status"] == "ok" else 1
     if args.summary:
-        report = build_report(config)
+        report, _state = build_stateful_report(config)
         print(format_summary(report))
         return 0 if report["status"] == "ok" else 1
     if args.alert:
