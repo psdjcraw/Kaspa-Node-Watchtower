@@ -2,6 +2,19 @@
 
 All notable changes to Kaspa Node Watchtower are tracked here.
 
+## Unreleased
+
+### Added
+
+- Development version reporting through `watchtower.py --version` and
+  `make version`.
+
+### Changed
+
+- `scripts/smoke_test.sh` now keeps external integration checks optional via
+  `KASPA_WATCHTOWER_SMOKE_INTEGRATIONS=1`; use `make integrations` for the
+  GitHub API, Prometheus, Grafana, and exporter integration check.
+
 ## 0.1.0 - 2026-06-05
 
 ### Added

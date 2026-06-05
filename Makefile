@@ -1,15 +1,16 @@
 PYTHON ?= .venv/bin/python
 CONFIG ?= config.json
 
-.PHONY: help status summary json alert smoke ci integrations diagnostics diagnostics-archive daily-report benchmark benchmark-report prometheus export-history prune validate recover-dry-run recover force-recover-dry-run
+.PHONY: help version status summary json alert smoke ci integrations diagnostics diagnostics-archive daily-report benchmark benchmark-report prometheus export-history prune validate recover-dry-run recover force-recover-dry-run
 
 help:
 	@printf 'Kaspa Node Watchtower operator commands\n'
 	@printf '\n'
+	@printf '  make version             Print watchtower version\n'
 	@printf '  make status              Run the cron-style health check\n'
 	@printf '  make summary             Print a one-shot health summary\n'
 	@printf '  make json                Print the raw JSON health report\n'
-	@printf '  make smoke               Run the full smoke test suite\n'
+	@printf '  make smoke               Run the local smoke test suite\n'
 	@printf '  make ci                  Check latest GitHub Actions smoke run\n'
 	@printf '  make integrations        Check exporter, Prometheus, Grafana, and CI\n'
 	@printf '  make diagnostics         Collect diagnostic report\n'
@@ -23,6 +24,9 @@ help:
 	@printf '  make validate            Validate config\n'
 	@printf '  make recover-dry-run     Show manual recovery command without restart\n'
 	@printf '  make recover             Run approved manual recovery when unhealthy\n'
+
+version:
+	@$(PYTHON) watchtower.py --version
 
 status:
 	@./run_watchtower.sh

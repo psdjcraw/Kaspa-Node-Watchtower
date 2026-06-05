@@ -18,6 +18,8 @@ from pathlib import Path
 from typing import Any, Iterable
 
 
+VERSION = "0.2.0-dev"
+
 DEFAULT_CONFIG = {
     "node_name": "kaspa-local",
     "process_match": "kaspad",
@@ -1796,6 +1798,7 @@ def recover(config: dict, *, force: bool = False, dry_run: bool = False) -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Report local Kaspa node health.")
+    parser.add_argument("--version", action="version", version=f"%(prog)s {VERSION}")
     parser.add_argument("-c", "--config", type=Path, help="Path to config JSON.")
     parser.add_argument("--json", action="store_true", help="Print a JSON health report.")
     parser.add_argument("--summary", action="store_true", help="Print a concise text health summary.")

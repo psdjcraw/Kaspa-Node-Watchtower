@@ -62,6 +62,13 @@ For a concise operator summary:
 .venv/bin/python watchtower.py -c config.json --summary
 ```
 
+Print the watchtower version:
+
+```bash
+.venv/bin/python watchtower.py --version
+make version
+```
+
 Validate local configuration:
 
 ```bash
@@ -182,6 +189,13 @@ Run the full local smoke test:
 
 ```bash
 scripts/smoke_test.sh
+```
+
+External integration checks are separate:
+
+```bash
+make integrations
+KASPA_WATCHTOWER_SMOKE_INTEGRATIONS=1 scripts/smoke_test.sh
 ```
 
 Run local failure simulations without touching the live node:

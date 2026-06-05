@@ -14,6 +14,9 @@ ok() {
 "$PYTHON_BIN" -m py_compile watchtower.py kaspa_grpc_probe.py prometheus_file_server.py scripts/upgrade_checkpoint.py scripts/export_history_sqlite.py
 ok "Python compile"
 
+"$PYTHON_BIN" watchtower.py --version >/dev/null
+ok "watchtower version"
+
 "$PYTHON_BIN" -m unittest discover -s tests >/dev/null
 ok "unit tests"
 
@@ -46,8 +49,12 @@ if [ -f "config.json" ]; then
   ./run_benchmark_snapshot.sh >/dev/null
   ok "benchmark wrapper"
 
-  scripts/check_integrations.sh >/dev/null
-  ok "external integrations"
+  if [ "${KASPA_WATCHTOWER_SMOKE_INTEGRATIONS:-0}" = "1" ]; then
+    scripts/check_integrations.sh >/dev/null
+    ok "external integrations"
+  else
+    ok "external integrations skipped"
+  fi
 
   scripts/check_prometheus_alerts.sh >/dev/null
   ok "Prometheus alert bridge"
