@@ -47,9 +47,9 @@ which supports a more resilient decentralized network.
 
 ## Current Context
 
-Initial target environment:
+Current target environment:
 
-- Kaspa testnet 10
+- Kaspa mainnet
 - Local `rusty-kaspa` / `kaspad`
 - macOS host
 - Discord-based operational updates

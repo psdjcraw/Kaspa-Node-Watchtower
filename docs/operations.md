@@ -2,14 +2,14 @@
 
 ## Current Target
 
-- Node: `kaspa-tn10-local`
+- Node: `kaspa-mainnet-local`
 - Host: `hang-studio-m4max`
-- Network: Kaspa testnet 10
-- RPC TCP check: `127.0.0.1:16210`
-- gRPC metrics: `127.0.0.1:16210`
+- Network: Kaspa mainnet
+- RPC TCP check: `127.0.0.1:16110`
+- gRPC metrics: `127.0.0.1:16110`
 - Process match: `kaspad`
-- Log: `/Users/psdjc/kaspa/rusty-kaspa-tn10-data/kaspa-testnet-10/logs/rusty-kaspa.log`
-- Data dir: `/Users/psdjc/kaspa/rusty-kaspa-tn10-data/kaspa-testnet-10/datadir`
+- Log: `/Users/psdjc/kaspa/rusty-kaspa-mainnet-data/kaspa-mainnet/logs/rusty-kaspa.log`
+- Data dir: `/Users/psdjc/kaspa/rusty-kaspa-mainnet-data/kaspa-mainnet/datadir`
 
 ## Alert Criteria
 
@@ -17,13 +17,14 @@ The local watchtower reports an alert when any of these fail:
 
 - `kaspad` process is not running.
 - Data directory is missing.
-- RPC TCP connection to `127.0.0.1:16210` fails.
+- RPC TCP connection to `127.0.0.1:16110` fails.
 - gRPC metrics cannot be read.
-- Node reports `isSynced=false`.
+- Node reports `isSynced=false` when `require_synced=true`.
 - Connected peer count is below `1`.
 - Disk free space drops below `20 GiB` or below `5%`.
 - The latest `kaspad` log timestamp is older than `15 minutes`.
-- No relay-accepted blocks appear in the latest `10 minutes`.
+- No relay-accepted blocks appear in the latest `10 minutes`, unless the node
+  is still unsynced and `require_relay_progress_when_unsynced=false`.
 - The configured log file is missing.
 
 Severity mapping:
@@ -31,6 +32,15 @@ Severity mapping:
 - `critical`: process, data directory, RPC, gRPC, sync, peer count, or log file failure.
 - `warn`: disk, log freshness, or relay progress failure.
 - `ok`: all checks pass.
+
+Mainnet bootstrap mode:
+
+- During initial mainnet sync, set `require_synced=false` and
+  `require_relay_progress_when_unsynced=false`.
+- This keeps RPC, gRPC, process, peer, disk, and log checks active while avoiding
+  false recovery alerts before relay progress starts.
+- When the node reaches `isSynced=true`, set `require_synced=true` if strict
+  production sync enforcement is desired.
 
 Alert repeat suppression:
 

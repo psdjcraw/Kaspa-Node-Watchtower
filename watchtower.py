@@ -45,6 +45,8 @@ DEFAULT_CONFIG = {
         "min_relay_blocks_in_window": 1,
         "min_peer_count": 1,
         "require_grpc_metrics": True,
+        "require_synced": True,
+        "require_relay_progress_when_unsynced": False,
         "disk_free_gb_min": 20,
         "disk_free_percent_min": 5,
         "require_rpc": True,
@@ -327,11 +329,13 @@ def build_report(config: dict) -> dict[str, Any]:
             )
         )
     if grpc_metrics.get("ok"):
+        is_synced = bool(grpc_metrics.get("is_synced"))
+        require_synced = bool(thresholds.get("require_synced", True))
         checks.append(
             Check(
                 "sync_status",
-                bool(grpc_metrics.get("is_synced")),
-                f"is_synced={bool(grpc_metrics.get('is_synced'))}",
+                is_synced or not require_synced,
+                f"is_synced={is_synced} require_synced={require_synced}",
             )
         )
         min_peer_count = int(thresholds.get("min_peer_count", 1))
@@ -419,15 +423,26 @@ def build_report(config: dict) -> dict[str, Any]:
                     "line": latest_processed.line,
                 }
             min_relay_blocks = int(thresholds.get("min_relay_blocks_in_window", 1))
+            require_unsynced_progress = bool(
+                thresholds.get("require_relay_progress_when_unsynced", False)
+            )
+            is_synced = bool(grpc_metrics.get("is_synced")) if grpc_metrics.get("ok") else True
+            block_progress_ok = recent_relay_blocks >= min_relay_blocks
+            block_progress_detail = (
+                f"{recent_relay_blocks} relay blocks in "
+                f"{progress_window:g}m window "
+                f"({len(recent_relay_events)} events)"
+            )
+            if not is_synced and not require_unsynced_progress:
+                block_progress_ok = True
+                block_progress_detail = (
+                    f"skipped while unsynced; {block_progress_detail}"
+                )
             checks.append(
                 Check(
                     "block_progress",
-                    recent_relay_blocks >= min_relay_blocks,
-                    (
-                        f"{recent_relay_blocks} relay blocks in "
-                        f"{progress_window:g}m window "
-                        f"({len(recent_relay_events)} events)"
-                    ),
+                    block_progress_ok,
+                    block_progress_detail,
                 )
             )
     else:
@@ -1644,6 +1659,8 @@ def config_validation_checks(config: dict) -> list[Check]:
         ("disk_free_percent_min", lambda value: number_between_config(value, 0, 100)),
         ("require_rpc", lambda value: isinstance(value, bool)),
         ("require_grpc_metrics", lambda value: isinstance(value, bool)),
+        ("require_synced", lambda value: isinstance(value, bool)),
+        ("require_relay_progress_when_unsynced", lambda value: isinstance(value, bool)),
     ]
     for key, validator in threshold_specs:
         value = nested_config_value(config, "thresholds", key)

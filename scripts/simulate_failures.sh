@@ -41,6 +41,7 @@ if name == "peer-critical":
     config["thresholds"]["min_peer_count"] = 999
 elif name == "relay-warning":
     config["thresholds"]["min_relay_blocks_in_window"] = 999999
+    config["thresholds"]["require_relay_progress_when_unsynced"] = True
 elif name == "rpc-critical":
     config["rpc_endpoint"] = "127.0.0.1:1"
 elif name == "peer-recovered":

@@ -21,7 +21,7 @@ check_exporter() {
 check_prometheus_query() {
   curl -fsG "$PROMETHEUS_URL/api/v1/query" \
     --data-urlencode 'query=kaspa_watchtower_status_ok' |
-    grep -q '"node":"kaspa-tn10-local"'
+    grep -q '"node":"kaspa-mainnet-local"'
   ok "Prometheus watchtower status query"
 }
 

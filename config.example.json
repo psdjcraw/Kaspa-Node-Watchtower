@@ -23,6 +23,8 @@
     "min_relay_blocks_in_window": 1,
     "min_peer_count": 1,
     "require_grpc_metrics": true,
+    "require_synced": false,
+    "require_relay_progress_when_unsynced": false,
     "disk_free_gb_min": 20,
     "disk_free_percent_min": 5,
     "require_rpc": true

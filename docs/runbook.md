@@ -61,13 +61,13 @@ If restart is approved:
 Confirm the port:
 
 ```bash
-nc -vz 127.0.0.1 16210
+nc -vz 127.0.0.1 16110
 ```
 
 Check process logs:
 
 ```bash
-tail -n 80 /Users/psdjc/kaspa/rusty-kaspa-tn10-data/kaspa-testnet-10/logs/rusty-kaspa.log
+tail -n 80 /Users/psdjc/kaspa/rusty-kaspa-mainnet-data/kaspa-mainnet/logs/rusty-kaspa.log
 ```
 
 If the process is running but RPC is not responding, use manual recovery only
@@ -83,12 +83,26 @@ Check current gRPC status:
 
 Look for `grpc_metrics.peer_count`, `active_peers`, and `is_synced`.
 
+## Mainnet Initial Sync
+
+If a newly switched mainnet node has peers and RPC/gRPC works, but
+`grpc_metrics.is_synced=false`, keep bootstrap mode enabled:
+
+```json
+"require_synced": false,
+"require_relay_progress_when_unsynced": false
+```
+
+This prevents expected initial sync catch-up from triggering recovery alerts.
+After the node reaches `is_synced=true`, re-enable `require_synced=true` for
+strict production monitoring if needed.
+
 ## `block_progress` Failed
 
 Check recent relay activity:
 
 ```bash
-grep ' via relay' /Users/psdjc/kaspa/rusty-kaspa-tn10-data/kaspa-testnet-10/logs/rusty-kaspa.log | tail -40
+grep ' via relay' /Users/psdjc/kaspa/rusty-kaspa-mainnet-data/kaspa-mainnet/logs/rusty-kaspa.log | tail -40
 ```
 
 Check benchmark trend:

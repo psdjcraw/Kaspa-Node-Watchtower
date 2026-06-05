@@ -1,8 +1,10 @@
 import json
 import copy
+import datetime as dt
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import watchtower
 
@@ -129,6 +131,54 @@ class WatchtowerUnitTests(unittest.TestCase):
         self.assertIn("kaspa_watchtower_process_fd_num", metrics)
         self.assertIn("kaspa_watchtower_recovery_attempts_total", metrics)
         self.assertIn("kaspa_watchtower_recovery_last_started_timestamp_seconds", metrics)
+
+    def test_unsynced_bootstrap_skips_sync_and_relay_progress_requirements(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            log_path = tmp_path / "rusty-kaspa.log"
+            timestamp = dt.datetime.now().astimezone().isoformat(" ").replace("T", " ")
+            log_path.write_text(f"{timestamp} INFO Node is bootstrapping mainnet\n", encoding="utf-8")
+            data_dir = tmp_path / "data"
+            data_dir.mkdir()
+
+            config = copy.deepcopy(watchtower.DEFAULT_CONFIG)
+            config.update(
+                {
+                    "node_name": "mainnet-bootstrap",
+                    "process_match": "kaspad",
+                    "rpc_endpoint": "127.0.0.1:16110",
+                    "grpc_endpoint": "127.0.0.1:16110",
+                    "log_path": str(log_path),
+                    "data_dir": str(data_dir),
+                }
+            )
+            config["thresholds"]["require_synced"] = False
+            config["thresholds"]["require_relay_progress_when_unsynced"] = False
+
+            with (
+                mock.patch.object(watchtower, "find_processes", return_value=["123 kaspad"]),
+                mock.patch.object(watchtower, "disk_usage", return_value={"exists": True, "free_gb": 100, "free_percent": 20}),
+                mock.patch.object(watchtower, "check_tcp_endpoint", return_value={"configured": True, "ok": True, "detail": "ok"}),
+                mock.patch.object(
+                    watchtower,
+                    "fetch_optional_grpc_metrics",
+                    return_value={
+                        "configured": True,
+                        "ok": True,
+                        "is_synced": False,
+                        "peer_count": 8,
+                        "active_peers": 8,
+                    },
+                ),
+                mock.patch.object(watchtower, "dir_size", return_value="1G"),
+            ):
+                report = watchtower.build_report(config)
+
+            checks = {check["name"]: check for check in report["checks"]}
+            self.assertEqual(report["severity"], "ok")
+            self.assertTrue(checks["sync_status"]["ok"])
+            self.assertTrue(checks["block_progress"]["ok"])
+            self.assertIn("skipped while unsynced", checks["block_progress"]["detail"])
 
     def test_config_validation_rejects_invalid_numeric_settings(self):
         with tempfile.TemporaryDirectory() as tmp:

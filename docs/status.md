@@ -2,10 +2,10 @@
 
 ## Current Deployment
 
-- Node: `kaspa-tn10-local`
+- Node: `kaspa-mainnet-local`
 - Host: `hang-studio-m4max`
-- Network: `testnet-10`
-- gRPC/RPC endpoint: `127.0.0.1:16210`
+- Network: `mainnet`
+- gRPC/RPC endpoint: `127.0.0.1:16110`
 - Metrics exporter: `http://127.0.0.1:9660/metrics`
 - Prometheus target: `kaspa-watchtower` at `host.docker.internal:9660`
 - Grafana dashboard: `http://127.0.0.1:3000/d/kaspa-watchtower/kaspa-watchtower`
