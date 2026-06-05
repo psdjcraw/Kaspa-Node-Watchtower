@@ -2,7 +2,7 @@
 
 All notable changes to Kaspa Node Watchtower are tracked here.
 
-## 2026-06-05
+## 0.1.0 - 2026-06-05
 
 ### Added
 
