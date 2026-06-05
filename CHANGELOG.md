@@ -17,6 +17,8 @@ All notable changes to Kaspa Node Watchtower are tracked here.
 
 ### Changed
 
+- Daily operator report now starts with a verdict and continues through
+  integration or GitHub status failures so later sections still print.
 - `scripts/smoke_test.sh` now keeps external integration checks optional via
   `KASPA_WATCHTOWER_SMOKE_INTEGRATIONS=1`; use `make integrations` for the
   GitHub API, Prometheus, Grafana, and exporter integration check.

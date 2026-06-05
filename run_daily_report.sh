@@ -18,6 +18,35 @@ date '+generated_at=%Y-%m-%dT%H:%M:%S%z'
 section "Node Summary"
 "$PYTHON_BIN" watchtower.py -c config.json --summary
 
+section "Operator Verdict"
+"$PYTHON_BIN" - <<'PY'
+from pathlib import Path
+
+import watchtower
+
+config = watchtower.load_config(Path("config.json"))
+report, _state = watchtower.build_stateful_report(config)
+benchmark = watchtower.build_benchmark_summary(
+    Path(config.get("benchmark_path") or watchtower.DEFAULT_CONFIG["benchmark_path"]),
+    limit=48,
+)
+failed = watchtower.failed_check_names(report)
+if report["status"] == "ok" and not failed:
+    verdict = "healthy_no_action"
+elif report["severity"] == "critical":
+    verdict = "critical_operator_action_required"
+else:
+    verdict = "warning_review_required"
+
+print(f"verdict={verdict}")
+print(f"status={report['status']} severity={report['severity']}")
+print(f"failed_checks={','.join(failed) if failed else 'none'}")
+print(f"benchmark_ok_ratio={watchtower.format_ratio(benchmark.get('ok_ratio'))}")
+print(f"benchmark_min_peer_count={watchtower.format_optional_number(benchmark.get('min_peer_count'))}")
+print(f"benchmark_min_disk_free={watchtower.format_gib(benchmark.get('min_disk_free_gb'))}")
+print(f"recovery_action={(report.get('recovery') or {}).get('action', 'none')}")
+PY
+
 section "Mainnet Sync Progress"
 "$PYTHON_BIN" - "$PYTHON_BIN" <<'PY'
 import json
@@ -91,11 +120,17 @@ with sqlite3.connect("state/watchtower-history.sqlite") as connection:
 PY
 
 section "Integrations"
-scripts/check_integrations.sh
+if ! scripts/check_integrations.sh; then
+  printf 'integrations_status=failed\n'
+fi
 
 section "GitHub Actions"
-KASPA_WATCHTOWER_GITHUB_WORKFLOW=smoke.yml scripts/check_ci_status.sh
-KASPA_WATCHTOWER_GITHUB_WORKFLOW=codeql.yml scripts/check_ci_status.sh
+if ! KASPA_WATCHTOWER_GITHUB_WORKFLOW=smoke.yml scripts/check_ci_status.sh; then
+  printf 'github_smoke_status=failed\n'
+fi
+if ! KASPA_WATCHTOWER_GITHUB_WORKFLOW=codeql.yml scripts/check_ci_status.sh; then
+  printf 'github_codeql_status=failed\n'
+fi
 
 section "Dashboard"
 printf 'status_html=%s\n' "state/status.html"
