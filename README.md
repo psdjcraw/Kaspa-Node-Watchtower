@@ -41,10 +41,11 @@ which supports a more resilient decentralized network.
 - Benchmark snapshots and reports for version/configuration comparison
 - Benchmark trend section in the generated status dashboard
 - Prometheus textfile metrics for local scraping or textfile collectors
+- Long-lived SQLite history export and operator summary reporting
 
 ## Planned Features
 
-- Push benchmark history to a long-lived metrics store
+- Add more external long-term storage options beyond local SQLite
 
 ## Current Context
 
@@ -136,6 +137,7 @@ make smoke
 make daily-report
 make ensure-exporter
 make diagnostics-archive
+make history-report
 ```
 
 Save a benchmark snapshot and compare recent snapshots:
@@ -157,9 +159,12 @@ Export history to SQLite:
 
 ```bash
 scripts/export_history_sqlite.py
+scripts/export_history_sqlite.py --summary --days 7
+make history-report
 ```
 
-This imports benchmark snapshots, upgrade checkpoints, and recovery attempts.
+This imports benchmark snapshots, upgrade checkpoints, and recovery attempts,
+then can summarize the latest history window for operator review.
 
 Apply retention limits to state files:
 
@@ -271,8 +276,8 @@ make daily-report
 ```
 
 The daily report includes an operator verdict, node health, mainnet sync
-progress, benchmark stability, integration status, and smoke/CodeQL workflow
-status.
+progress, benchmark stability, recent SQLite history summary, integration
+status, and smoke/CodeQL workflow status.
 
 See [Documentation](#documentation) for setup, integrations, operations,
 security, roadmap, and release history.

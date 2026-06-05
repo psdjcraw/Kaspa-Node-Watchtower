@@ -12,6 +12,8 @@ All notable changes to Kaspa Node Watchtower are tracked here.
   history sparklines for local `status.html` and canvas output.
 - `make ensure-exporter` and `scripts/ensure_prometheus_exporter.sh` for
   installing, restarting, and verifying the Prometheus exporter LaunchAgent.
+- `make history-report` and `scripts/export_history_sqlite.py --summary` for
+  recent SQLite history summaries across benchmark, recovery, and upgrade data.
 - Development version reporting through `watchtower.py --version` and
   `make version`.
 - Bootstrap script and `make bootstrap` target for virtualenv dependency
@@ -20,7 +22,8 @@ All notable changes to Kaspa Node Watchtower are tracked here.
 ### Changed
 
 - Daily operator report now starts with a verdict and continues through
-  integration or GitHub status failures so later sections still print.
+  integration or GitHub status failures so later sections still print, including
+  a recent SQLite history summary.
 - `scripts/smoke_test.sh` now keeps external integration checks optional via
   `KASPA_WATCHTOWER_SMOKE_INTEGRATIONS=1`; use `make integrations` for the
   GitHub API, Prometheus, Grafana, and exporter integration check.

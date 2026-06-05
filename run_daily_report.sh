@@ -119,6 +119,9 @@ with sqlite3.connect("state/watchtower-history.sqlite") as connection:
         print(f"{table}={count}")
 PY
 
+section "History Summary"
+scripts/export_history_sqlite.py --summary --days 7 | sed -n '/^window_days=/,$p'
+
 section "Integrations"
 if ! scripts/check_integrations.sh; then
   printf 'integrations_status=failed\n'

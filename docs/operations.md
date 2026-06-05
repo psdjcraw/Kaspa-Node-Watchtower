@@ -78,6 +78,7 @@ make status
 make smoke
 make daily-report
 make diagnostics-archive
+make history-report
 ```
 
 GitHub Actions smoke status:
@@ -181,10 +182,14 @@ SQLite history export:
 
 ```bash
 scripts/export_history_sqlite.py
+scripts/export_history_sqlite.py --summary --days 7
+make history-report
 ```
 
 The export includes benchmark snapshots, upgrade checkpoints, and recovery
-attempts in `state/watchtower-history.sqlite`.
+attempts in `state/watchtower-history.sqlite`. The summary mode reports recent
+OK ratio, warning/critical counts, minimum peer and disk floors, DAA/block
+deltas, recovery attempts, and latest upgrade checkpoint.
 
 Apply retention limits:
 
@@ -338,8 +343,8 @@ Daily report:
 ```
 
 The daily report prints an operator verdict, the current node summary, mainnet
-sync progress, benchmark trend, integration status, GitHub Actions status,
-recent recovery attempts, SQLite history counts, and dashboard locations.
+sync progress, benchmark trend, recent SQLite history summary, integration
+status, GitHub Actions status, recovery attempts, and dashboard locations.
 Integration and GitHub status failures are reported inline instead of stopping
 the rest of the report. Unlike alert and smoke wrappers, it intentionally emits
 output while healthy.

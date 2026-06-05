@@ -12,6 +12,7 @@ the primary source of truth.
 - Maintain Prometheus textfile metrics and Grafana dashboard coverage.
 - Keep smoke tests, unit tests, and alert rule tests passing on GitHub Actions.
 - Document safe diagnostics and recovery workflows for node operators.
+- Use local SQLite history summaries for longer-window operator review.
 
 ## v0.1 - Initial Operator Toolkit
 
@@ -46,7 +47,7 @@ the primary source of truth.
 
 - Improve recovery dry-run output and decision support.
 - Add richer diagnostics summaries for issue reports and incident review.
-- Explore long-lived benchmark storage for trend analysis.
+- Explore external long-lived storage options beyond local SQLite.
 - Add optional report generation for daily or weekly operator summaries.
 - Evaluate packaging options for easier deployment on common node hosts.
 

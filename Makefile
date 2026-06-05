@@ -1,7 +1,7 @@
 PYTHON ?= .venv/bin/python
 CONFIG ?= config.json
 
-.PHONY: help bootstrap version status summary sync-report json alert smoke ci integrations ensure-exporter diagnostics diagnostics-archive daily-report benchmark benchmark-report prometheus export-history prune validate recover-dry-run recover force-recover-dry-run
+.PHONY: help bootstrap version status summary sync-report json alert smoke ci integrations ensure-exporter diagnostics diagnostics-archive daily-report benchmark benchmark-report prometheus export-history history-report prune validate recover-dry-run recover force-recover-dry-run
 
 help:
 	@printf 'Kaspa Node Watchtower operator commands\n'
@@ -23,6 +23,7 @@ help:
 	@printf '  make benchmark-report    Print benchmark trend report\n'
 	@printf '  make prometheus          Write Prometheus textfile metrics\n'
 	@printf '  make export-history      Export JSONL history to SQLite\n'
+	@printf '  make history-report      Export and summarize SQLite history\n'
 	@printf '  make prune               Apply retention limits\n'
 	@printf '  make validate            Validate config\n'
 	@printf '  make recover-dry-run     Show manual recovery command without restart\n'
@@ -81,6 +82,9 @@ prometheus:
 
 export-history:
 	@scripts/export_history_sqlite.py
+
+history-report:
+	@scripts/export_history_sqlite.py --summary
 
 prune:
 	@$(PYTHON) watchtower.py -c $(CONFIG) --prune-state

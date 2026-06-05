@@ -61,6 +61,7 @@ if [ -f "config.json" ]; then
 
   scripts/export_history_sqlite.py >/dev/null
   test -s state/watchtower-history.sqlite
+  scripts/export_history_sqlite.py --summary --days 7 >/dev/null
   "$PYTHON_BIN" - <<'PY'
 import sqlite3
 
