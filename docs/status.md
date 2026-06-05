@@ -9,6 +9,7 @@
 - Metrics exporter: `http://127.0.0.1:9660/metrics`
 - Prometheus target: `kaspa-watchtower` at `host.docker.internal:9660`
 - Grafana dashboard: `http://127.0.0.1:3000/d/kaspa-watchtower/kaspa-watchtower`
+- GitHub Actions smoke workflow: `https://github.com/psdjcraw/Kaspa-Node-Watchtowe/actions/workflows/smoke.yml`
 - Canvas status page: `/Users/psdjc/.openclaw/canvas/kaspa-watchtower/status.html`
 
 ## Local Services
@@ -48,4 +49,10 @@ scripts/ops_snapshot.sh
 
 ```bash
 scripts/smoke_test.sh
+```
+
+## CI Status
+
+```bash
+scripts/check_ci_status.sh
 ```

@@ -145,6 +145,12 @@ scripts/smoke_test.sh
 GitHub Actions runs the static smoke workflow in `.github/workflows/smoke.yml`
 on pushes to `main` and pull requests.
 
+Check the latest GitHub Actions smoke run:
+
+```bash
+scripts/check_ci_status.sh
+```
+
 Cron-friendly smoke test:
 
 ```bash

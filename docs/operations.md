@@ -54,6 +54,12 @@ Integration verification:
 scripts/check_integrations.sh
 ```
 
+GitHub Actions smoke status:
+
+```bash
+scripts/check_ci_status.sh
+```
+
 Operational snapshot:
 
 ```bash
@@ -187,6 +193,16 @@ Prometheus alert rule tests:
 ```bash
 prometheus/run_rule_tests.sh
 ```
+
+GitHub Actions:
+
+```text
+https://github.com/psdjcraw/Kaspa-Node-Watchtowe/actions/workflows/smoke.yml
+```
+
+The local CI checker reads the latest `main` run through the GitHub Actions API.
+Set `GITHUB_TOKEN` if the API becomes rate-limited or the repository visibility
+changes.
 
 The local `asus-traffic-monitor` Prometheus stack has the rule file copied to
 `prometheus-rules/kaspa-watchtower-rules.yml` and mounted at

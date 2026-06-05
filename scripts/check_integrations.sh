@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+cd "$(dirname "$0")/.."
+
 EXPORTER_URL="${KASPA_WATCHTOWER_EXPORTER_URL:-http://127.0.0.1:9660}"
 PROMETHEUS_URL="${KASPA_WATCHTOWER_PROMETHEUS_URL:-http://127.0.0.1:9090}"
 GRAFANA_URL="${KASPA_WATCHTOWER_GRAFANA_URL:-http://127.0.0.1:3000}"
@@ -52,8 +54,14 @@ check_grafana_dashboard() {
   esac
 }
 
+check_github_actions() {
+  scripts/check_ci_status.sh >/dev/null
+  ok "GitHub Actions latest smoke run"
+}
+
 check_exporter
 check_prometheus_query
 check_prometheus_target
 check_prometheus_rules
 check_grafana_dashboard
+check_github_actions

@@ -70,5 +70,12 @@ section "Grafana"
 status="$(curl -s -o /dev/null -w '%{http_code}' "$GRAFANA_URL$GRAFANA_DASHBOARD_PATH")"
 printf 'dashboard: %s%s http=%s\n' "$GRAFANA_URL" "$GRAFANA_DASHBOARD_PATH" "$status"
 
+section "GitHub Actions"
+if scripts/check_ci_status.sh; then
+  true
+else
+  printf 'GitHub Actions status unavailable or failing\n'
+fi
+
 section "Recent Files"
 ls -lh state/watchtower.prom state/status.html state/benchmarks.jsonl 2>/dev/null
