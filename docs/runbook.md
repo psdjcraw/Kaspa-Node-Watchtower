@@ -22,6 +22,12 @@ Check the concise status:
 .venv/bin/python watchtower.py -c config.json --summary
 ```
 
+Validate the local config:
+
+```bash
+.venv/bin/python watchtower.py -c config.json --validate-config
+```
+
 Open the dashboard:
 
 ```text

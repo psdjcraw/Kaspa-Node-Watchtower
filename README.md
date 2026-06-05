@@ -58,6 +58,12 @@ For a concise operator summary:
 .venv/bin/python watchtower.py -c config.json --summary
 ```
 
+Validate local configuration:
+
+```bash
+.venv/bin/python watchtower.py -c config.json --validate-config
+```
+
 The reporter reads local process state, RPC TCP reachability, direct gRPC
 metrics, data directory size/free space, and recent `kaspad` logs. It reports
 IBD/catch-up completion counts, trusted block counts, latest relay activity,

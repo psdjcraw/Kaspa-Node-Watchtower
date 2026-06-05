@@ -21,6 +21,9 @@ prometheus/run_rule_tests.sh >/dev/null
 ok "Prometheus rule tests"
 
 if [ -f "config.json" ]; then
+  "$PYTHON_BIN" watchtower.py -c config.json --validate-config >/dev/null
+  ok "config validation"
+
   "$PYTHON_BIN" watchtower.py -c config.json --summary >/dev/null
   ok "watchtower summary"
 

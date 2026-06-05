@@ -90,6 +90,12 @@ Concise operator summary:
 .venv/bin/python watchtower.py -c config.json --summary
 ```
 
+Config validation:
+
+```bash
+.venv/bin/python watchtower.py -c config.json --validate-config
+```
+
 Alert mode for cron:
 
 ```bash

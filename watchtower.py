@@ -1323,6 +1323,70 @@ def prometheus(config: dict) -> int:
     return 0 if report["status"] == "ok" else 1
 
 
+def endpoint_configured(endpoint: str) -> bool:
+    if not endpoint or ":" not in endpoint:
+        return False
+    host, port_text = endpoint.rsplit(":", 1)
+    if not host:
+        return False
+    try:
+        port = int(port_text)
+    except ValueError:
+        return False
+    return 0 < port < 65536
+
+
+def path_parent_writable(path: str) -> bool:
+    if not path:
+        return False
+    parent = Path(path).expanduser().parent
+    return parent.exists() and os.access(parent, os.W_OK)
+
+
+def config_validation_checks(config: dict) -> list[Check]:
+    recovery = config.get("recovery", {})
+    restart_command = recovery.get("restart_command") or []
+    checks = [
+        Check("node_name", bool(config.get("node_name")), str(config.get("node_name") or "missing")),
+        Check("process_match", bool(config.get("process_match")), str(config.get("process_match") or "missing")),
+        Check("rpc_endpoint", endpoint_configured(config.get("rpc_endpoint") or ""), config.get("rpc_endpoint") or "missing"),
+        Check("grpc_endpoint", endpoint_configured(config.get("grpc_endpoint") or ""), config.get("grpc_endpoint") or "missing"),
+        Check("log_path", Path(config.get("log_path") or "").exists(), config.get("log_path") or "missing"),
+        Check("data_dir", Path(config.get("data_dir") or "").exists(), config.get("data_dir") or "missing"),
+        Check("state_path", path_parent_writable(config.get("state_path") or DEFAULT_CONFIG["state_path"]), config.get("state_path") or DEFAULT_CONFIG["state_path"]),
+        Check("status_page_path", path_parent_writable(config.get("status_page_path") or DEFAULT_CONFIG["status_page_path"]), config.get("status_page_path") or DEFAULT_CONFIG["status_page_path"]),
+        Check("benchmark_path", path_parent_writable(config.get("benchmark_path") or DEFAULT_CONFIG["benchmark_path"]), config.get("benchmark_path") or DEFAULT_CONFIG["benchmark_path"]),
+        Check("prometheus_metrics_path", path_parent_writable(config.get("prometheus_metrics_path") or DEFAULT_CONFIG["prometheus_metrics_path"]), config.get("prometheus_metrics_path") or DEFAULT_CONFIG["prometheus_metrics_path"]),
+    ]
+    canvas_status_page = config.get("canvas_status_page_path") or ""
+    if canvas_status_page:
+        checks.append(
+            Check(
+                "canvas_status_page_path",
+                path_parent_writable(canvas_status_page),
+                canvas_status_page,
+            )
+        )
+    if restart_command:
+        checks.append(
+            Check(
+                "recovery.restart_command",
+                bool(shutil.which(str(restart_command[0]))),
+                " ".join(str(part) for part in restart_command),
+            )
+        )
+    return checks
+
+
+def validate_config(config: dict) -> int:
+    checks = config_validation_checks(config)
+    print(f"Config validation: {config.get('node_name') or 'unknown'}")
+    for check in checks:
+        mark = "OK" if check.ok else "FAIL"
+        print(f"{mark} {check.name}: {check.detail}")
+    return 0 if all(check.ok for check in checks) else 1
+
+
 def recover(config: dict, *, force: bool = False, dry_run: bool = False) -> int:
     report = build_report(config)
     recovery = config.get("recovery", {})
@@ -1370,6 +1434,7 @@ def main() -> int:
     parser.add_argument("--benchmark-report", action="store_true", help="Print a benchmark report from saved snapshots.")
     parser.add_argument("--benchmark-limit", type=int, default=100, help="Number of recent benchmark snapshots to include.")
     parser.add_argument("--prometheus", action="store_true", help="Write Prometheus textfile metrics.")
+    parser.add_argument("--validate-config", action="store_true", help="Validate config paths, endpoints, and commands.")
     args = parser.parse_args()
     config = load_config(args.config)
     if args.json:
@@ -1390,6 +1455,8 @@ def main() -> int:
         return benchmark_report(config, limit=args.benchmark_limit)
     if args.prometheus:
         return prometheus(config)
+    if args.validate_config:
+        return validate_config(config)
     return status(config)
 
 
