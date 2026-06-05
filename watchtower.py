@@ -600,7 +600,7 @@ def write_status_page(path: Path, report: dict[str, Any], state: dict[str, Any])
     path.parent.mkdir(parents=True, exist_ok=True)
     checks = "\n".join(
         html_row([
-            "OK" if check["ok"] else "ALERT",
+            "OK" if check["ok"] else "FAIL",
             check["name"],
             check["detail"],
         ])
@@ -619,45 +619,149 @@ def write_status_page(path: Path, report: dict[str, Any], state: dict[str, Any])
     )
     grpc_metrics = report.get("grpc_metrics") or {}
     progress = report.get("progress") or {}
+    recovery = report.get("recovery") or {}
+    failed = failed_check_names(report)
+    failure_text = ", ".join(failed) if failed else "None"
+    last_alert_at = state.get("last_alert_at") or "None"
+    metric_items = [
+        ("Severity", report["severity"]),
+        ("Peers", grpc_metrics.get("peer_count", "unknown")),
+        ("Active Peers", grpc_metrics.get("active_peers", "unknown")),
+        ("Synced", grpc_metrics.get("is_synced", "unknown")),
+        ("Network", grpc_metrics.get("network_id", "unknown")),
+        ("DAA Score", grpc_metrics.get("virtual_daa_score", "unknown")),
+        ("Block Count", grpc_metrics.get("block_count", "unknown")),
+        ("Relay Blocks", progress.get("relay_blocks_in_window", 0)),
+        ("Disk Free", f"{report.get('disk', {}).get('free_gb', 'unknown')} GiB"),
+        ("Recovery", recovery.get("action", "none")),
+    ]
+    metrics_html = "\n".join(
+        f"""<section class="metric">
+  <div class="metric-label">{html.escape(str(label))}</div>
+  <div class="metric-value">{html.escape(str(value))}</div>
+</section>"""
+        for label, value in metric_items
+    )
     page = f"""<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="refresh" content="60">
   <title>Kaspa Node Watchtower</title>
   <style>
-    body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 24px; color: #1f2933; }}
-    h1 {{ font-size: 24px; margin: 0 0 8px; }}
-    h2 {{ font-size: 18px; margin-top: 24px; }}
-    .status {{ font-weight: 700; }}
-    .ok {{ color: #137333; }}
-    .warn {{ color: #b26a00; }}
-    .critical {{ color: #b3261e; }}
-    table {{ border-collapse: collapse; width: 100%; font-size: 14px; }}
-    th, td {{ border-bottom: 1px solid #d7dde5; padding: 7px 8px; text-align: left; vertical-align: top; }}
+    :root {{
+      --ink: #1f2933;
+      --muted: #65758b;
+      --line: #d7dde5;
+      --panel: #ffffff;
+      --page: #f6f8fb;
+      --ok: #137333;
+      --warn: #b26a00;
+      --critical: #b3261e;
+      --accent: #3858e9;
+    }}
+    * {{ box-sizing: border-box; }}
+    body {{
+      margin: 0;
+      background: var(--page);
+      color: var(--ink);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      letter-spacing: 0;
+    }}
+    main {{ max-width: 1180px; margin: 0 auto; padding: 22px; }}
+    header {{
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      align-items: flex-start;
+      margin-bottom: 18px;
+    }}
+    h1 {{ font-size: 24px; margin: 0 0 6px; line-height: 1.2; }}
+    h2 {{ font-size: 16px; margin: 0 0 10px; }}
+    .subtle {{ color: var(--muted); font-size: 13px; }}
+    .badge {{
+      display: inline-flex;
+      min-width: 92px;
+      justify-content: center;
+      padding: 7px 10px;
+      border-radius: 999px;
+      color: #fff;
+      font-weight: 700;
+      text-transform: uppercase;
+      font-size: 13px;
+    }}
+    .badge.ok {{ background: var(--ok); }}
+    .badge.warn {{ background: var(--warn); }}
+    .badge.critical {{ background: var(--critical); }}
+    .metrics {{
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 10px;
+      margin-bottom: 18px;
+    }}
+    .metric, .panel {{
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px;
+    }}
+    .metric-label {{ color: var(--muted); font-size: 12px; margin-bottom: 4px; }}
+    .metric-value {{ font-size: 18px; font-weight: 700; overflow-wrap: anywhere; }}
+    .layout {{ display: grid; grid-template-columns: 1.1fr 0.9fr; gap: 14px; }}
+    table {{ border-collapse: collapse; width: 100%; font-size: 13px; }}
+    th, td {{ border-bottom: 1px solid var(--line); padding: 8px; text-align: left; vertical-align: top; }}
+    th {{ color: var(--muted); font-size: 12px; font-weight: 700; }}
     code {{ background: #eef2f6; padding: 2px 4px; border-radius: 4px; }}
+    .ok-text {{ color: var(--ok); font-weight: 700; }}
+    .fail-text {{ color: var(--critical); font-weight: 700; }}
+    .notes {{ display: grid; gap: 8px; font-size: 13px; }}
+    @media (max-width: 760px) {{
+      main {{ padding: 14px; }}
+      header, .layout {{ display: block; }}
+      .badge {{ margin-top: 10px; }}
+      .panel {{ margin-bottom: 12px; overflow-x: auto; }}
+    }}
   </style>
 </head>
 <body>
-  <h1>Kaspa Node Watchtower</h1>
-  <p class="status {html.escape(report['severity'])}">{html.escape(report['node_name'])}: {html.escape(report['severity'])}</p>
-  <p>Checked at: <code>{html.escape(report['checked_at'])}</code></p>
-  <p>Network: <code>{html.escape(str(grpc_metrics.get('network_id', 'unknown')))}</code>,
-     synced: <code>{html.escape(str(grpc_metrics.get('is_synced', 'unknown')))}</code>,
-     peers: <code>{html.escape(str(grpc_metrics.get('peer_count', 'unknown')))}</code>,
-     DAA: <code>{html.escape(str(grpc_metrics.get('virtual_daa_score', 'unknown')))}</code></p>
-  <p>Relay progress: <code>{html.escape(str(progress.get('relay_blocks_in_window', 0)))}</code> blocks in
-     <code>{html.escape(str(progress.get('window_minutes', 0)))}</code> minutes.</p>
-  <h2>Checks</h2>
-  <table>
-    <thead>{html_row(["State", "Check", "Detail"], "th")}</thead>
-    <tbody>{checks}</tbody>
-  </table>
-  <h2>Recent History</h2>
-  <table>
-    <thead>{html_row(["Checked At", "Severity", "Failed", "Peers", "Relay Blocks", "DAA"], "th")}</thead>
-    <tbody>{history}</tbody>
-  </table>
+  <main>
+    <header>
+      <div>
+        <h1>Kaspa Node Watchtower</h1>
+        <div class="subtle">{html.escape(report['node_name'])} · checked at <code>{html.escape(report['checked_at'])}</code> · auto-refresh 60s</div>
+      </div>
+      <div class="badge {html.escape(report['severity'])}">{html.escape(report['severity'])}</div>
+    </header>
+    <section class="metrics">
+      {metrics_html}
+    </section>
+    <section class="layout">
+      <section class="panel">
+        <h2>Checks</h2>
+        <table>
+          <thead>{html_row(["State", "Check", "Detail"], "th")}</thead>
+          <tbody>{checks}</tbody>
+        </table>
+      </section>
+      <section class="panel">
+        <h2>Run Context</h2>
+        <div class="notes">
+          <div>Failed checks: <code>{html.escape(failure_text)}</code></div>
+          <div>Last alert: <code>{html.escape(str(last_alert_at))}</code></div>
+          <div>Latest throughput: <code>{html.escape(str(report.get('latest_throughput') or 'unknown'))}</code></div>
+          <div>Recovery mode: <code>{html.escape(str(recovery.get('mode', 'unknown')))}</code></div>
+        </div>
+      </section>
+    </section>
+    <section class="panel">
+      <h2>Recent History</h2>
+      <table>
+        <thead>{html_row(["Checked At", "Severity", "Failed", "Peers", "Relay Blocks", "DAA"], "th")}</thead>
+        <tbody>{history}</tbody>
+      </table>
+    </section>
+  </main>
 </body>
 </html>
 """
