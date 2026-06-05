@@ -72,6 +72,22 @@ Alert mode for cron:
 ./run_watchtower.sh
 ```
 
+Benchmark snapshot:
+
+```bash
+.venv/bin/python watchtower.py -c config.json --benchmark-snapshot
+```
+
+Benchmark report:
+
+```bash
+.venv/bin/python watchtower.py -c config.json --benchmark-report
+```
+
+Use benchmark snapshots before and after `rusty-kaspa` upgrades or configuration
+changes. The report compares DAA score, block count, relay progress, peer state,
+severity counts, and disk free space across the saved window.
+
 Manual recovery dry-run:
 
 ```bash

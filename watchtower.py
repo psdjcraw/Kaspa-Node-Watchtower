@@ -28,6 +28,7 @@ DEFAULT_CONFIG = {
     "state_path": "state/watchtower-state.json",
     "status_page_path": "state/status.html",
     "canvas_status_page_path": "",
+    "benchmark_path": "state/benchmarks.jsonl",
     "thresholds": {
         "alert_repeat_minutes": 60,
         "stale_log_minutes": 15,
@@ -546,6 +547,15 @@ def failed_check_names(report: dict[str, Any]) -> list[str]:
     return [check["name"] for check in report["checks"] if not check["ok"]]
 
 
+def numeric(value: Any) -> float | None:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def history_item(report: dict[str, Any]) -> dict[str, Any]:
     grpc_metrics = report.get("grpc_metrics") or {}
     progress = report.get("progress") or {}
@@ -907,6 +917,146 @@ def format_summary(report: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def benchmark_item(report: dict[str, Any]) -> dict[str, Any]:
+    grpc_metrics = report.get("grpc_metrics") or {}
+    progress = report.get("progress") or {}
+    disk = report.get("disk") or {}
+    return {
+        "checked_at": report["checked_at"],
+        "node_name": report["node_name"],
+        "status": report["status"],
+        "severity": report["severity"],
+        "failed_checks": failed_check_names(report),
+        "peer_count": grpc_metrics.get("peer_count"),
+        "active_peers": grpc_metrics.get("active_peers"),
+        "is_synced": grpc_metrics.get("is_synced"),
+        "network_id": grpc_metrics.get("network_id"),
+        "virtual_daa_score": grpc_metrics.get("virtual_daa_score"),
+        "block_count": grpc_metrics.get("block_count"),
+        "header_count": grpc_metrics.get("header_count"),
+        "relay_blocks_in_window": progress.get("relay_blocks_in_window"),
+        "relay_events_in_window": progress.get("relay_events_in_window"),
+        "progress_window_minutes": progress.get("window_minutes"),
+        "latest_relay_age_seconds": progress.get("latest_relay_age_seconds"),
+        "disk_free_gb": disk.get("free_gb"),
+        "disk_free_percent": disk.get("free_percent"),
+    }
+
+
+def append_jsonl(path: Path, item: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(item, sort_keys=True))
+        handle.write("\n")
+
+
+def load_jsonl(path: Path) -> list[dict[str, Any]]:
+    if not path.exists():
+        return []
+    items = []
+    with path.open("r", encoding="utf-8") as handle:
+        for line in handle:
+            line = line.strip()
+            if not line:
+                continue
+            items.append(json.loads(line))
+    return items
+
+
+def format_benchmark_snapshot(item: dict[str, Any], path: Path) -> str:
+    failed = ", ".join(item.get("failed_checks") or []) or "none"
+    lines = [
+        f"Benchmark snapshot saved: {path}",
+        f"node={item.get('node_name')} checked_at={item.get('checked_at')}",
+        f"status={item.get('status')} severity={item.get('severity')} failed_checks={failed}",
+        (
+            "grpc="
+            f"synced={item.get('is_synced')} "
+            f"peers={item.get('peer_count')} "
+            f"active={item.get('active_peers')} "
+            f"network={item.get('network_id')} "
+            f"daa={item.get('virtual_daa_score')} "
+            f"blocks={item.get('block_count')}"
+        ),
+        (
+            "progress="
+            f"{item.get('relay_blocks_in_window')} relay blocks / "
+            f"{item.get('relay_events_in_window')} events in "
+            f"{item.get('progress_window_minutes')}m"
+        ),
+        f"disk_free={item.get('disk_free_gb')} GiB ({item.get('disk_free_percent')}%)",
+    ]
+    return "\n".join(lines)
+
+
+def benchmark_snapshot(config: dict) -> int:
+    report = build_report(config)
+    path = Path(config.get("benchmark_path") or DEFAULT_CONFIG["benchmark_path"])
+    item = benchmark_item(report)
+    append_jsonl(path, item)
+    print(format_benchmark_snapshot(item, path))
+    return 0 if report["status"] == "ok" else 1
+
+
+def format_rate(delta: float | None, hours: float) -> str:
+    if delta is None or hours <= 0:
+        return "unknown"
+    return f"{delta / hours:.2f}/h"
+
+
+def benchmark_report(config: dict, *, limit: int) -> int:
+    path = Path(config.get("benchmark_path") or DEFAULT_CONFIG["benchmark_path"])
+    items = load_jsonl(path)
+    if limit > 0:
+        items = items[-limit:]
+    if len(items) < 2:
+        print(f"Benchmark report unavailable: need at least 2 snapshots in {path}")
+        return 2
+
+    first = items[0]
+    last = items[-1]
+    first_at = parse_iso_datetime(first.get("checked_at"))
+    last_at = parse_iso_datetime(last.get("checked_at"))
+    if first_at is None or last_at is None:
+        print(f"Benchmark report unavailable: invalid timestamps in {path}")
+        return 2
+    elapsed_seconds = max(0.0, (last_at - first_at).total_seconds())
+    elapsed_hours = elapsed_seconds / 3600
+
+    first_daa = numeric(first.get("virtual_daa_score"))
+    last_daa = numeric(last.get("virtual_daa_score"))
+    first_blocks = numeric(first.get("block_count"))
+    last_blocks = numeric(last.get("block_count"))
+    first_disk = numeric(first.get("disk_free_gb"))
+    last_disk = numeric(last.get("disk_free_gb"))
+    daa_delta = None if first_daa is None or last_daa is None else last_daa - first_daa
+    block_delta = None if first_blocks is None or last_blocks is None else last_blocks - first_blocks
+    disk_delta = None if first_disk is None or last_disk is None else last_disk - first_disk
+    relay_blocks = sum(int(item.get("relay_blocks_in_window") or 0) for item in items)
+    relay_minutes = sum(float(item.get("progress_window_minutes") or 0) for item in items)
+    relay_rate = "unknown" if relay_minutes <= 0 else f"{relay_blocks / relay_minutes:.2f}/min"
+    severities: dict[str, int] = {}
+    for item in items:
+        severity = str(item.get("severity") or "unknown")
+        severities[severity] = severities.get(severity, 0) + 1
+
+    disk_delta_text = "unknown" if disk_delta is None else f"{disk_delta:+.2f} GiB"
+    lines = [
+        f"Kaspa benchmark report: {last.get('node_name')}",
+        f"snapshots={len(items)} path={path}",
+        f"window={first.get('checked_at')} -> {last.get('checked_at')} ({elapsed_hours:.2f}h)",
+        f"daa_delta={daa_delta if daa_delta is not None else 'unknown'} rate={format_rate(daa_delta, elapsed_hours)}",
+        f"block_count_delta={block_delta if block_delta is not None else 'unknown'} rate={format_rate(block_delta, elapsed_hours)}",
+        f"relay_window_average={relay_rate}",
+        f"latest_peers={last.get('peer_count')} active={last.get('active_peers')} synced={last.get('is_synced')}",
+        f"latest_status={last.get('status')} severity={last.get('severity')}",
+        f"severity_counts={json.dumps(severities, sort_keys=True)}",
+        f"disk_free_delta={disk_delta_text}",
+    ]
+    print("\n".join(lines))
+    return 0 if last.get("status") == "ok" else 1
+
+
 def recover(config: dict, *, force: bool = False, dry_run: bool = False) -> int:
     report = build_report(config)
     recovery = config.get("recovery", {})
@@ -950,6 +1100,9 @@ def main() -> int:
     parser.add_argument("--recover", action="store_true", help="Run the configured manual recovery command when unhealthy.")
     parser.add_argument("--force-recover", action="store_true", help="Run recovery even when the current report is healthy.")
     parser.add_argument("--dry-run", action="store_true", help="Show recovery command without executing it.")
+    parser.add_argument("--benchmark-snapshot", action="store_true", help="Append a benchmark snapshot to the JSONL benchmark log.")
+    parser.add_argument("--benchmark-report", action="store_true", help="Print a benchmark report from saved snapshots.")
+    parser.add_argument("--benchmark-limit", type=int, default=100, help="Number of recent benchmark snapshots to include.")
     args = parser.parse_args()
     config = load_config(args.config)
     if args.json:
@@ -964,6 +1117,10 @@ def main() -> int:
         return alert(config)
     if args.recover:
         return recover(config, force=args.force_recover, dry_run=args.dry_run)
+    if args.benchmark_snapshot:
+        return benchmark_snapshot(config)
+    if args.benchmark_report:
+        return benchmark_report(config, limit=args.benchmark_limit)
     return status(config)
 
 

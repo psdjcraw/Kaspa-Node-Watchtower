@@ -17,10 +17,11 @@ explorers or hosted APIs.
 - Direct rusty-kaspa gRPC metrics: sync status, peer count, network id, DAA score, block/header counts, process metrics
 - Alert severity, repeat suppression, history, and local HTML status page generation
 - Concise `--summary` output for quick Discord/operator status checks
+- Benchmark snapshots and reports for version/configuration comparison
 
 ## Planned Features
 
-- Version-to-version sync benchmark reports
+- Export benchmark data to Prometheus or a long-lived metrics store
 
 ## Current Context
 
@@ -76,6 +77,13 @@ Cron-friendly alert mode:
 
 ```bash
 ./run_watchtower.sh
+```
+
+Save a benchmark snapshot and compare recent snapshots:
+
+```bash
+.venv/bin/python watchtower.py -c config.json --benchmark-snapshot
+.venv/bin/python watchtower.py -c config.json --benchmark-report
 ```
 
 See `docs/operations.md` for alert criteria and the Discord cron plan.
