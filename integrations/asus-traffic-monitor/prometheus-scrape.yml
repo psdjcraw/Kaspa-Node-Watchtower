@@ -1,0 +1,7 @@
+scrape_configs:
+  - job_name: kaspa-watchtower
+    scrape_interval: 15s
+    scrape_timeout: 5s
+    static_configs:
+      - targets:
+          - host.docker.internal:9660

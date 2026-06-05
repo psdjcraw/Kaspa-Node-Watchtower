@@ -131,3 +131,4 @@ prometheus/run_rule_tests.sh
 ```
 
 See `docs/operations.md` for alert criteria and the Discord cron plan.
+See `docs/integrations.md` for Prometheus/Grafana integration steps.

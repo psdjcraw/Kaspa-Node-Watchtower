@@ -48,6 +48,12 @@ Recovery:
 
 ## Commands
 
+Integration verification:
+
+```bash
+scripts/check_integrations.sh
+```
+
 Human-readable status:
 
 ```bash

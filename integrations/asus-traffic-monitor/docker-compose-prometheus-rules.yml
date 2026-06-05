@@ -1,0 +1,4 @@
+services:
+  prometheus:
+    volumes:
+      - ./prometheus-rules:/etc/prometheus/rules:ro
