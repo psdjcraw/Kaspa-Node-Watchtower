@@ -24,6 +24,10 @@ with direct process, filesystem, log, RPC, gRPC, Prometheus, and Grafana signals
 That makes independent node operation easier to monitor, debug, and recover,
 which supports a more resilient decentralized network.
 
+## Dashboard Preview
+
+![Kaspa Node Watchtower dashboard preview](docs/assets/dashboard-preview.svg)
+
 ## Features
 
 - Node health checks: process, RPC TCP, gRPC metrics, disk free space, data directory, log freshness, and relay block progress
