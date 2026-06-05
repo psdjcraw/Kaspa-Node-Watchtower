@@ -842,6 +842,89 @@
       ],
       "title": "Sync Deltas",
       "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "options": {
+                "0": {
+                  "text": "off"
+                },
+                "1": {
+                  "text": "on"
+                }
+              },
+              "type": "value"
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "gray",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 24,
+        "x": 0,
+        "y": 29
+      },
+      "id": 16,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "targets": [
+        {
+          "expr": "kaspa_watchtower_require_synced{node=\"$node\"}",
+          "legendFormat": "require synced",
+          "refId": "A"
+        },
+        {
+          "expr": "kaspa_watchtower_require_relay_progress_when_unsynced{node=\"$node\"}",
+          "legendFormat": "require relay while unsynced",
+          "refId": "B"
+        },
+        {
+          "expr": "kaspa_watchtower_require_sync_progress_when_unsynced{node=\"$node\"}",
+          "legendFormat": "require sync progress",
+          "refId": "C"
+        },
+        {
+          "expr": "kaspa_watchtower_sync_progress_stall_minutes{node=\"$node\"}",
+          "legendFormat": "sync stall minutes",
+          "refId": "D"
+        }
+      ],
+      "title": "Monitoring Mode",
+      "type": "stat"
     }
   ],
   "refresh": "30s",
@@ -890,6 +973,6 @@
   "timezone": "browser",
   "title": "Kaspa Watchtower",
   "uid": "kaspa-watchtower",
-  "version": 2,
+  "version": 3,
   "weekStart": ""
 }
