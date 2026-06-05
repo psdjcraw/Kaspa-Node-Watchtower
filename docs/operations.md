@@ -219,8 +219,7 @@ curl -fsS http://127.0.0.1:9660/metrics
 LaunchAgent install/restart:
 
 ```bash
-launchctl bootstrap gui/$(id -u) /Users/psdjc/.openclaw/workspace/Kaspa-Node-Watchtowe/launchd/com.openclaw.kaspa-watchtower-prometheus.plist
-launchctl kickstart -k gui/$(id -u)/com.openclaw.kaspa-watchtower-prometheus
+make ensure-exporter
 ```
 
 Prometheus scrape target from the existing Docker stack:

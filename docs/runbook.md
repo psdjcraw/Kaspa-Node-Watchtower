@@ -145,7 +145,7 @@ launchctl print gui/$(id -u)/com.openclaw.kaspa-watchtower-prometheus
 Restart exporter:
 
 ```bash
-launchctl kickstart -k gui/$(id -u)/com.openclaw.kaspa-watchtower-prometheus
+make ensure-exporter
 ```
 
 ## Prometheus Rules Missing

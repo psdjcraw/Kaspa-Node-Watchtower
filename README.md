@@ -134,6 +134,7 @@ make status
 make sync-report
 make smoke
 make daily-report
+make ensure-exporter
 make diagnostics-archive
 ```
 

@@ -95,7 +95,13 @@ On the current macOS host, the LaunchAgent plist is:
 launchd/com.openclaw.kaspa-watchtower-prometheus.plist
 ```
 
-Bootstrap it with the exact local workspace path:
+Install or repair it with:
+
+```bash
+make ensure-exporter
+```
+
+Manual bootstrap uses the exact local workspace path:
 
 ```bash
 launchctl bootstrap gui/$(id -u) /Users/psdjc/.openclaw/workspace/Kaspa-Node-Watchtowe/launchd/com.openclaw.kaspa-watchtower-prometheus.plist

@@ -1,7 +1,7 @@
 PYTHON ?= .venv/bin/python
 CONFIG ?= config.json
 
-.PHONY: help bootstrap version status summary sync-report json alert smoke ci integrations diagnostics diagnostics-archive daily-report benchmark benchmark-report prometheus export-history prune validate recover-dry-run recover force-recover-dry-run
+.PHONY: help bootstrap version status summary sync-report json alert smoke ci integrations ensure-exporter diagnostics diagnostics-archive daily-report benchmark benchmark-report prometheus export-history prune validate recover-dry-run recover force-recover-dry-run
 
 help:
 	@printf 'Kaspa Node Watchtower operator commands\n'
@@ -15,6 +15,7 @@ help:
 	@printf '  make smoke               Run the local smoke test suite\n'
 	@printf '  make ci                  Check latest GitHub Actions smoke run\n'
 	@printf '  make integrations        Check exporter, Prometheus, Grafana, and CI\n'
+	@printf '  make ensure-exporter     Install/restart the Prometheus exporter LaunchAgent\n'
 	@printf '  make diagnostics         Collect diagnostic report\n'
 	@printf '  make diagnostics-archive Collect diagnostic report and tar archive\n'
 	@printf '  make daily-report        Print the daily operator report\n'
@@ -56,6 +57,9 @@ ci:
 
 integrations:
 	@scripts/check_integrations.sh
+
+ensure-exporter:
+	@scripts/ensure_prometheus_exporter.sh
 
 diagnostics:
 	@scripts/collect_diagnostics.sh
