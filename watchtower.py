@@ -1112,7 +1112,9 @@ def format_alert(
         lines.append(
             "Sync progress: "
             f"{sync_progress.get('detail', 'unknown')} "
-            f"(headers={format_optional_rate(sync_progress.get('header_rate_per_hour'))})"
+            f"(daa={format_optional_rate(sync_progress.get('daa_rate_per_hour'))}, "
+            f"blocks={format_optional_rate(sync_progress.get('block_rate_per_hour'))}, "
+            f"headers={format_optional_rate(sync_progress.get('header_rate_per_hour'))})"
         )
     recovery = report.get("recovery") or {}
     if recovery.get("action") != "none":
@@ -1174,6 +1176,8 @@ def format_summary(report: dict[str, Any]) -> str:
             (
                 "sync_progress="
                 f"{sync_progress.get('detail', 'unknown')} "
+                f"daa_rate={format_optional_rate(sync_progress.get('daa_rate_per_hour'))} "
+                f"block_rate={format_optional_rate(sync_progress.get('block_rate_per_hour'))} "
                 f"header_rate={format_optional_rate(sync_progress.get('header_rate_per_hour'))}"
             ),
         )
