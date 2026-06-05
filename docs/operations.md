@@ -90,6 +90,18 @@ HTML status page:
 open state/status.html
 ```
 
+Canvas-hosted status page file:
+
+```text
+/Users/psdjc/.openclaw/canvas/kaspa-watchtower/status.html
+```
+
+The gateway route is auth-protected. If a node is paired later, present it with:
+
+```bash
+openclaw nodes canvas present --node <node> --target /kaspa-watchtower/status.html
+```
+
 Simulation test without touching the live node:
 
 ```bash

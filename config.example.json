@@ -8,6 +8,7 @@
   "grpc_endpoint": "127.0.0.1:16210",
   "state_path": "state/watchtower-state.json",
   "status_page_path": "state/status.html",
+  "canvas_status_page_path": "/Users/psdjc/.openclaw/canvas/kaspa-watchtower/status.html",
   "thresholds": {
     "alert_repeat_minutes": 60,
     "stale_log_minutes": 15,

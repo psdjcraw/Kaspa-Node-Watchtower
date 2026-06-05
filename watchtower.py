@@ -27,6 +27,7 @@ DEFAULT_CONFIG = {
     "grpc_endpoint": "",
     "state_path": "state/watchtower-state.json",
     "status_page_path": "state/status.html",
+    "canvas_status_page_path": "",
     "thresholds": {
         "alert_repeat_minutes": 60,
         "stale_log_minutes": 15,
@@ -772,6 +773,7 @@ def alert(config: dict) -> int:
     report = build_report(config)
     state_path = Path(config.get("state_path") or DEFAULT_CONFIG["state_path"])
     status_page_path = Path(config.get("status_page_path") or DEFAULT_CONFIG["status_page_path"])
+    canvas_status_page = config.get("canvas_status_page_path") or DEFAULT_CONFIG["canvas_status_page_path"]
     thresholds = config.get("thresholds", {})
     repeat_minutes = float(thresholds.get("alert_repeat_minutes", 60))
     state = load_state(state_path)
@@ -794,6 +796,8 @@ def alert(config: dict) -> int:
         state["last_alert_at"] = report["checked_at"]
     save_state(state_path, state)
     write_status_page(status_page_path, report, state)
+    if canvas_status_page:
+        write_status_page(Path(canvas_status_page), report, state)
 
     if should_emit:
         print(format_alert(report, previous_status, previous_severity))
