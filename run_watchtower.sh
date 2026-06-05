@@ -2,4 +2,9 @@
 set -euo pipefail
 
 cd "$(dirname "$0")"
-python3 watchtower.py -c config.json --alert
+PYTHON_BIN="python3"
+if [ -x ".venv/bin/python" ]; then
+  PYTHON_BIN=".venv/bin/python"
+fi
+
+"$PYTHON_BIN" watchtower.py -c config.json --alert

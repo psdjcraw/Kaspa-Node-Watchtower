@@ -10,10 +10,11 @@ explorers or hosted APIs.
 
 ## Features
 
-- Node health checks: process, RPC TCP, disk free space, data directory, log freshness, and relay block progress
+- Node health checks: process, RPC TCP, gRPC metrics, disk free space, data directory, log freshness, and relay block progress
 - Sync reports: IBD start/end time, processed blocks, headers, and throughput
 - Alert-mode output for Discord/OpenClaw cron
 - JSON output for later dashboards or exporters
+- Direct rusty-kaspa gRPC metrics: sync status, peer count, network id, DAA score, block/header counts, process metrics
 
 ## Planned Features
 
@@ -39,19 +40,28 @@ First working local watchtower.
 Run the local status reporter:
 
 ```bash
-python3 watchtower.py -c config.example.json
+.venv/bin/python watchtower.py -c config.example.json
 ```
 
 For the current local node:
 
 ```bash
-python3 watchtower.py -c config.json
+.venv/bin/python watchtower.py -c config.json
 ```
 
-The reporter reads local process state, RPC TCP reachability, data directory
-size/free space, and recent `kaspad` logs. It reports IBD/catch-up completion
-counts, trusted block counts, latest relay activity, latest transaction
-throughput stats, and recent relay block progress for stall detection.
+The reporter reads local process state, RPC TCP reachability, direct gRPC
+metrics, data directory size/free space, and recent `kaspad` logs. It reports
+IBD/catch-up completion counts, trusted block counts, latest relay activity,
+latest transaction throughput stats, and recent relay block progress for stall
+detection.
+
+For gRPC metrics, create the local virtualenv and generated protobuf files:
+
+```bash
+python3 -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt
+.venv/bin/python -m grpc_tools.protoc -I proto --python_out=generated_proto --grpc_python_out=generated_proto proto/rpc.proto proto/messages.proto
+```
 
 For local edits, copy `config.example.json` to `config.json` and adjust paths.
 `config.json` is ignored by git.

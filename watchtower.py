@@ -23,11 +23,14 @@ DEFAULT_CONFIG = {
     "log_path": "",
     "data_dir": "",
     "rpc_endpoint": "",
+    "grpc_endpoint": "",
     "state_path": "state/watchtower-state.json",
     "thresholds": {
         "stale_log_minutes": 15,
         "progress_window_minutes": 10,
         "min_relay_blocks_in_window": 1,
+        "min_peer_count": 1,
+        "require_grpc_metrics": True,
         "disk_free_gb_min": 20,
         "disk_free_percent_min": 5,
         "require_rpc": True,
@@ -173,6 +176,24 @@ def check_tcp_endpoint(endpoint: str, timeout: float = 2.0) -> dict[str, Any]:
         return {"configured": True, "ok": False, "detail": f"tcp connect failed to {endpoint}: {exc}"}
 
 
+def fetch_optional_grpc_metrics(endpoint: str) -> dict[str, Any]:
+    if not endpoint:
+        return {"ok": False, "configured": False, "detail": "not configured"}
+    try:
+        from kaspa_grpc_probe import fetch_grpc_metrics
+    except Exception as exc:
+        return {
+            "ok": False,
+            "configured": True,
+            "detail": f"gRPC probe unavailable: {exc}",
+        }
+    metrics = fetch_grpc_metrics(endpoint)
+    metrics["configured"] = True
+    if not metrics.get("ok"):
+        metrics["detail"] = metrics.get("error") or "gRPC probe failed"
+    return metrics
+
+
 def parse_trusted_blocks(lines: Iterable[str]) -> int:
     pattern = re.compile(r"Starting to process (\d+) trusted blocks")
     total = 0
@@ -239,8 +260,10 @@ def build_report(config: dict) -> dict[str, Any]:
     log_path = Path(config.get("log_path") or "")
     processes = find_processes(config["process_match"])
     thresholds = config.get("thresholds", {})
+    grpc_endpoint = config.get("grpc_endpoint") or config.get("rpc_endpoint") or ""
     disk = disk_usage(config.get("data_dir", ""))
     rpc = check_tcp_endpoint(config.get("rpc_endpoint") or "")
+    grpc_metrics = fetch_optional_grpc_metrics(grpc_endpoint)
 
     checks = [
         Check("process", bool(processes), "running" if processes else "not running"),
@@ -250,6 +273,35 @@ def build_report(config: dict) -> dict[str, Any]:
     require_rpc = bool(thresholds.get("require_rpc", True))
     if rpc["configured"] or require_rpc:
         checks.append(Check("rpc_tcp", bool(rpc.get("ok")), rpc["detail"]))
+
+    require_grpc_metrics = bool(thresholds.get("require_grpc_metrics", True))
+    if grpc_metrics.get("configured") or require_grpc_metrics:
+        checks.append(
+            Check(
+                "grpc_metrics",
+                bool(grpc_metrics.get("ok")),
+                "read ok" if grpc_metrics.get("ok") else grpc_metrics.get("detail", "failed"),
+            )
+        )
+    if grpc_metrics.get("ok"):
+        checks.append(
+            Check(
+                "sync_status",
+                bool(grpc_metrics.get("is_synced")),
+                f"is_synced={bool(grpc_metrics.get('is_synced'))}",
+            )
+        )
+        min_peer_count = int(thresholds.get("min_peer_count", 1))
+        checks.append(
+            Check(
+                "peer_count",
+                int(grpc_metrics.get("peer_count") or 0) >= min_peer_count,
+                (
+                    f"{int(grpc_metrics.get('peer_count') or 0)} peers "
+                    f"(active={grpc_metrics.get('active_peers')})"
+                ),
+            )
+        )
 
     min_free_gb = float(thresholds.get("disk_free_gb_min", 0))
     min_free_percent = float(thresholds.get("disk_free_percent_min", 0))
@@ -348,6 +400,8 @@ def build_report(config: dict) -> dict[str, Any]:
         "processes": processes,
         "rpc_endpoint": config.get("rpc_endpoint") or "",
         "rpc": rpc,
+        "grpc_endpoint": grpc_endpoint,
+        "grpc_metrics": grpc_metrics,
         "data_dir": config.get("data_dir") or "",
         "data_dir_size": dir_size(config.get("data_dir", "")),
         "disk": disk,
@@ -401,6 +455,15 @@ def status(config: dict) -> int:
         print(f"Latest relay block: {report['latest_relay_block']}")
     if report["latest_throughput"]:
         print(f"Latest throughput: {report['latest_throughput']}")
+    grpc_metrics = report.get("grpc_metrics") or {}
+    if grpc_metrics.get("ok"):
+        print(
+            "gRPC metrics: "
+            f"synced={grpc_metrics.get('is_synced')} "
+            f"peers={grpc_metrics.get('peer_count')} "
+            f"network={grpc_metrics.get('network_id')} "
+            f"daa={grpc_metrics.get('virtual_daa_score')}"
+        )
     progress = report["progress"]
     print(
         "Relay progress: "
@@ -468,6 +531,15 @@ def format_alert(report: dict[str, Any], previous_status: str | None = None) -> 
             lines.append(f"{mark} {check['name']}: {check['detail']}")
     if report["latest_throughput"]:
         lines.append(report["latest_throughput"])
+    grpc_metrics = report.get("grpc_metrics") or {}
+    if grpc_metrics.get("ok"):
+        lines.append(
+            "gRPC metrics: "
+            f"synced={grpc_metrics.get('is_synced')} "
+            f"peers={grpc_metrics.get('peer_count')} "
+            f"network={grpc_metrics.get('network_id')} "
+            f"daa={grpc_metrics.get('virtual_daa_score')}"
+        )
     progress = report["progress"]
     lines.append(
         "Relay progress: "

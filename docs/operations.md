@@ -6,6 +6,7 @@
 - Host: `hang-studio-m4max`
 - Network: Kaspa testnet 10
 - RPC TCP check: `127.0.0.1:16210`
+- gRPC metrics: `127.0.0.1:16210`
 - Process match: `kaspad`
 - Log: `/Users/psdjc/kaspa/rusty-kaspa-tn10-data/kaspa-testnet-10/logs/rusty-kaspa.log`
 - Data dir: `/Users/psdjc/kaspa/rusty-kaspa-tn10-data/kaspa-testnet-10/datadir`
@@ -17,6 +18,9 @@ The local watchtower reports an alert when any of these fail:
 - `kaspad` process is not running.
 - Data directory is missing.
 - RPC TCP connection to `127.0.0.1:16210` fails.
+- gRPC metrics cannot be read.
+- Node reports `isSynced=false`.
+- Connected peer count is below `1`.
 - Disk free space drops below `20 GiB` or below `5%`.
 - The latest `kaspad` log timestamp is older than `15 minutes`.
 - No relay-accepted blocks appear in the latest `10 minutes`.
@@ -27,13 +31,13 @@ The local watchtower reports an alert when any of these fail:
 Human-readable status:
 
 ```bash
-python3 watchtower.py -c config.json
+.venv/bin/python watchtower.py -c config.json
 ```
 
 JSON status for automation:
 
 ```bash
-python3 watchtower.py -c config.json --json
+.venv/bin/python watchtower.py -c config.json --json
 ```
 
 Alert mode for cron:
@@ -44,6 +48,9 @@ Alert mode for cron:
 
 `--alert` writes state to `state/watchtower-state.json`. It emits output when
 status changes, and keeps emitting while the status remains `alert`.
+
+The cron wrapper prefers `.venv/bin/python` so the gRPC dependencies can stay
+local to this repository.
 
 ## Git Push
 

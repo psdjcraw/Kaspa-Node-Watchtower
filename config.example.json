@@ -5,11 +5,14 @@
   "log_path": "/Users/psdjc/kaspa/rusty-kaspa-tn10-data/kaspa-testnet-10/logs/rusty-kaspa.log",
   "data_dir": "/Users/psdjc/kaspa/rusty-kaspa-tn10-data/kaspa-testnet-10/datadir",
   "rpc_endpoint": "127.0.0.1:16210",
+  "grpc_endpoint": "127.0.0.1:16210",
   "state_path": "state/watchtower-state.json",
   "thresholds": {
     "stale_log_minutes": 15,
     "progress_window_minutes": 10,
     "min_relay_blocks_in_window": 1,
+    "min_peer_count": 1,
+    "require_grpc_metrics": true,
     "disk_free_gb_min": 20,
     "disk_free_percent_min": 5,
     "require_rpc": true
