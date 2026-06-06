@@ -387,8 +387,9 @@ scripts/simulate_failures.sh
 ```
 
 The simulation script uses temporary config/state files. It verifies peer-count
-critical alerts, relay-progress warnings, RPC critical alerts, repeat
-suppression, recovered transitions, and recovery dry-run output.
+critical alerts, relay-progress warnings, RPC critical alerts, missing gRPC
+metrics, disk pressure, stale logs, repeat suppression, recovered transitions,
+and recovery dry-run output.
 
 ## Git Push
 

@@ -21,6 +21,7 @@ make_config() {
   local output="$2"
   local state_path="${3:-$TMP_DIR/$name-state.json}"
   python3 - "$name" "config.json" "$output" "$state_path" "$TMP_DIR" <<'PY'
+import datetime as dt
 import json
 import sys
 
@@ -44,6 +45,19 @@ elif name == "relay-warning":
     config["thresholds"]["require_relay_progress_when_unsynced"] = True
 elif name == "rpc-critical":
     config["rpc_endpoint"] = "127.0.0.1:1"
+elif name == "grpc-missing":
+    config["grpc_endpoint"] = "127.0.0.1:1"
+elif name == "disk-pressure":
+    config["thresholds"]["disk_free_gb_min"] = 999999999
+elif name == "stale-log":
+    old_log = f"{tmp_dir}/{name}-rusty-kaspa.log"
+    old_timestamp = dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=2)
+    with open(old_log, "w", encoding="utf-8") as log_handle:
+        log_handle.write(old_timestamp.isoformat(" "))
+        log_handle.write(" INFO stale simulation line\n")
+    config["log_path"] = old_log
+    config["thresholds"]["stale_log_minutes"] = 1
+    config["thresholds"]["min_relay_blocks_in_window"] = 0
 elif name == "peer-recovered":
     config["thresholds"]["min_peer_count"] = 1
 else:
@@ -89,6 +103,9 @@ run_alert_case() {
 run_alert_case "peer-critical" 1 "critical" "peer_count"
 run_alert_case "relay-warning" 1 "warning" "block_progress"
 run_alert_case "rpc-critical" 1 "critical" "rpc_tcp"
+run_alert_case "grpc-missing" 1 "critical" "grpc_metrics"
+run_alert_case "disk-pressure" 1 "warning" "disk_free"
+run_alert_case "stale-log" 1 "warning" "log_freshness"
 
 peer_config="$TMP_DIR/repeat-peer-critical.json"
 peer_state="$TMP_DIR/repeat-peer-critical-state.json"

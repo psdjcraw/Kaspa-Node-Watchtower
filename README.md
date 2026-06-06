@@ -244,6 +244,10 @@ Run local failure simulations without touching the live node:
 scripts/simulate_failures.sh
 ```
 
+The simulation suite covers peer-count critical alerts, relay-progress warnings,
+RPC failures, missing gRPC metrics, disk pressure, stale logs, repeat
+suppression, recovered transitions, and recovery dry-runs.
+
 Collect a local diagnostics bundle:
 
 ```bash

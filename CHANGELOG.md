@@ -18,6 +18,7 @@ All notable changes to Kaspa Node Watchtower are tracked here.
   failure, and disk pressure states.
 - Grafana panels for relay freshness, bootstrap progress rates, and recovery
   action mix.
+- Failure simulations for missing gRPC metrics, disk pressure, and stale logs.
 - Development version reporting through `watchtower.py --version` and
   `make version`.
 - Bootstrap script and `make bootstrap` target for virtualenv dependency
