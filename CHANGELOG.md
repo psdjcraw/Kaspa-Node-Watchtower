@@ -16,6 +16,7 @@ All notable changes to Kaspa Node Watchtower are tracked here.
   diagnostics bundles.
 - `make weekly-report` and `run_weekly_report.sh` for 7-day and 30-day operator
   history review.
+- Long-lived storage and packaging option notes for v0.4 planning.
 
 ### Changed
 

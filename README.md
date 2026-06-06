@@ -65,6 +65,8 @@ Current target environment:
 - [Failure handling runbook](docs/runbook.md)
 - [Deployment status](docs/status.md)
 - [Sample status reports](docs/sample-status-reports.md)
+- [Long-lived storage options](docs/storage-options.md)
+- [Packaging options](docs/packaging-options.md)
 - [v0.2.0 release notes](docs/release-notes-v0.2.0.md)
 - [Roadmap](ROADMAP.md)
 - [Contributing guide](CONTRIBUTING.md)
