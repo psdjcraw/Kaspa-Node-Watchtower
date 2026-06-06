@@ -1509,10 +1509,6 @@ def write_status_page(
     .market-cross-panel {{
       min-height: 322px;
     }}
-    .market-watch > .panel + .panel,
-    .market-timeframe-grid > .panel + .panel {{
-      margin-top: 0;
-    }}
     .market-watch > .panel:not(.market-price),
     .market-timeframe-grid > .panel,
     .market-cross-panel {{
@@ -1702,7 +1698,7 @@ def write_status_page(
     code {{ background: #eef2f6; padding: 2px 4px; border-radius: 4px; overflow-wrap: anywhere; word-break: break-all; white-space: normal; }}
     .ok-text {{ color: var(--ok); font-weight: 700; }}
     .fail-text {{ color: var(--critical); font-weight: 700; }}
-    .panel + .panel {{ margin-top: 14px; }}
+    main > .panel + .panel {{ margin-top: 14px; }}
     @media (max-width: 760px) {{
       main {{ padding: 14px; }}
       .hero-top, .hero-strip, .layout, .chart-grid, .market-watch, .market-timeframe-grid, .context-grid {{ display: block; }}
