@@ -643,6 +643,7 @@ class WatchtowerUnitTests(unittest.TestCase):
             self.assertIn('id="market-chart-1d"', html)
             self.assertIn('id="market-chart-1w"', html)
             self.assertIn('id="market-chart-1m"', html)
+            self.assertIn("min-height: 322px", html)
             self.assertIn("interval=240", html)
             self.assertIn("interval=D", html)
             self.assertIn("interval=W", html)

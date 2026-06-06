@@ -1481,6 +1481,20 @@ def write_status_page(
       gap: 14px;
       margin-bottom: 14px;
     }}
+    .market-watch > .panel,
+    .market-timeframe-grid > .panel {{
+      min-height: 322px;
+    }}
+    .market-watch > .panel:not(.market-price),
+    .market-timeframe-grid > .panel {{
+      display: flex;
+      flex-direction: column;
+    }}
+    .market-watch > .panel:not(.market-price) .market-chart,
+    .market-timeframe-grid .market-chart {{
+      flex: 1 1 auto;
+      min-height: 230px;
+    }}
     .market-status {{ color: var(--muted); font-size: 12px; font-weight: 700; }}
     .v-card, .panel {{
       background: var(--panel);
