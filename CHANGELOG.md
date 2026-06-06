@@ -21,6 +21,8 @@ All notable changes to Kaspa Node Watchtower are tracked here.
 - Status dashboard now visualizes recent `Processed N blocks ... in the last
   Ns` log entries as a blocks-per-second chart.
 - Status dashboard now stores and visualizes mempool size history.
+- Status dashboard now visualizes recent relay accepted-block events as a
+  relay intake chart.
 
 ### Changed
 

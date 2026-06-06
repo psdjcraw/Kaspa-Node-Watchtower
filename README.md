@@ -40,6 +40,8 @@ which supports a more resilient decentralized network.
 - Concise `--summary` output for quick Discord/operator status checks
 - Benchmark snapshots and reports for version/configuration comparison
 - Benchmark trend section in the generated status dashboard
+- Relay accepted-block event chart from recent `Accepted N blocks ... via relay`
+  kaspad log entries
 - Blocks-per-second processing chart from recent `Processed N blocks ...`
   kaspad log entries
 - Mempool size history chart in the generated status dashboard

@@ -574,6 +574,10 @@ class WatchtowerUnitTests(unittest.TestCase):
                     "relay_events_in_window": 0,
                     "window_minutes": 10,
                     "latest_relay_age_seconds": None,
+                    "relay_samples": [
+                        {"timestamp": "2026-06-06T09:59:58+09:00", "blocks": 9},
+                        {"timestamp": "2026-06-06T10:00:00+09:00", "blocks": 16},
+                    ],
                     "latest_processed": {
                         "timestamp": "2026-06-06T10:00:00+09:00",
                         "blocks": 92,
@@ -637,6 +641,8 @@ class WatchtowerUnitTests(unittest.TestCase):
             self.assertIn("9.2/s", html)
             self.assertIn("processed-chart", html)
             self.assertIn("Mempool Activity", html)
+            self.assertIn("Relay Intake", html)
+            self.assertIn("16 relay blocks", html)
 
 
 if __name__ == "__main__":

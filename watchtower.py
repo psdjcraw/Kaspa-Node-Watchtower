@@ -392,6 +392,7 @@ def build_report(config: dict) -> dict[str, Any]:
         "relay_events_in_window": 0,
         "latest_relay_age_seconds": None,
         "latest_processed": None,
+        "relay_samples": [],
         "processed_samples": [],
     }
     if log_path.exists():
@@ -420,6 +421,13 @@ def build_report(config: dict) -> dict[str, Any]:
             cutoff = now - dt.timedelta(minutes=progress_window)
             recent_relay_events = [event for event in relay_events if event.timestamp >= cutoff]
             recent_relay_blocks = sum(event.blocks for event in recent_relay_events)
+            progress["relay_samples"] = [
+                {
+                    "timestamp": event.timestamp.isoformat(),
+                    "blocks": event.blocks,
+                }
+                for event in recent_relay_events[-48:]
+            ]
             latest_relay_event = relay_events[-1] if relay_events else None
             if latest_relay_event is not None:
                 progress["latest_relay_timestamp"] = latest_relay_event.timestamp.isoformat()
@@ -962,6 +970,79 @@ def processed_rate_chart(samples: list[dict[str, Any]]) -> str:
     )
 
 
+def relay_intake_chart(samples: list[dict[str, Any]]) -> str:
+    points = [
+        {
+            "timestamp": str(item.get("timestamp") or ""),
+            "blocks": numeric(item.get("blocks")),
+        }
+        for item in samples
+    ]
+    points = [item for item in points if item["blocks"] is not None]
+    if not points:
+        return '<div class="empty-chart">No relay events</div>'
+
+    width = 720
+    height = 164
+    left_pad = 32
+    right_pad = 62
+    top_pad = 14
+    bottom_pad = 30
+    chart_width = width - left_pad - right_pad
+    chart_height = height - top_pad - bottom_pad
+    high = max(float(item["blocks"]) for item in points) or 1
+    step = chart_width / len(points)
+    bar_width = max(3, min(12, step * 0.58))
+
+    grid_parts = []
+    for ratio in [0, 0.5, 1]:
+        line_y = top_pad + chart_height * ratio
+        value = high * (1 - ratio)
+        grid_parts.append(
+            f'<line x1="{left_pad}" x2="{width - right_pad}" y1="{line_y:.1f}" y2="{line_y:.1f}" '
+            'stroke="#d9e1e8" stroke-width="1"></line>'
+        )
+        grid_parts.append(
+            f'<text x="{width - right_pad + 10}" y="{line_y + 4:.1f}" fill="#66727f" '
+            f'font-size="11" font-weight="700">{html.escape(f"{value:.0f}")}</text>'
+        )
+
+    bars = []
+    for index, item in enumerate(points):
+        blocks = float(item["blocks"])
+        bar_height = max(2, (blocks / high) * chart_height)
+        x = left_pad + step * index + (step - bar_width) / 2
+        y = top_pad + chart_height - bar_height
+        bars.append(
+            f'<rect x="{x:.1f}" y="{y:.1f}" width="{bar_width:.1f}" height="{bar_height:.1f}" '
+            f'rx="2" fill="#276b74" opacity="0.86">'
+            f'<title>{html.escape(item["timestamp"])} {blocks:.0f} relay blocks</title>'
+            '</rect>'
+        )
+
+    labels = []
+    label_indexes = sorted({0, len(points) // 2, len(points) - 1})
+    for index in label_indexes:
+        item = points[index]
+        parsed = parse_iso_datetime(item["timestamp"])
+        label = parsed.strftime("%H:%M:%S") if parsed else item["timestamp"][-8:]
+        x = left_pad + step * index + step / 2
+        anchor = "start" if index == 0 else "end" if index == len(points) - 1 else "middle"
+        labels.append(
+            f'<text x="{x:.1f}" y="{height - 8}" text-anchor="{anchor}" fill="#66727f" '
+            f'font-size="11" font-weight="700">{html.escape(label)}</text>'
+        )
+
+    return (
+        '<svg class="processed-chart" viewBox="0 0 720 164" role="img" '
+        'aria-label="Recent relay accepted blocks">'
+        + "".join(grid_parts)
+        + "".join(bars)
+        + "".join(labels)
+        + "</svg>"
+    )
+
+
 def visual_card(label: str, value: Any, detail: str = "", tone: str = "neutral") -> str:
     return f"""<section class="v-card {html.escape(tone)}">
   <div class="v-label">{html.escape(str(label))}</div>
@@ -1156,6 +1237,17 @@ def write_status_page(
         else (
             f"{latest_processed.get('blocks', 'unknown')} blocks / "
             f"{latest_processed.get('seconds', 'unknown')}s"
+        )
+    )
+    relay_samples = progress.get("relay_samples") or []
+    relay_intake = relay_intake_chart(relay_samples)
+    relay_detail = (
+        "No recent relay events"
+        if not relay_samples
+        else (
+            f"{progress.get('relay_blocks_in_window', 0)} blocks / "
+            f"{progress.get('relay_events_in_window', 0)} events in "
+            f"{progress.get('window_minutes', 'unknown')}m"
         )
     )
     check_pills = "\n".join(check_pill(check) for check in report["checks"])
@@ -1625,6 +1717,14 @@ def write_status_page(
         <div class="chart-head"><h2>Severity Timeline</h2><div class="chart-value">{html.escape(severity.upper())}</div></div>
         {severity_chart}
       </section>
+    </section>
+    <section class="panel">
+      <div class="chart-head">
+        <h2>Relay Intake</h2>
+        <div class="chart-value">{compact_number(progress.get('relay_blocks_in_window'))}</div>
+      </div>
+      <div class="subtle">{html.escape(relay_detail)}</div>
+      {relay_intake}
     </section>
     <section class="panel">
       <div class="chart-head">
