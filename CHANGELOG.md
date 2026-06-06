@@ -2,6 +2,12 @@
 
 All notable changes to Kaspa Node Watchtower are tracked here.
 
+## Unreleased
+
+### Changed
+
+- Development version now reports `0.5.0-dev` after the v0.4.0 release.
+
 ## 0.4.0 - 2026-06-06
 
 ### Added

@@ -63,6 +63,16 @@ the primary source of truth.
   Candidate options are documented in `docs/packaging-options.md`, and
   `make package` builds a portable release tarball with a manifest and checksum.
 
+## v0.5 - Multi-Host and Distribution Follow-Up
+
+- Draft a Homebrew formula for macOS operator installs.
+- Add an optional object-storage upload helper for history archives and
+  diagnostics bundles.
+- Explore multi-node history comparison for operators running more than one
+  `kaspad` host.
+- Add richer incident report export from sanitized diagnostics summaries.
+- Add config version checks or migration notes when defaults change.
+
 ## AI-Assisted Maintenance Opportunities
 
 OpenAI Codex and API credits would be useful for:
