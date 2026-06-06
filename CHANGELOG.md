@@ -19,10 +19,14 @@ All notable changes to Kaspa Node Watchtower are tracked here.
 - Long-lived storage and packaging option notes for v0.4 planning.
 - `make history-archive` and `scripts/export_history_sqlite.py --archive-dir`
   for portable SQLite/JSONL history archives with summary JSON and manifest.
+- `make weekly-archive` for weekly operator review plus a dated history archive.
+- `make package` and `scripts/package_release.sh` for portable release tarballs
+  with `PACKAGE-MANIFEST.json` and SHA-256 checksums.
+- Explicit stalled relay block simulation coverage in `scripts/simulate_failures.sh`.
 
 ### Changed
 
-- Development version now reports `0.3.0-dev` after the v0.2.0 release.
+- Development version now reports `0.4.0-dev` for v0.4 operator automation work.
 - GitHub smoke workflow now checks generated protobuf drift.
 - Recovery dry-runs now print a decision block with failed checks, restart
   command status, and recommended next action.

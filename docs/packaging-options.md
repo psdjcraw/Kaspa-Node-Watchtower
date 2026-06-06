@@ -37,6 +37,31 @@ Cons:
 - updates require `git pull`
 - generated protobuf files and virtualenv must be maintained
 
+## Current Portable Package: Release Tarball
+
+Use the release tarball when:
+
+- the operator wants a clean snapshot of tracked project files
+- local config and state must stay out of the artifact
+- a GitHub Release asset, NAS copy, or manual install bundle is enough
+
+Build:
+
+```bash
+make package
+scripts/package_release.sh --dist-dir dist
+scripts/package_release.sh --dist-dir dist --label v0.4.0-rc1
+```
+
+Output:
+
+- `dist/kaspa-node-watchtower-<version>-<revision>.tar.gz`
+- matching `.sha256` checksum
+- `PACKAGE-MANIFEST.json` inside the tarball
+
+The tarball is generated from `git ls-files`, so local `config.json`, `state/`,
+virtualenvs, diagnostics bundles, and other host-specific files are excluded.
+
 ## Candidate: Python Wheel
 
 Use a Python wheel when:
@@ -100,13 +125,13 @@ Cons:
 ## Recommended Path
 
 For the current deployment, keep source checkout as the default and prepare a
-packaging-friendly structure before choosing a distribution channel.
+portable release tarball before choosing a heavier distribution channel.
 
 Practical next steps:
 
 - keep `make bootstrap`, `make validate`, `make smoke`, and `make ensure-exporter`
   as the stable install flow
 - keep generated protobuf drift checks in CI
-- add packaging only after config/state path conventions settle
+- use `make package` for GitHub Release assets or manual operator bundles
 - prefer Homebrew for macOS operator convenience if packaging is needed first
 - prefer a container image only for Linux or compose-native deployments

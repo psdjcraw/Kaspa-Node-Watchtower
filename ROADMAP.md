@@ -57,9 +57,11 @@ the primary source of truth.
   Candidate options are documented in `docs/storage-options.md`, and portable
   history archives are available through `make history-archive`.
 - Add optional report generation for daily or weekly operator summaries.
-  Weekly report generation is available through `make weekly-report`.
+  Weekly report generation is available through `make weekly-report`, and
+  `make weekly-archive` pairs it with a portable history archive.
 - Evaluate packaging options for easier deployment on common node hosts.
-  Candidate options are documented in `docs/packaging-options.md`.
+  Candidate options are documented in `docs/packaging-options.md`, and
+  `make package` builds a portable release tarball with a manifest and checksum.
 
 ## AI-Assisted Maintenance Opportunities
 

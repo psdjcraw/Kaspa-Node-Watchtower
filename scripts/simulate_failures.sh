@@ -40,7 +40,7 @@ config["thresholds"]["alert_repeat_minutes"] = 60
 
 if name == "peer-critical":
     config["thresholds"]["min_peer_count"] = 999
-elif name == "relay-warning":
+elif name in {"relay-warning", "relay-stalled"}:
     config["thresholds"]["min_relay_blocks_in_window"] = 999999
     config["thresholds"]["require_relay_progress_when_unsynced"] = True
 elif name == "rpc-critical":
@@ -102,6 +102,7 @@ run_alert_case() {
 
 run_alert_case "peer-critical" 1 "critical" "peer_count"
 run_alert_case "relay-warning" 1 "warning" "block_progress"
+run_alert_case "relay-stalled" 1 "warning" "block_progress" "relay blocks"
 run_alert_case "rpc-critical" 1 "critical" "rpc_tcp"
 run_alert_case "grpc-missing" 1 "critical" "grpc_metrics"
 run_alert_case "disk-pressure" 1 "warning" "disk_free"

@@ -6,6 +6,8 @@ PYTHON_BIN="python3"
 if [ -x ".venv/bin/python" ]; then
   PYTHON_BIN=".venv/bin/python"
 fi
+TMP_DIR="$(mktemp -d)"
+trap 'rm -rf "$TMP_DIR"' EXIT
 
 ok() {
   printf 'OK %s\n' "$1"
@@ -22,6 +24,12 @@ ok "generated protobuf"
 
 "$PYTHON_BIN" -m unittest discover -s tests >/dev/null
 ok "unit tests"
+
+scripts/package_release.sh --dist-dir "$TMP_DIR/dist" --label smoke >/dev/null
+test -s "$TMP_DIR/dist/kaspa-node-watchtower-smoke.tar.gz"
+test -s "$TMP_DIR/dist/kaspa-node-watchtower-smoke.tar.gz.sha256"
+tar -tzf "$TMP_DIR/dist/kaspa-node-watchtower-smoke.tar.gz" | grep -q 'PACKAGE-MANIFEST.json'
+ok "release package"
 
 python3 -m json.tool grafana/kaspa-watchtower.json >/dev/null
 ok "Grafana dashboard JSON"

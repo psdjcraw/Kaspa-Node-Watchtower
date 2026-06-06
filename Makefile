@@ -1,7 +1,7 @@
 PYTHON ?= .venv/bin/python
 CONFIG ?= config.json
 
-.PHONY: help bootstrap proto-check version status summary sync-report diagnostics-summary json alert smoke ci integrations simulate-exporter-failure ensure-exporter diagnostics diagnostics-archive daily-report weekly-report benchmark benchmark-report prometheus export-history history-report history-archive prune validate recover-dry-run recover force-recover-dry-run
+.PHONY: help bootstrap proto-check version status summary sync-report diagnostics-summary json alert smoke ci integrations simulate-exporter-failure ensure-exporter diagnostics diagnostics-archive daily-report weekly-report weekly-archive benchmark benchmark-report prometheus export-history history-report history-archive package prune validate recover-dry-run recover force-recover-dry-run
 
 help:
 	@printf 'Kaspa Node Watchtower operator commands\n'
@@ -23,12 +23,14 @@ help:
 	@printf '  make diagnostics-archive Collect diagnostic report and tar archive\n'
 	@printf '  make daily-report        Print the daily operator report\n'
 	@printf '  make weekly-report       Print the weekly operator report\n'
+	@printf '  make weekly-archive      Print weekly report and write history archive\n'
 	@printf '  make benchmark           Save a benchmark snapshot\n'
 	@printf '  make benchmark-report    Print benchmark trend report\n'
 	@printf '  make prometheus          Write Prometheus textfile metrics\n'
 	@printf '  make export-history      Export JSONL history to SQLite\n'
 	@printf '  make history-report      Export and summarize SQLite history\n'
 	@printf '  make history-archive     Export portable SQLite/JSONL history archive\n'
+	@printf '  make package             Build a portable release tarball\n'
 	@printf '  make prune               Apply retention limits\n'
 	@printf '  make validate            Validate config\n'
 	@printf '  make recover-dry-run     Show manual recovery command without restart\n'
@@ -88,6 +90,10 @@ daily-report:
 weekly-report:
 	@./run_weekly_report.sh
 
+weekly-archive:
+	@./run_weekly_report.sh
+	@scripts/export_history_sqlite.py --archive-dir state/history-archives --archive-label weekly-$$(date +%Y-%m-%d)
+
 benchmark:
 	@./run_benchmark_snapshot.sh
 
@@ -105,6 +111,9 @@ history-report:
 
 history-archive:
 	@scripts/export_history_sqlite.py --archive-dir state/history-archives
+
+package:
+	@scripts/package_release.sh
 
 prune:
 	@$(PYTHON) watchtower.py -c $(CONFIG) --prune-state

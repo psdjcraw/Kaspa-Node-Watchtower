@@ -77,9 +77,12 @@ make help
 make status
 make smoke
 make daily-report
+make weekly-report
+make weekly-archive
 make diagnostics-archive
 make history-report
 make history-archive
+make package
 ```
 
 GitHub Actions smoke status:
@@ -201,6 +204,7 @@ scripts/export_history_sqlite.py --summary --days 7
 scripts/export_history_sqlite.py --archive-dir state/history-archives
 make history-report
 make history-archive
+make weekly-archive
 ```
 
 The export includes benchmark snapshots, upgrade checkpoints, and recovery
@@ -209,6 +213,18 @@ OK ratio, warning/critical counts, minimum peer and disk floors, DAA/block
 deltas, recovery attempts, and latest upgrade checkpoint.
 Archive mode writes a portable directory with the SQLite snapshot, source JSONL
 files, summary JSON, and `manifest.json` for off-host backup.
+`make weekly-archive` prints the weekly operator report and writes a dated
+history archive.
+
+Portable release package:
+
+```bash
+make package
+scripts/package_release.sh --dist-dir dist --label v0.4.0-rc1
+```
+
+The package tarball contains tracked project files plus `PACKAGE-MANIFEST.json`.
+It excludes local config, state, virtualenv, and diagnostics data.
 
 Apply retention limits:
 
@@ -373,6 +389,8 @@ the rest of the report. Unlike alert and smoke wrappers, it intentionally emits
 output while healthy.
 The weekly report focuses on diagnostics summary, 7-day and 30-day SQLite
 history windows, benchmark trend, recovery attempts, and upgrade checkpoints.
+`make weekly-archive` pairs the report with a history archive for off-host
+backup.
 
 Prometheus textfile metrics:
 
@@ -406,7 +424,7 @@ make simulate-exporter-failure
 ```
 
 The simulation script uses temporary config/state files. It verifies peer-count
-critical alerts, relay-progress warnings, RPC critical alerts, missing gRPC
+critical alerts, stalled relay block warnings, RPC critical alerts, missing gRPC
 metrics, disk pressure, stale logs, repeat suppression, recovered transitions,
 recovery dry-run output, and exporter health failure detection.
 

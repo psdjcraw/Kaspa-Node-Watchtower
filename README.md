@@ -67,6 +67,7 @@ Current target environment:
 - [Sample status reports](docs/sample-status-reports.md)
 - [Long-lived storage options](docs/storage-options.md)
 - [Packaging options](docs/packaging-options.md)
+- [v0.4.0 release notes](docs/release-notes-v0.4.0.md)
 - [v0.2.0 release notes](docs/release-notes-v0.2.0.md)
 - [Roadmap](ROADMAP.md)
 - [Contributing guide](CONTRIBUTING.md)
@@ -147,10 +148,12 @@ make sync-report
 make smoke
 make daily-report
 make weekly-report
+make weekly-archive
 make ensure-exporter
 make diagnostics-archive
 make history-report
 make history-archive
+make package
 ```
 
 Save a benchmark snapshot and compare recent snapshots:
@@ -175,6 +178,7 @@ scripts/export_history_sqlite.py
 scripts/export_history_sqlite.py --summary --days 7
 make history-report
 make history-archive
+make weekly-archive
 ```
 
 This imports benchmark snapshots, upgrade checkpoints, and recovery attempts,
@@ -182,6 +186,19 @@ then can summarize the latest history window for operator review.
 `make history-archive` also writes a portable archive under
 `state/history-archives/` with the SQLite snapshot, source JSONL files, summary
 JSON, and a manifest for off-host backup or object storage upload.
+`make weekly-archive` prints the weekly report and writes a dated history
+archive in the same pass.
+
+Build a portable release tarball:
+
+```bash
+make package
+scripts/package_release.sh --dist-dir dist
+```
+
+The package is generated from tracked repository files only and excludes local
+`config.json`, `state/`, virtualenvs, diagnostics, and other host-specific
+operator data.
 
 Apply retention limits to state files:
 
@@ -257,7 +274,7 @@ scripts/simulate_failures.sh
 make simulate-exporter-failure
 ```
 
-The simulation suite covers peer-count critical alerts, relay-progress warnings,
+The simulation suite covers peer-count critical alerts, stalled relay blocks,
 RPC failures, missing gRPC metrics, disk pressure, stale logs, repeat
 suppression, recovered transitions, recovery dry-runs, and exporter health
 failure detection.
@@ -298,6 +315,7 @@ Generate a daily operator report:
 ./run_daily_report.sh
 make daily-report
 make weekly-report
+make weekly-archive
 ```
 
 The daily report includes an operator verdict, node health, mainnet sync
@@ -305,6 +323,7 @@ progress, benchmark stability, recent SQLite history summary, integration
 status, and smoke/CodeQL workflow status.
 The weekly report focuses on diagnostics summary, 7-day and 30-day SQLite
 history, benchmark trend, recovery attempts, and upgrade checkpoints.
+`make weekly-archive` pairs that report with a portable history archive.
 
 See [Documentation](#documentation) for setup, integrations, operations,
 security, roadmap, and release history.
