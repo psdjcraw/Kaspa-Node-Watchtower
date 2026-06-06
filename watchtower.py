@@ -1499,7 +1499,8 @@ def write_status_page(
       gap: 8px;
       min-width: 0;
     }}
-    .market-trend-badge {{
+    .market-trend-badge,
+    .market-rsi-badge {{
       display: inline-flex;
       align-items: center;
       min-height: 22px;
@@ -1516,6 +1517,9 @@ def write_status_page(
     .market-trend-badge.up {{ background: var(--ok-soft); border-color: #b9e3ca; color: var(--ok); }}
     .market-trend-badge.down {{ background: var(--critical-soft); border-color: #f1b8b2; color: var(--critical); }}
     .market-trend-badge.neutral {{ background: #fff7ed; border-color: #fed7aa; color: #b26a00; }}
+    .market-rsi-badge.hot {{ background: #fff7ed; border-color: #fed7aa; color: #b26a00; }}
+    .market-rsi-badge.cool {{ background: #ecfeff; border-color: #a5f3fc; color: #276b74; }}
+    .market-rsi-badge.neutral {{ background: #f8fafc; border-color: #d9e1e8; color: var(--muted); }}
     .market-chart {{
       width: 100%;
       height: 230px;
@@ -1796,6 +1800,7 @@ def write_status_page(
           <div class="market-title-row">
             <h2>KAS/USDT 15m</h2>
             <span id="market-trend-15m" class="market-trend-badge">Trend pending</span>
+            <span id="market-rsi-15m" class="market-rsi-badge">RSI pending</span>
           </div>
           <div id="market-status" class="market-status">Loading candles</div>
         </div>
@@ -1808,6 +1813,7 @@ def write_status_page(
           <div class="market-title-row">
             <h2>KAS/USDT 4h</h2>
             <span id="market-trend-4h" class="market-trend-badge">Trend pending</span>
+            <span id="market-rsi-4h" class="market-rsi-badge">RSI pending</span>
           </div>
           <div id="market-status-4h" class="market-status">Loading candles</div>
         </div>
@@ -1818,6 +1824,7 @@ def write_status_page(
           <div class="market-title-row">
             <h2>KAS/USDT 1D</h2>
             <span id="market-trend-1d" class="market-trend-badge">Trend pending</span>
+            <span id="market-rsi-1d" class="market-rsi-badge">RSI pending</span>
           </div>
           <div id="market-status-1d" class="market-status">Loading candles</div>
         </div>
@@ -1828,6 +1835,7 @@ def write_status_page(
           <div class="market-title-row">
             <h2>KAS/USDT 1W</h2>
             <span id="market-trend-1w" class="market-trend-badge">Trend pending</span>
+            <span id="market-rsi-1w" class="market-rsi-badge">RSI pending</span>
           </div>
           <div id="market-status-1w" class="market-status">Loading candles</div>
         </div>
@@ -1838,6 +1846,7 @@ def write_status_page(
           <div class="market-title-row">
             <h2>KAS/USDT 1M</h2>
             <span id="market-trend-1m" class="market-trend-badge">Trend pending</span>
+            <span id="market-rsi-1m" class="market-rsi-badge">RSI pending</span>
           </div>
           <div id="market-status-1m" class="market-status">Loading candles</div>
         </div>
@@ -1972,6 +1981,7 @@ def write_status_page(
           chartId: "market-chart",
           statusId: "market-status",
           trendId: "market-trend-15m",
+          rsiId: "market-rsi-15m",
           url: "https://api.bybit.com/v5/market/kline?category=spot&symbol=KASUSDT&interval=15",
         }},
         {{
@@ -1983,6 +1993,7 @@ def write_status_page(
           chartId: "market-chart-4h",
           statusId: "market-status-4h",
           trendId: "market-trend-4h",
+          rsiId: "market-rsi-4h",
           url: "https://api.bybit.com/v5/market/kline?category=spot&symbol=KASUSDT&interval=240",
         }},
         {{
@@ -1995,6 +2006,7 @@ def write_status_page(
           chartId: "market-chart-1d",
           statusId: "market-status-1d",
           trendId: "market-trend-1d",
+          rsiId: "market-rsi-1d",
           url: "https://api.bybit.com/v5/market/kline?category=spot&symbol=KASUSDT&interval=D",
         }},
         {{
@@ -2007,6 +2019,7 @@ def write_status_page(
           chartId: "market-chart-1w",
           statusId: "market-status-1w",
           trendId: "market-trend-1w",
+          rsiId: "market-rsi-1w",
           url: "https://api.bybit.com/v5/market/kline?category=spot&symbol=KASUSDT&interval=W",
         }},
         {{
@@ -2017,6 +2030,7 @@ def write_status_page(
           chartId: "market-chart-1m",
           statusId: "market-status-1m",
           trendId: "market-trend-1m",
+          rsiId: "market-rsi-1m",
           url: "https://api.bybit.com/v5/market/kline?category=spot&symbol=KASUSDT&interval=M",
         }},
       ],
@@ -2271,6 +2285,62 @@ def write_status_page(
       element.className = "market-trend-badge" + (state.tone ? " " + state.tone : "");
     }}
 
+    function marketRsiValue(candles, period) {{
+      const parsedPeriod = Number(period);
+      if (!Number.isFinite(parsedPeriod) || parsedPeriod <= 0 || candles.length <= parsedPeriod) {{
+        return null;
+      }}
+      let averageGain = 0;
+      let averageLoss = 0;
+      for (let index = 1; index <= parsedPeriod; index += 1) {{
+        const change = candles[index].close - candles[index - 1].close;
+        averageGain += Math.max(0, change);
+        averageLoss += Math.max(0, -change);
+      }}
+      averageGain /= parsedPeriod;
+      averageLoss /= parsedPeriod;
+      for (let index = parsedPeriod + 1; index < candles.length; index += 1) {{
+        const change = candles[index].close - candles[index - 1].close;
+        averageGain = (averageGain * (parsedPeriod - 1) + Math.max(0, change)) / parsedPeriod;
+        averageLoss = (averageLoss * (parsedPeriod - 1) + Math.max(0, -change)) / parsedPeriod;
+      }}
+      if (averageLoss === 0) {{
+        return 100;
+      }}
+      if (averageGain === 0) {{
+        return 0;
+      }}
+      const relativeStrength = averageGain / averageLoss;
+      return 100 - 100 / (1 + relativeStrength);
+    }}
+
+    function marketRsiState(candles, period) {{
+      const value = marketRsiValue(candles, period);
+      if (value === null) {{
+        return {{ tone: "", text: "RSI pending", detail: "Not enough RSI data" }};
+      }}
+      const rounded = value.toFixed(0);
+      const detail = "RSI " + period + " = " + value.toFixed(1);
+      if (value >= 70) {{
+        return {{ tone: "hot", text: "RSI " + rounded + " Overbought", detail }};
+      }}
+      if (value <= 30) {{
+        return {{ tone: "cool", text: "RSI " + rounded + " Oversold", detail }};
+      }}
+      return {{ tone: "neutral", text: "RSI " + rounded + " Neutral", detail }};
+    }}
+
+    function marketRsiBadge(id, state) {{
+      const element = document.getElementById(id);
+      if (!element) {{
+        return;
+      }}
+      element.textContent = state.text;
+      element.title = state.detail;
+      element.setAttribute("aria-label", state.text + ": " + state.detail);
+      element.className = "market-rsi-badge" + (state.tone ? " " + state.tone : "");
+    }}
+
     function marketPad2(value) {{
       return String(value).padStart(2, "0");
     }}
@@ -2297,7 +2367,7 @@ def write_status_page(
       }});
     }}
 
-    function drawMarketCandles(rows, chartId, statusId, trendId, labelText, emaPeriod, axisMode) {{
+    function drawMarketCandles(rows, chartId, statusId, trendId, rsiId, labelText, emaPeriod, axisMode) {{
       const svg = document.getElementById(chartId);
       if (!svg) {{
         return;
@@ -2307,6 +2377,7 @@ def write_status_page(
       if (candles.length < 2) {{
         marketText(statusId, "Not enough candle data");
         marketTrendBadge(trendId, {{ tone: "", text: "Trend pending", detail: "Not enough candle data" }});
+        marketRsiBadge(rsiId, {{ tone: "", text: "RSI pending", detail: "Not enough candle data" }});
         return;
       }}
       const width = 720;
@@ -2421,6 +2492,7 @@ def write_status_page(
         svg.appendChild(emaLabel);
       }}
       marketTrendBadge(trendId, marketTrendState(candles, emaPoints));
+      marketRsiBadge(rsiId, marketRsiState(candles, 14));
 
       const latest = candles[candles.length - 1];
       marketText(statusId, labelText + " candles updated at " + new Date(latest.time).toLocaleTimeString());
@@ -2557,10 +2629,11 @@ def write_status_page(
     async function refreshMarketChart(config) {{
       try {{
         const payload = await fetchMarketJson(marketKlineUrl(config));
-        drawMarketCandles(((payload.result || {{}}).list || []), config.chartId, config.statusId, config.trendId, config.label, config.emaPeriod, config.axisMode);
+        drawMarketCandles(((payload.result || {{}}).list || []), config.chartId, config.statusId, config.trendId, config.rsiId, config.label, config.emaPeriod, config.axisMode);
       }} catch (error) {{
         marketText(config.statusId, "KAS/USDT " + config.label + " candles unavailable");
         marketTrendBadge(config.trendId, {{ tone: "", text: "Trend pending", detail: "Market candles unavailable" }});
+        marketRsiBadge(config.rsiId, {{ tone: "", text: "RSI pending", detail: "Market candles unavailable" }});
       }}
     }}
 

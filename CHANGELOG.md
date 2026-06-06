@@ -12,6 +12,8 @@ All notable changes to Kaspa Node Watchtower are tracked here.
 - Status dashboard now includes a network hashrate trend chart.
 - KAS/USDT timeframe charts now show short-trend badges based on current close
   position versus EMA and recent EMA slope.
+- KAS/USDT timeframe charts now show RSI 14 badges for quick overbought,
+  neutral, or oversold context.
 
 ### Changed
 

@@ -53,7 +53,8 @@ which supports a more resilient decentralized network.
   Bybit spot price, 15-minute/4-hour/daily/weekly/monthly candle charts, and a
   normalized daily KAS/USDT vs BTC/USDT cross chart with browser cache fallback;
   KAS/USDT timeframe charts include EMA overlays, short-trend status badges,
-  and operator-focused time ranges from intraday through full monthly history
+  RSI 14 badges, and operator-focused time ranges from intraday through full
+  monthly history
 - Prometheus textfile metrics for local scraping or textfile collectors
 - Long-lived SQLite history export and operator summary reporting
 
