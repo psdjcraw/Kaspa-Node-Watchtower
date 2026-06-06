@@ -569,6 +569,9 @@ class WatchtowerUnitTests(unittest.TestCase):
             self.assertIn('class="v-card critical"', html)
             self.assertIn("Severity Timeline", html)
             self.assertIn("severity-segment critical", html)
+            self.assertIn("Triage Queue", html)
+            self.assertIn('class="triage-card critical"', html)
+            self.assertIn("Check peer connectivity", html)
 
 
 if __name__ == "__main__":

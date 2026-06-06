@@ -22,6 +22,8 @@ All notable changes to Kaspa Node Watchtower are tracked here.
   with incident verdict, dynamic health cards, and responsive compact panels.
 - Status dashboard trend area now includes a compact severity timeline for
   recent state changes.
+- Status dashboard now includes a triage queue that surfaces failed checks with
+  detail and recommended operator actions.
 
 ## 0.4.0 - 2026-06-06
 

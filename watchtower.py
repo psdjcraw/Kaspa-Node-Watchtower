@@ -882,6 +882,44 @@ def check_pill(check: dict[str, Any]) -> str:
 </div>"""
 
 
+def triage_queue(checks: list[dict[str, Any]]) -> str:
+    failed = [check for check in checks if not check.get("ok")]
+    if not failed:
+        return """<div class="triage-empty">
+  <strong>No active triage items</strong>
+  <span>All checks passed in the latest watchtower run.</span>
+</div>"""
+
+    action_by_check = {
+        "process": "Confirm kaspad is running before checking network state.",
+        "data_dir": "Verify the configured kaspad data directory is mounted.",
+        "rpc_tcp": "Check local RPC listener and firewall exposure.",
+        "grpc_metrics": "Inspect gRPC endpoint reachability and protobuf compatibility.",
+        "sync_status": "Confirm sync progress before considering recovery.",
+        "peer_count": "Check peer connectivity and network reachability.",
+        "block_progress": "Compare relay freshness with sync and peer state.",
+        "disk_free": "Free disk space or move data before restart attempts.",
+        "log_file": "Verify the configured kaspad log path is readable.",
+    }
+    items = []
+    for check in failed:
+        name = str(check.get("name", "unknown"))
+        detail = str(check.get("detail", "No detail provided"))
+        tone = "critical" if name in CRITICAL_CHECKS else "warn"
+        action = action_by_check.get(name, "Review detail and compare with recent history.")
+        items.append(
+            f"""<article class="triage-card {html.escape(tone)}">
+  <div class="triage-top">
+    <span>{html.escape(tone.upper())}</span>
+    <strong>{html.escape(name)}</strong>
+  </div>
+  <p>{html.escape(detail)}</p>
+  <div class="triage-action">{html.escape(action)}</div>
+</article>"""
+        )
+    return '<div class="triage-list">' + "\n".join(items) + "</div>"
+
+
 def check_passed(report: dict[str, Any], name: str) -> bool:
     for check in report.get("checks", []):
         if check.get("name") == name:
@@ -983,6 +1021,7 @@ def write_status_page(
     peer_chart = sparkline_svg(history_items, "peer_count", "#b26a00")
     severity_chart = severity_timeline(history_items)
     check_pills = "\n".join(check_pill(check) for check in report["checks"])
+    triage_items = triage_queue(report["checks"])
     latest_relay_age = progress.get("latest_relay_age_seconds")
     latest_relay_text = "unknown" if latest_relay_age is None else f"{latest_relay_age}s"
     severity = str(report.get("severity", "unknown"))
@@ -1201,6 +1240,50 @@ def write_status_page(
     .severity-segment.warn {{ background: var(--warn); }}
     .severity-segment.critical {{ background: var(--critical); }}
     .check-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 8px; }}
+    .triage-list {{
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 10px;
+    }}
+    .triage-card {{
+      border: 1px solid var(--line);
+      border-left: 5px solid var(--warn);
+      border-radius: 8px;
+      background: #ffffff;
+      padding: 11px;
+      min-width: 0;
+    }}
+    .triage-card.critical {{ border-left-color: var(--critical); background: var(--critical-soft); }}
+    .triage-card.warn {{ border-left-color: var(--warn); background: var(--warn-soft); }}
+    .triage-top {{
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 8px;
+      min-width: 0;
+    }}
+    .triage-top span {{
+      border-radius: 999px;
+      background: rgba(31, 41, 51, 0.82);
+      color: #fff;
+      font-size: 11px;
+      font-weight: 800;
+      padding: 3px 7px;
+      flex: 0 0 auto;
+    }}
+    .triage-top strong {{ font-size: 14px; overflow-wrap: anywhere; text-align: right; }}
+    .triage-card p {{ margin: 0 0 9px; color: var(--ink); font-size: 13px; line-height: 1.4; overflow-wrap: anywhere; }}
+    .triage-action {{ color: var(--muted); font-size: 12px; line-height: 1.35; }}
+    .triage-empty {{
+      display: grid;
+      gap: 4px;
+      background: var(--ok-soft);
+      border: 1px solid #b9e3ca;
+      border-radius: 8px;
+      padding: 12px;
+    }}
+    .triage-empty span {{ color: var(--muted); font-size: 13px; }}
     .check-pill {{
       display: flex;
       align-items: center;
@@ -1293,8 +1376,8 @@ def write_status_page(
     </section>
     <section class="layout">
       <section class="panel">
-        <h2>Checks</h2>
-        <div class="check-grid">{check_pills}</div>
+        <h2>Triage Queue</h2>
+        {triage_items}
       </section>
       <section class="panel">
         <h2>Run Context</h2>
@@ -1303,6 +1386,21 @@ def write_status_page(
           <div class="context-item"><div class="context-label">Latest relay age</div><div class="context-value">{html.escape(latest_relay_text)}</div></div>
           <div class="context-item"><div class="context-label">Last alert</div><div class="context-value">{html.escape(str(last_alert_at))}</div></div>
           <div class="context-item"><div class="context-label">Recovery mode</div><div class="context-value">{html.escape(str(recovery.get('mode', 'unknown')))}</div></div>
+        </div>
+      </section>
+    </section>
+    <section class="layout">
+      <section class="panel">
+        <h2>Checks</h2>
+        <div class="check-grid">{check_pills}</div>
+      </section>
+      <section class="panel">
+        <h2>Node Context</h2>
+        <div class="context-grid">
+          <div class="context-item"><div class="context-label">Network</div><div class="context-value">{html.escape(str(network_text))}</div></div>
+          <div class="context-item"><div class="context-label">Synced</div><div class="context-value">{html.escape(str(sync_text))}</div></div>
+          <div class="context-item"><div class="context-label">Active peers</div><div class="context-value">{html.escape(str(grpc_metrics.get('active_peers', 'unknown')))}</div></div>
+          <div class="context-item"><div class="context-label">Mempool</div><div class="context-value">{html.escape(str(grpc_metrics.get('mempool_size', 'unknown')))}</div></div>
         </div>
       </section>
     </section>
