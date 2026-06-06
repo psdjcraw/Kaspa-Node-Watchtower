@@ -4,6 +4,10 @@ All notable changes to Kaspa Node Watchtower are tracked here.
 
 ## Unreleased
 
+- No changes yet.
+
+## 0.2.0 - 2026-06-06
+
 ### Added
 
 - Benchmark stability metrics for Prometheus and the status dashboard, including
