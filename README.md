@@ -50,8 +50,8 @@ which supports a more resilient decentralized network.
   `Processed N blocks ... (N transactions)` kaspad log entries
 - Prometheus/Grafana transaction-throughput metrics for processed tx/s
 - Processed-stats freshness tracking and Prometheus alerting for stale
-  transaction throughput data, including local dashboard warning checks
-  and a Grafana freshness panel
+  transaction throughput data, including local dashboard warning checks,
+  Tx Rate card warning state, and a Grafana freshness panel
 - Mempool size history chart in the generated status dashboard
 - Estimated network hashrate card and trend chart in the generated status
   dashboard

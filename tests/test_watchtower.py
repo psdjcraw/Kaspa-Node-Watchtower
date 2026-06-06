@@ -651,6 +651,11 @@ class WatchtowerUnitTests(unittest.TestCase):
                 "severity": "critical",
                 "checks": [
                     {"name": "peer_count", "ok": False, "detail": "0 peers"},
+                    {
+                        "name": "processed_stats_freshness",
+                        "ok": False,
+                        "detail": "latest processed stats are 240.0s old",
+                    },
                     {"name": "disk_free", "ok": True, "detail": "ok"},
                 ],
                 "grpc_metrics": {
@@ -718,11 +723,13 @@ class WatchtowerUnitTests(unittest.TestCase):
             self.assertIn("Review failed checks", html)
             self.assertIn('class="incident critical"', html)
             self.assertIn('class="v-card critical"', html)
+            self.assertIn('<section class="v-card warn">\n  <div class="v-label">Tx Rate</div>', html)
             self.assertIn("Severity Timeline", html)
             self.assertIn("severity-segment critical", html)
             self.assertIn("Triage Queue", html)
             self.assertIn('class="triage-card critical"', html)
             self.assertIn("Check peer connectivity", html)
+            self.assertIn("transaction throughput freshness", html)
             self.assertIn("Command Center", html)
             self.assertIn("make incident-report", html)
             self.assertIn("make recover-dry-run", html)

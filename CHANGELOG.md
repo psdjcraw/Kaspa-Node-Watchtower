@@ -25,6 +25,8 @@ All notable changes to Kaspa Node Watchtower are tracked here.
 - Synced nodes now warn locally when processed block/transaction stats are
   stale or missing.
 - Bundled Grafana dashboard now includes a processed-stats freshness panel.
+- Status dashboard Tx Rate card now reflects stale processed-stats warnings
+  instead of staying visually neutral.
 
 ### Changed
 

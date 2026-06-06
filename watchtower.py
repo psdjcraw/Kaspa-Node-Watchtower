@@ -1187,6 +1187,7 @@ def triage_queue(checks: list[dict[str, Any]]) -> str:
         "sync_status": "Confirm sync progress before considering recovery.",
         "peer_count": "Check peer connectivity and network reachability.",
         "block_progress": "Compare relay freshness with sync and peer state.",
+        "processed_stats_freshness": "Inspect kaspad processed-stats log output and transaction throughput freshness.",
         "disk_free": "Free disk space or move data before restart attempts.",
         "log_file": "Verify the configured kaspad log path is readable.",
     }
@@ -1397,7 +1398,7 @@ def write_status_page(
             visual_card("Peers", grpc_metrics.get("peer_count", "unknown"), f"active {grpc_metrics.get('active_peers', 'unknown')}", tone_for_check(report, "peer_count")),
             visual_card("Relay", latest_relay_text, f"{compact_number(progress.get('relay_blocks_in_window'))} blocks / {progress.get('window_minutes', 'unknown')}m", tone_for_check(report, "block_progress")),
             visual_card("Sync", "synced" if sync_text is True else str(sync_text), f"network {network_text}", tone_for_check(report, "sync_status")),
-            visual_card("Tx Rate", transaction_rate_text, transaction_detail, "neutral"),
+            visual_card("Tx Rate", transaction_rate_text, transaction_detail, tone_for_check(report, "processed_stats_freshness")),
             visual_card("DAA Score", compact_number(grpc_metrics.get("virtual_daa_score")), f"tips {grpc_metrics.get('tip_count', 'unknown')}", "neutral"),
             visual_card("Hashrate", format_hashrate(grpc_metrics.get("network_hashes_per_second")), f"window {grpc_metrics.get('network_hashrate_window_size', 'unknown')}", "neutral"),
             visual_card("Disk Free", format_gib(disk.get("free_gb")), f"{disk.get('free_percent', 'unknown')}% free", tone_for_check(report, "disk_free")),
