@@ -10,6 +10,8 @@ All notable changes to Kaspa Node Watchtower are tracked here.
   `EstimateNetworkHashesPerSecond`, with status dashboard, summary, benchmark,
   and Prometheus output.
 - Status dashboard now includes a network hashrate trend chart.
+- KAS/USDT timeframe charts now show short-trend badges based on current close
+  position versus EMA and recent EMA slope.
 
 ### Changed
 

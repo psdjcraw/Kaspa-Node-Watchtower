@@ -1486,10 +1486,36 @@ def write_status_page(
     }}
     .market-chart-head {{
       display: flex;
+      align-items: flex-start;
       justify-content: space-between;
+      flex-wrap: wrap;
       gap: 10px;
       margin-bottom: 10px;
     }}
+    .market-title-row {{
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 8px;
+      min-width: 0;
+    }}
+    .market-trend-badge {{
+      display: inline-flex;
+      align-items: center;
+      min-height: 22px;
+      padding: 3px 8px;
+      border: 1px solid #d9e1e8;
+      border-radius: 999px;
+      background: #f8fafc;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 900;
+      line-height: 1;
+      white-space: nowrap;
+    }}
+    .market-trend-badge.up {{ background: var(--ok-soft); border-color: #b9e3ca; color: var(--ok); }}
+    .market-trend-badge.down {{ background: var(--critical-soft); border-color: #f1b8b2; color: var(--critical); }}
+    .market-trend-badge.neutral {{ background: #fff7ed; border-color: #fed7aa; color: #b26a00; }}
     .market-chart {{
       width: 100%;
       height: 230px;
@@ -1542,7 +1568,14 @@ def write_status_page(
       display: inline-block;
       background: currentColor;
     }}
-    .market-status {{ color: var(--muted); font-size: 12px; font-weight: 700; }}
+    .market-status {{
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+      min-width: 0;
+      overflow-wrap: anywhere;
+      text-align: right;
+    }}
     .v-card, .panel {{
       background: var(--panel);
       border: 1px solid var(--line);
@@ -1706,6 +1739,9 @@ def write_status_page(
       .incident-facts div {{ margin-top: 8px; }}
       .chart-head {{ display: block; }}
       .chart-value {{ text-align: left; margin-bottom: 8px; }}
+      .market-chart-head {{ display: block; }}
+      .market-title-row {{ margin-bottom: 6px; }}
+      .market-status {{ text-align: left; }}
       .visual-grid {{ display: block; }}
       .badge {{ margin-top: 10px; }}
       .v-card, .panel {{ margin-bottom: 12px; }}
@@ -1757,7 +1793,10 @@ def write_status_page(
       </section>
       <section class="panel">
         <div class="market-chart-head">
-          <h2>KAS/USDT 15m</h2>
+          <div class="market-title-row">
+            <h2>KAS/USDT 15m</h2>
+            <span id="market-trend-15m" class="market-trend-badge">Trend pending</span>
+          </div>
           <div id="market-status" class="market-status">Loading candles</div>
         </div>
         <svg id="market-chart" class="market-chart" viewBox="0 0 720 230" role="img" aria-label="KAS/USDT 15 minute candlestick chart"></svg>
@@ -1766,28 +1805,40 @@ def write_status_page(
     <section class="market-timeframe-grid">
       <section class="panel">
         <div class="market-chart-head">
-          <h2>KAS/USDT 4h</h2>
+          <div class="market-title-row">
+            <h2>KAS/USDT 4h</h2>
+            <span id="market-trend-4h" class="market-trend-badge">Trend pending</span>
+          </div>
           <div id="market-status-4h" class="market-status">Loading candles</div>
         </div>
         <svg id="market-chart-4h" class="market-chart" viewBox="0 0 720 230" role="img" aria-label="KAS/USDT 4 hour candlestick chart"></svg>
       </section>
       <section class="panel">
         <div class="market-chart-head">
-          <h2>KAS/USDT 1D</h2>
+          <div class="market-title-row">
+            <h2>KAS/USDT 1D</h2>
+            <span id="market-trend-1d" class="market-trend-badge">Trend pending</span>
+          </div>
           <div id="market-status-1d" class="market-status">Loading candles</div>
         </div>
         <svg id="market-chart-1d" class="market-chart" viewBox="0 0 720 230" role="img" aria-label="KAS/USDT daily candlestick chart"></svg>
       </section>
       <section class="panel">
         <div class="market-chart-head">
-          <h2>KAS/USDT 1W</h2>
+          <div class="market-title-row">
+            <h2>KAS/USDT 1W</h2>
+            <span id="market-trend-1w" class="market-trend-badge">Trend pending</span>
+          </div>
           <div id="market-status-1w" class="market-status">Loading candles</div>
         </div>
         <svg id="market-chart-1w" class="market-chart" viewBox="0 0 720 230" role="img" aria-label="KAS/USDT weekly candlestick chart"></svg>
       </section>
       <section class="panel">
         <div class="market-chart-head">
-          <h2>KAS/USDT 1M</h2>
+          <div class="market-title-row">
+            <h2>KAS/USDT 1M</h2>
+            <span id="market-trend-1m" class="market-trend-badge">Trend pending</span>
+          </div>
           <div id="market-status-1m" class="market-status">Loading candles</div>
         </div>
         <svg id="market-chart-1m" class="market-chart" viewBox="0 0 720 230" role="img" aria-label="KAS/USDT monthly candlestick chart"></svg>
@@ -1920,6 +1971,7 @@ def write_status_page(
           lookbackMs: 24 * 60 * 60 * 1000,
           chartId: "market-chart",
           statusId: "market-status",
+          trendId: "market-trend-15m",
           url: "https://api.bybit.com/v5/market/kline?category=spot&symbol=KASUSDT&interval=15",
         }},
         {{
@@ -1930,6 +1982,7 @@ def write_status_page(
           lookbackMs: 7 * 24 * 60 * 60 * 1000,
           chartId: "market-chart-4h",
           statusId: "market-status-4h",
+          trendId: "market-trend-4h",
           url: "https://api.bybit.com/v5/market/kline?category=spot&symbol=KASUSDT&interval=240",
         }},
         {{
@@ -1941,6 +1994,7 @@ def write_status_page(
           lookbackMonths: 1,
           chartId: "market-chart-1d",
           statusId: "market-status-1d",
+          trendId: "market-trend-1d",
           url: "https://api.bybit.com/v5/market/kline?category=spot&symbol=KASUSDT&interval=D",
         }},
         {{
@@ -1952,6 +2006,7 @@ def write_status_page(
           lookbackMs: 365 * 24 * 60 * 60 * 1000,
           chartId: "market-chart-1w",
           statusId: "market-status-1w",
+          trendId: "market-trend-1w",
           url: "https://api.bybit.com/v5/market/kline?category=spot&symbol=KASUSDT&interval=W",
         }},
         {{
@@ -1961,6 +2016,7 @@ def write_status_page(
           limit: 1000,
           chartId: "market-chart-1m",
           statusId: "market-status-1m",
+          trendId: "market-trend-1m",
           url: "https://api.bybit.com/v5/market/kline?category=spot&symbol=KASUSDT&interval=M",
         }},
       ],
@@ -2171,6 +2227,50 @@ def write_status_page(
       }});
     }}
 
+    function marketTrendState(candles, emaPoints) {{
+      if (candles.length < 2 || emaPoints.length < 2) {{
+        return {{ tone: "", text: "Trend pending", detail: "Not enough EMA data" }};
+      }}
+      const latest = candles[candles.length - 1];
+      const latestEma = emaPoints[emaPoints.length - 1].value;
+      const slopeIndex = Math.max(0, emaPoints.length - 4);
+      const previousEma = emaPoints[slopeIndex].value;
+      const distancePct = latestEma ? ((latest.close - latestEma) / latestEma) * 100 : 0;
+      const slopePct = previousEma ? ((latestEma - previousEma) / previousEma) * 100 : 0;
+      const distanceText = formatMarketSignedPercent(distancePct);
+      const slopeText = formatMarketSignedPercent(slopePct);
+      if (latest.close > latestEma && slopePct >= 0) {{
+        return {{
+          tone: "up",
+          text: "Uptrend",
+          detail: "Close " + distanceText + " vs EMA; EMA slope " + slopeText,
+        }};
+      }}
+      if (latest.close < latestEma && slopePct <= 0) {{
+        return {{
+          tone: "down",
+          text: "Downtrend",
+          detail: "Close " + distanceText + " vs EMA; EMA slope " + slopeText,
+        }};
+      }}
+      return {{
+        tone: "neutral",
+        text: "Neutral",
+        detail: "Close " + distanceText + " vs EMA; EMA slope " + slopeText,
+      }};
+    }}
+
+    function marketTrendBadge(id, state) {{
+      const element = document.getElementById(id);
+      if (!element) {{
+        return;
+      }}
+      element.textContent = state.text;
+      element.title = state.detail;
+      element.setAttribute("aria-label", state.text + ": " + state.detail);
+      element.className = "market-trend-badge" + (state.tone ? " " + state.tone : "");
+    }}
+
     function marketPad2(value) {{
       return String(value).padStart(2, "0");
     }}
@@ -2197,7 +2297,7 @@ def write_status_page(
       }});
     }}
 
-    function drawMarketCandles(rows, chartId, statusId, labelText, emaPeriod, axisMode) {{
+    function drawMarketCandles(rows, chartId, statusId, trendId, labelText, emaPeriod, axisMode) {{
       const svg = document.getElementById(chartId);
       if (!svg) {{
         return;
@@ -2206,6 +2306,7 @@ def write_status_page(
       const candles = marketCandlesFromRows(rows);
       if (candles.length < 2) {{
         marketText(statusId, "Not enough candle data");
+        marketTrendBadge(trendId, {{ tone: "", text: "Trend pending", detail: "Not enough candle data" }});
         return;
       }}
       const width = 720;
@@ -2319,6 +2420,7 @@ def write_status_page(
         emaLabel.setAttribute("class", "market-ema-label");
         svg.appendChild(emaLabel);
       }}
+      marketTrendBadge(trendId, marketTrendState(candles, emaPoints));
 
       const latest = candles[candles.length - 1];
       marketText(statusId, labelText + " candles updated at " + new Date(latest.time).toLocaleTimeString());
@@ -2455,9 +2557,10 @@ def write_status_page(
     async function refreshMarketChart(config) {{
       try {{
         const payload = await fetchMarketJson(marketKlineUrl(config));
-        drawMarketCandles(((payload.result || {{}}).list || []), config.chartId, config.statusId, config.label, config.emaPeriod, config.axisMode);
+        drawMarketCandles(((payload.result || {{}}).list || []), config.chartId, config.statusId, config.trendId, config.label, config.emaPeriod, config.axisMode);
       }} catch (error) {{
         marketText(config.statusId, "KAS/USDT " + config.label + " candles unavailable");
+        marketTrendBadge(config.trendId, {{ tone: "", text: "Trend pending", detail: "Market candles unavailable" }});
       }}
     }}
 
