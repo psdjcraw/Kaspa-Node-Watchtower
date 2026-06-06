@@ -642,6 +642,7 @@ class WatchtowerUnitTests(unittest.TestCase):
             self.assertIn("interval=240", html)
             self.assertIn("interval=D", html)
             self.assertIn("market-axis-label", html)
+            self.assertIn('month: "2-digit"', html)
             self.assertIn('hour: "2-digit"', html)
             self.assertIn("Block Processing", html)
             self.assertIn("9.2/s", html)

@@ -952,12 +952,12 @@ def processed_rate_chart(samples: list[dict[str, Any]]) -> str:
     for index in label_indexes:
         item = points[index]
         parsed = parse_iso_datetime(item["timestamp"])
-        label = parsed.strftime("%H:%M:%S") if parsed else item["timestamp"][-8:]
+        label = parsed.strftime("%m-%d %H:%M:%S") if parsed else item["timestamp"][-14:]
         x = left_pad + step * index + step / 2
         anchor = "start" if index == 0 else "end" if index == len(points) - 1 else "middle"
         labels.append(
             f'<text x="{x:.1f}" y="{height - 8}" text-anchor="{anchor}" fill="#66727f" '
-            f'font-size="11" font-weight="700">{html.escape(label)}</text>'
+            f'font-size="10" font-weight="700">{html.escape(label)}</text>'
         )
 
     return (
@@ -1025,12 +1025,12 @@ def relay_intake_chart(samples: list[dict[str, Any]]) -> str:
     for index in label_indexes:
         item = points[index]
         parsed = parse_iso_datetime(item["timestamp"])
-        label = parsed.strftime("%H:%M:%S") if parsed else item["timestamp"][-8:]
+        label = parsed.strftime("%m-%d %H:%M:%S") if parsed else item["timestamp"][-14:]
         x = left_pad + step * index + step / 2
         anchor = "start" if index == 0 else "end" if index == len(points) - 1 else "middle"
         labels.append(
             f'<text x="{x:.1f}" y="{height - 8}" text-anchor="{anchor}" fill="#66727f" '
-            f'font-size="11" font-weight="700">{html.escape(label)}</text>'
+            f'font-size="10" font-weight="700">{html.escape(label)}</text>'
         )
 
     return (
@@ -1968,12 +1968,17 @@ def write_status_page(
         const candle = candles[index];
         const x = leftPad + step * index + step / 2;
         const label = document.createElementNS(ns, "text");
-        label.textContent = new Date(candle.time).toLocaleTimeString([], {{ hour: "2-digit", minute: "2-digit" }});
+        label.textContent = new Date(candle.time).toLocaleString([], {{
+          month: "2-digit",
+          day: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit",
+        }});
         label.setAttribute("x", String(x));
         label.setAttribute("y", String(height - 9));
         label.setAttribute("text-anchor", index === 0 ? "start" : index === candles.length - 1 ? "end" : "middle");
         label.setAttribute("fill", "#66727f");
-        label.setAttribute("font-size", "11");
+        label.setAttribute("font-size", "10");
         label.setAttribute("font-weight", "700");
         label.setAttribute("class", "market-axis-label");
         svg.appendChild(label);
