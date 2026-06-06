@@ -406,9 +406,10 @@ Daily report:
 ./run_daily_report.sh
 ```
 
-The daily report prints an operator verdict, the current node summary, mainnet
-sync progress, benchmark trend, recent SQLite history summary, integration
-status, GitHub Actions status, recovery attempts, and dashboard locations.
+The daily report prints an operator verdict, the current node summary,
+processed transaction freshness, mainnet sync progress, benchmark trend, recent
+SQLite history summary, integration status, GitHub Actions status, recovery
+attempts, and dashboard locations.
 Integration and GitHub status failures are reported inline instead of stopping
 the rest of the report. Unlike alert and smoke wrappers, it intentionally emits
 output while healthy.

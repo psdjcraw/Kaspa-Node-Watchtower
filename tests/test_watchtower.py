@@ -459,6 +459,40 @@ class WatchtowerUnitTests(unittest.TestCase):
         self.assertIn("sync_rates=daa=20.00/h blocks=10.00/h headers=0.00/h", text)
         self.assertIn("benchmark_window=a -> b (0.50h)", text)
 
+    def test_format_summary_includes_processed_transaction_freshness(self):
+        report = {
+            "node_name": "kaspa-mainnet-local",
+            "checked_at": "2026-06-06T10:00:00+09:00",
+            "status": "ok",
+            "severity": "ok",
+            "checks": [],
+            "grpc_metrics": {
+                "network_id": "mainnet",
+                "is_synced": True,
+                "peer_count": 8,
+                "active_peers": 8,
+                "virtual_daa_score": 100,
+            },
+            "progress": {
+                "relay_blocks_in_window": 10,
+                "relay_events_in_window": 2,
+                "window_minutes": 10,
+                "latest_relay_age_seconds": 1.2,
+                "latest_processed_age_seconds": 2.5,
+                "latest_processed": {
+                    "blocks": 92,
+                    "transactions": 1311,
+                    "seconds": 10.0,
+                    "transactions_per_second": 131.1,
+                },
+            },
+            "disk": {"exists": True, "free_gb": 100, "free_percent": 20},
+        }
+
+        text = watchtower.format_summary(report)
+
+        self.assertIn("processed=tx_rate=131.10/s age=2.5s tx=1311 blocks=92 window=10.0s", text)
+
     def test_format_alert_reports_sync_completed_event(self):
         report = {
             "node_name": "kaspa-mainnet-local",
@@ -602,6 +636,13 @@ class WatchtowerUnitTests(unittest.TestCase):
                 "relay_events_in_window": 0,
                 "window_minutes": 10,
                 "latest_relay_age_seconds": None,
+                "latest_processed_age_seconds": 240.0,
+                "latest_processed": {
+                    "blocks": 10,
+                    "transactions": 20,
+                    "seconds": 10.0,
+                    "transactions_per_second": 2.0,
+                },
             },
             "disk": {"exists": True, "free_gb": 10, "free_percent": 2},
             "recovery": {
@@ -615,6 +656,7 @@ class WatchtowerUnitTests(unittest.TestCase):
 
         self.assertIn("Kaspa diagnostics summary: test-node", text)
         self.assertIn("failed_checks=rpc_tcp", text)
+        self.assertIn("processed=tx_rate=2.00/s age=240s tx=20 blocks=10 window=10.0s", text)
         self.assertIn("next=review failed checks", text)
         self.assertIn("sanitized=true", text)
 

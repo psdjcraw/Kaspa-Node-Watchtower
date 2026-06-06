@@ -18,6 +18,7 @@ checked_at=2026-06-06T08:40:00+09:00
 network=mainnet synced=true peers=8 active_peers=8
 daa_score=452831234 blocks=1239891 headers=1239891 tips=2
 relay_window=10m relay_blocks=620 relay_events=320 latest_relay_age=3s
+processed=tx_rate=145.20/s age=4s tx=1452 blocks=96 window=10.0s
 disk_free=213.34 GiB disk_free_percent=36.2
 failed_checks=none
 recovery_action=none
@@ -46,6 +47,7 @@ checked_at=2026-06-06T02:10:00+09:00
 network=mainnet synced=false peers=8 active_peers=8
 daa_score=451923000 blocks=325000 headers=1180000 tips=2
 relay_window=10m relay_blocks=0 relay_events=0 latest_relay_age=unknown
+processed=tx_rate=unknown age=unknown tx=unknown blocks=unknown window=unknown
 sync_progress=daa_delta=+10500 block_delta=+10500 header_delta=+10500 over 30.0m
 failed_checks=none
 recovery_action=none
@@ -74,6 +76,7 @@ Kaspa watchtower: kaspa-mainnet-local status=critical severity=critical
 checked_at=2026-06-06T03:15:00+09:00
 network=unknown synced=unknown peers=unknown active_peers=unknown
 relay_window=10m relay_blocks=0 relay_events=0 latest_relay_age=unknown
+processed=tx_rate=unknown age=unknown tx=unknown blocks=unknown window=unknown
 failed_checks=process,rpc_tcp,grpc_metrics
 recovery_action=manual_approval_required
 ```

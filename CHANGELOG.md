@@ -29,6 +29,8 @@ All notable changes to Kaspa Node Watchtower are tracked here.
   instead of staying visually neutral.
 - `scripts/ops_snapshot.sh` now includes latest processed transaction rate and
   processed-stats age from both exporter and Prometheus views.
+- `watchtower.py --summary` and diagnostics summaries now include latest
+  processed transaction rate and processed-stats age for chat and daily reports.
 
 ### Changed
 

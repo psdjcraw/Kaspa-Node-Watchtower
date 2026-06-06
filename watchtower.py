@@ -729,6 +729,23 @@ def short_hash(value: Any, length: int = 12) -> str:
     return text[:length] if text else "unknown"
 
 
+def format_processed_progress(progress: dict[str, Any]) -> str:
+    latest = progress.get("latest_processed") or {}
+    tx_rate = numeric(latest.get("transactions_per_second"))
+    tx_rate_text = "unknown" if tx_rate is None else f"{tx_rate:.2f}/s"
+    age = numeric(progress.get("latest_processed_age_seconds"))
+    age_text = "unknown" if age is None else f"{age:g}s"
+    seconds = latest.get("seconds")
+    window_text = "unknown" if seconds is None else f"{seconds}s"
+    return (
+        f"tx_rate={tx_rate_text} "
+        f"age={age_text} "
+        f"tx={latest.get('transactions', 'unknown')} "
+        f"blocks={latest.get('blocks', 'unknown')} "
+        f"window={window_text}"
+    )
+
+
 def history_item(report: dict[str, Any]) -> dict[str, Any]:
     grpc_metrics = report.get("grpc_metrics") or {}
     progress = report.get("progress") or {}
@@ -3086,6 +3103,7 @@ def format_summary(report: dict[str, Any]) -> str:
             f"{progress.get('window_minutes', 'unknown')}m, "
             f"latest_relay_age={latest_relay_age_text}"
         ),
+        f"processed={format_processed_progress(progress)}",
         f"disk_free={disk_text}",
         f"failed_checks={failed_text}",
     ]
@@ -3195,6 +3213,7 @@ def format_diagnostics_summary(report: dict[str, Any]) -> str:
                 f"{progress.get('window_minutes', 'unknown')}m "
                 f"latest_age={latest_relay_age_text}"
             ),
+            f"processed={format_processed_progress(progress)}",
             f"disk_free={disk_text}",
             (
                 "recovery="

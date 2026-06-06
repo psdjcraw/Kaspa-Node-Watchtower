@@ -355,9 +355,9 @@ make weekly-report
 make weekly-archive
 ```
 
-The daily report includes an operator verdict, node health, mainnet sync
-progress, benchmark stability, recent SQLite history summary, integration
-status, and smoke/CodeQL workflow status.
+The daily report includes an operator verdict, node health, processed
+transaction freshness, mainnet sync progress, benchmark stability, recent
+SQLite history summary, integration status, and smoke/CodeQL workflow status.
 The weekly report focuses on diagnostics summary, 7-day and 30-day SQLite
 history, benchmark trend, recovery attempts, and upgrade checkpoints.
 `make weekly-archive` pairs that report with a portable history archive.
