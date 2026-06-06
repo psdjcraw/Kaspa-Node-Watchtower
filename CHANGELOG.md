@@ -25,6 +25,8 @@ All notable changes to Kaspa Node Watchtower are tracked here.
   relay intake chart.
 - KAS/USDT market watch now includes 4-hour, daily, weekly, and monthly
   candlestick charts.
+- KAS/USDT market watch now includes a normalized daily KAS/USDT vs BTC/USDT
+  cross chart.
 - Chart X-axis labels now include both date and time where axis labels are
   rendered.
 

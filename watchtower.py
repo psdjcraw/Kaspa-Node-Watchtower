@@ -1482,18 +1482,42 @@ def write_status_page(
       margin-bottom: 14px;
     }}
     .market-watch > .panel,
-    .market-timeframe-grid > .panel {{
+    .market-timeframe-grid > .panel,
+    .market-cross-panel {{
       min-height: 322px;
     }}
     .market-watch > .panel:not(.market-price),
-    .market-timeframe-grid > .panel {{
+    .market-timeframe-grid > .panel,
+    .market-cross-panel {{
       display: flex;
       flex-direction: column;
     }}
     .market-watch > .panel:not(.market-price) .market-chart,
-    .market-timeframe-grid .market-chart {{
+    .market-timeframe-grid .market-chart,
+    .market-cross-panel .market-chart {{
       flex: 1 1 auto;
       min-height: 230px;
+    }}
+    .market-legend {{
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+      margin-bottom: 8px;
+    }}
+    .market-legend span {{
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }}
+    .market-legend i {{
+      width: 18px;
+      height: 3px;
+      border-radius: 999px;
+      display: inline-block;
+      background: currentColor;
     }}
     .market-status {{ color: var(--muted); font-size: 12px; font-weight: 700; }}
     .v-card, .panel {{
@@ -1746,6 +1770,17 @@ def write_status_page(
         <svg id="market-chart-1m" class="market-chart" viewBox="0 0 720 230" role="img" aria-label="KAS/USDT monthly candlestick chart"></svg>
       </section>
     </section>
+    <section class="panel market-cross-panel">
+      <div class="market-chart-head">
+        <h2>KAS/USDT vs BTC/USDT 1D</h2>
+        <div id="market-cross-status" class="market-status">Loading daily cross</div>
+      </div>
+      <div class="market-legend">
+        <span style="color: #147a46"><i></i>KAS/USDT</span>
+        <span style="color: #276b74"><i></i>BTC/USDT</span>
+      </div>
+      <svg id="market-cross-chart" class="market-chart" viewBox="0 0 720 230" role="img" aria-label="KAS/USDT and BTC/USDT daily normalized comparison chart"></svg>
+    </section>
     <section class="chart-grid">
       <section class="panel">
         <div class="chart-head"><h2>Relay Activity</h2><div class="chart-value">{compact_number(progress.get('relay_blocks_in_window'))}</div></div>
@@ -1881,6 +1916,22 @@ def write_status_page(
           url: "https://api.bybit.com/v5/market/kline?category=spot&symbol=KASUSDT&interval=M&limit=32",
         }},
       ],
+      cross: {{
+        chartId: "market-cross-chart",
+        statusId: "market-cross-status",
+        series: [
+          {{
+            label: "KAS/USDT",
+            color: "#147a46",
+            url: "https://api.bybit.com/v5/market/kline?category=spot&symbol=KASUSDT&interval=D&limit=32",
+          }},
+          {{
+            label: "BTC/USDT",
+            color: "#276b74",
+            url: "https://api.bybit.com/v5/market/kline?category=spot&symbol=BTCUSDT&interval=D&limit=32",
+          }},
+        ],
+      }},
     }};
 
     function marketText(id, value) {{
@@ -1943,13 +1994,8 @@ def write_status_page(
       return payload;
     }}
 
-    function drawMarketCandles(rows, chartId, statusId, labelText) {{
-      const svg = document.getElementById(chartId);
-      if (!svg) {{
-        return;
-      }}
-      svg.replaceChildren();
-      const candles = rows
+    function marketCandlesFromRows(rows) {{
+      return rows
         .map((row) => ({{
           time: marketNumber(row[0]),
           open: marketNumber(row[1]),
@@ -1959,6 +2005,15 @@ def write_status_page(
         }}))
         .filter((row) => row.open !== null && row.high !== null && row.low !== null && row.close !== null)
         .reverse();
+    }}
+
+    function drawMarketCandles(rows, chartId, statusId, labelText) {{
+      const svg = document.getElementById(chartId);
+      if (!svg) {{
+        return;
+      }}
+      svg.replaceChildren();
+      const candles = marketCandlesFromRows(rows);
       if (candles.length < 2) {{
         marketText(statusId, "Not enough candle data");
         return;
@@ -2055,12 +2110,156 @@ def write_status_page(
       marketText(statusId, labelText + " candles updated at " + new Date(latest.time).toLocaleTimeString());
     }}
 
+    function drawMarketCrossChart(seriesRows, chartId, statusId) {{
+      const svg = document.getElementById(chartId);
+      if (!svg) {{
+        return;
+      }}
+      svg.replaceChildren();
+      const series = seriesRows
+        .map((item) => ({{
+          label: item.label,
+          color: item.color,
+          candles: marketCandlesFromRows(item.rows),
+        }}))
+        .filter((item) => item.candles.length >= 2);
+      if (series.length < 2) {{
+        marketText(statusId, "Not enough cross data");
+        return;
+      }}
+      const minLength = Math.min(...series.map((item) => item.candles.length));
+      const normalized = series.map((item) => {{
+        const candles = item.candles.slice(-minLength);
+        const base = candles[0].close || 1;
+        return {{
+          label: item.label,
+          color: item.color,
+          points: candles.map((candle) => ({{
+            time: candle.time,
+            value: (candle.close / base) * 100,
+          }})),
+        }};
+      }});
+      const values = normalized.flatMap((item) => item.points.map((point) => point.value));
+      const rawHigh = Math.max(...values);
+      const rawLow = Math.min(...values);
+      const rawSpan = rawHigh - rawLow || 1;
+      const high = rawHigh + rawSpan * 0.08;
+      const low = rawLow - rawSpan * 0.08;
+      const span = high - low || 1;
+      const width = 720;
+      const height = 230;
+      const leftPad = 34;
+      const rightPad = 74;
+      const topPad = 18;
+      const bottomPad = 34;
+      const chartWidth = width - leftPad - rightPad;
+      const chartHeight = height - topPad - bottomPad;
+      const step = chartWidth / Math.max(1, minLength - 1);
+      const x = (index) => leftPad + step * index;
+      const y = (value) => topPad + chartHeight - ((value - low) / span) * chartHeight;
+      const ns = "http://www.w3.org/2000/svg";
+
+      [0, 0.25, 0.5, 0.75, 1].forEach((ratio) => {{
+        const lineY = topPad + chartHeight * ratio;
+        const line = document.createElementNS(ns, "line");
+        line.setAttribute("x1", String(leftPad));
+        line.setAttribute("x2", String(width - rightPad));
+        line.setAttribute("y1", String(lineY));
+        line.setAttribute("y2", String(lineY));
+        line.setAttribute("stroke", "#d9e1e8");
+        line.setAttribute("stroke-width", "1");
+        svg.appendChild(line);
+
+        const axisValue = high - span * ratio;
+        const label = document.createElementNS(ns, "text");
+        const change = axisValue - 100;
+        label.textContent = (change >= 0 ? "+" : "") + change.toFixed(1) + "%";
+        label.setAttribute("x", String(width - rightPad + 10));
+        label.setAttribute("y", String(lineY + 4));
+        label.setAttribute("fill", "#66727f");
+        label.setAttribute("font-size", "11");
+        label.setAttribute("font-weight", "700");
+        label.setAttribute("class", "market-axis-label");
+        svg.appendChild(label);
+      }});
+
+      [0, Math.floor((minLength - 1) / 2), minLength - 1].forEach((index) => {{
+        const point = normalized[0].points[index];
+        const label = document.createElementNS(ns, "text");
+        label.textContent = new Date(point.time).toLocaleString([], {{
+          month: "2-digit",
+          day: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit",
+        }});
+        label.setAttribute("x", String(x(index)));
+        label.setAttribute("y", String(height - 9));
+        label.setAttribute("text-anchor", index === 0 ? "start" : index === minLength - 1 ? "end" : "middle");
+        label.setAttribute("fill", "#66727f");
+        label.setAttribute("font-size", "10");
+        label.setAttribute("font-weight", "700");
+        label.setAttribute("class", "market-axis-label");
+        svg.appendChild(label);
+      }});
+
+      const zeroY = y(100);
+      const zeroLine = document.createElementNS(ns, "line");
+      zeroLine.setAttribute("x1", String(leftPad));
+      zeroLine.setAttribute("x2", String(width - rightPad));
+      zeroLine.setAttribute("y1", String(zeroY));
+      zeroLine.setAttribute("y2", String(zeroY));
+      zeroLine.setAttribute("stroke", "#8aa0ad");
+      zeroLine.setAttribute("stroke-dasharray", "5 5");
+      zeroLine.setAttribute("stroke-width", "1");
+      svg.appendChild(zeroLine);
+
+      normalized.forEach((item) => {{
+        const path = document.createElementNS(ns, "path");
+        const d = item.points
+          .map((point, index) => (index === 0 ? "M" : "L") + x(index).toFixed(1) + " " + y(point.value).toFixed(1))
+          .join(" ");
+        path.setAttribute("d", d);
+        path.setAttribute("fill", "none");
+        path.setAttribute("stroke", item.color);
+        path.setAttribute("stroke-width", "3");
+        path.setAttribute("stroke-linecap", "round");
+        path.setAttribute("stroke-linejoin", "round");
+        svg.appendChild(path);
+
+        const latest = item.points[item.points.length - 1];
+        const marker = document.createElementNS(ns, "circle");
+        marker.setAttribute("cx", String(x(item.points.length - 1)));
+        marker.setAttribute("cy", String(y(latest.value)));
+        marker.setAttribute("r", "4");
+        marker.setAttribute("fill", item.color);
+        svg.appendChild(marker);
+      }});
+
+      const latest = normalized[0].points[normalized[0].points.length - 1];
+      marketText(statusId, "1D cross updated at " + new Date(latest.time).toLocaleTimeString());
+    }}
+
     async function refreshMarketChart(config) {{
       try {{
         const payload = await fetchMarketJson(config.url);
         drawMarketCandles(((payload.result || {{}}).list || []), config.chartId, config.statusId, config.label);
       }} catch (error) {{
         marketText(config.statusId, "KAS/USDT " + config.label + " candles unavailable");
+      }}
+    }}
+
+    async function refreshMarketCrossChart() {{
+      try {{
+        const payloads = await Promise.all(marketConfig.cross.series.map((item) => fetchMarketJson(item.url)));
+        const seriesRows = payloads.map((payload, index) => ({{
+          label: marketConfig.cross.series[index].label,
+          color: marketConfig.cross.series[index].color,
+          rows: ((payload.result || {{}}).list || []),
+        }}));
+        drawMarketCrossChart(seriesRows, marketConfig.cross.chartId, marketConfig.cross.statusId);
+      }} catch (error) {{
+        marketText(marketConfig.cross.statusId, "KAS/BTC daily cross unavailable");
       }}
     }}
 
@@ -2084,7 +2283,10 @@ def write_status_page(
         marketText("market-last", "Unavailable");
         marketText("market-change", "Market API unavailable");
       }}
-      await Promise.all(marketConfig.klines.map(refreshMarketChart));
+      await Promise.all([
+        ...marketConfig.klines.map(refreshMarketChart),
+        refreshMarketCrossChart(),
+      ]);
     }}
 
     refreshMarketWatch();
