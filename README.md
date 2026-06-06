@@ -36,7 +36,7 @@ which supports a more resilient decentralized network.
 - Alert-mode output for Discord/OpenClaw cron
 - JSON output for later dashboards or exporters
 - Direct rusty-kaspa gRPC metrics: sync status, peers, network id, DAA score, block/header counts, mempool, DAG tips, pruning point, difficulty, and process metrics
-- Alert severity, repeat suppression, history, and local HTML status page generation
+- Alert severity, repeat suppression, history, and polished local HTML status page generation
 - Concise `--summary` output for quick Discord/operator status checks
 - Benchmark snapshots and reports for version/configuration comparison
 - Benchmark trend section in the generated status dashboard

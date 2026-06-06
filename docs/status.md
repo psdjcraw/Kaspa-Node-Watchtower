@@ -42,6 +42,8 @@
 - State: `state/watchtower-state.json`
 - Status HTML: `state/status.html`
 - Canvas HTML: `/Users/psdjc/.openclaw/canvas/kaspa-watchtower/status.html`
+- Status dashboard layout: status-first operator view with incident verdict,
+  dynamic health cards, trend panels, check details, and recovery history
 - Benchmark JSONL: `state/benchmarks.jsonl`
 - Upgrade checkpoints: `state/upgrade-checkpoints.jsonl`
 - SQLite history: `state/watchtower-history.sqlite`

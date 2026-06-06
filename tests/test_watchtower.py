@@ -518,6 +518,50 @@ class WatchtowerUnitTests(unittest.TestCase):
         self.assertIn("## Sanitized Summary", text)
         self.assertIn("sanitized: true", text)
 
+    def test_status_page_uses_incident_first_dashboard_layout(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            report = {
+                "node_name": "test-node",
+                "checked_at": "2026-06-06T10:00:00+09:00",
+                "status": "alert",
+                "severity": "critical",
+                "checks": [
+                    {"name": "peer_count", "ok": False, "detail": "0 peers"},
+                    {"name": "disk_free", "ok": True, "detail": "ok"},
+                ],
+                "grpc_metrics": {
+                    "network_id": "mainnet",
+                    "is_synced": False,
+                    "peer_count": 0,
+                    "active_peers": 0,
+                    "virtual_daa_score": 100,
+                    "tip_count": 2,
+                    "mempool_size": 0,
+                },
+                "progress": {
+                    "relay_blocks_in_window": 0,
+                    "relay_events_in_window": 0,
+                    "window_minutes": 10,
+                    "latest_relay_age_seconds": None,
+                },
+                "disk": {"exists": True, "free_gb": 10, "free_percent": 2},
+                "recovery": {
+                    "action": "manual_approval_required",
+                    "mode": "manual",
+                },
+            }
+            state = {"history": []}
+            output = tmp_path / "status.html"
+
+            watchtower.write_status_page(output, report, state, benchmark_path=tmp_path / "missing.jsonl")
+
+            html = output.read_text(encoding="utf-8")
+            self.assertIn("Operator verdict", html)
+            self.assertIn("Review failed checks", html)
+            self.assertIn('class="incident critical"', html)
+            self.assertIn('class="v-card critical"', html)
+
 
 if __name__ == "__main__":
     unittest.main()

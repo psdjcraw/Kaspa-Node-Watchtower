@@ -866,6 +866,19 @@ def check_pill(check: dict[str, Any]) -> str:
 </div>"""
 
 
+def check_passed(report: dict[str, Any], name: str) -> bool:
+    for check in report.get("checks", []):
+        if check.get("name") == name:
+            return bool(check.get("ok"))
+    return True
+
+
+def tone_for_check(report: dict[str, Any], name: str) -> str:
+    if check_passed(report, name):
+        return "ok"
+    return "critical" if name in CRITICAL_CHECKS else "warn"
+
+
 def recent_recovery_records(config: dict, limit: int = 5) -> list[dict[str, Any]]:
     try:
         return load_jsonl(recovery_history_path(config))[-limit:]
@@ -953,18 +966,40 @@ def write_status_page(
     daa_chart = sparkline_svg(history_items, "virtual_daa_score", "#3858e9")
     peer_chart = sparkline_svg(history_items, "peer_count", "#b26a00")
     check_pills = "\n".join(check_pill(check) for check in report["checks"])
-    visual_cards = "\n".join(
-        [
-            visual_card("Peers", grpc_metrics.get("peer_count", "unknown"), f"active {grpc_metrics.get('active_peers', 'unknown')}", "ok"),
-            visual_card("Relay Window", compact_number(progress.get("relay_blocks_in_window")), f"{progress.get('window_minutes', 'unknown')}m window", "ok"),
-            visual_card("DAA Score", compact_number(grpc_metrics.get("virtual_daa_score")), f"tips {grpc_metrics.get('tip_count', 'unknown')}", "neutral"),
-            visual_card("Mempool", compact_number(grpc_metrics.get("mempool_size")), "transactions waiting", "neutral"),
-            visual_card("Disk Free", format_gib(disk.get("free_gb")), f"{disk.get('free_percent', 'unknown')}% free", "warn"),
-            visual_card("Benchmark OK", format_ratio(ok_ratio), f"{benchmark_summary.get('snapshots')} snapshots", "ok"),
-        ]
-    )
     latest_relay_age = progress.get("latest_relay_age_seconds")
     latest_relay_text = "unknown" if latest_relay_age is None else f"{latest_relay_age}s"
+    severity = str(report.get("severity", "unknown"))
+    next_action = "No immediate action"
+    if severity == "critical":
+        next_action = "Review failed checks and run recovery dry-run before approved restart"
+    elif severity == "warn":
+        next_action = "Inspect warning checks and confirm trend before recovery"
+    network_text = grpc_metrics.get("network_id", "unknown")
+    sync_text = grpc_metrics.get("is_synced", "unknown")
+    visual_cards = "\n".join(
+        [
+            visual_card("Peers", grpc_metrics.get("peer_count", "unknown"), f"active {grpc_metrics.get('active_peers', 'unknown')}", tone_for_check(report, "peer_count")),
+            visual_card("Relay", latest_relay_text, f"{compact_number(progress.get('relay_blocks_in_window'))} blocks / {progress.get('window_minutes', 'unknown')}m", tone_for_check(report, "block_progress")),
+            visual_card("Sync", "synced" if sync_text is True else str(sync_text), f"network {network_text}", tone_for_check(report, "sync_status")),
+            visual_card("DAA Score", compact_number(grpc_metrics.get("virtual_daa_score")), f"tips {grpc_metrics.get('tip_count', 'unknown')}", "neutral"),
+            visual_card("Disk Free", format_gib(disk.get("free_gb")), f"{disk.get('free_percent', 'unknown')}% free", tone_for_check(report, "disk_free")),
+            visual_card("Benchmark OK", format_ratio(ok_ratio), f"{benchmark_summary.get('snapshots')} snapshots", "ok" if (ok_ratio or 0) >= 0.95 else "warn"),
+        ]
+    )
+    incident_panel = f"""
+    <section class="incident {html.escape(severity)}">
+      <div>
+        <div class="eyebrow">Operator verdict</div>
+        <h2>{html.escape(severity.upper())}</h2>
+        <p>{html.escape(next_action)}</p>
+      </div>
+      <div class="incident-facts">
+        <div><span>Failed</span><strong>{html.escape(failure_text)}</strong></div>
+        <div><span>Network</span><strong>{html.escape(str(network_text))}</strong></div>
+        <div><span>Recovery</span><strong>{html.escape(str(recovery.get('action', 'unknown')))}</strong></div>
+      </div>
+    </section>
+    """
     page = f"""<!doctype html>
 <html lang="en">
 <head>
@@ -974,20 +1009,21 @@ def write_status_page(
   <title>Kaspa Node Watchtower</title>
   <style>
     :root {{
-      --ink: #17202a;
-      --muted: #667085;
-      --line: #d8e0ea;
+      --ink: #1f2933;
+      --muted: #66727f;
+      --line: #d9e1e8;
       --panel: #ffffff;
-      --page: #f4f7fb;
-      --ok: #137333;
-      --ok-soft: #e7f6ee;
-      --warn: #b26a00;
-      --warn-soft: #fff4df;
-      --critical: #b3261e;
-      --critical-soft: #fdebea;
-      --accent: #3858e9;
-      --accent-soft: #eaf0ff;
-      --teal: #147d64;
+      --page: #f5f7f8;
+      --ok: #147a46;
+      --ok-soft: #e8f5ee;
+      --warn: #a86400;
+      --warn-soft: #fff3d9;
+      --critical: #b42318;
+      --critical-soft: #fdecea;
+      --neutral-soft: #f7f9fb;
+      --accent: #276b74;
+      --accent-soft: #e7f3f4;
+      --shadow: 0 14px 34px rgba(31, 41, 51, 0.07);
     }}
     * {{ box-sizing: border-box; }}
     html {{ overflow-x: hidden; }}
@@ -1001,12 +1037,12 @@ def write_status_page(
     }}
     main {{ width: 100%; max-width: 1180px; min-width: 0; margin: 0 auto; padding: 22px; }}
     .hero {{
-      background: var(--panel);
+      background: linear-gradient(180deg, #ffffff 0%, #fbfcfd 100%);
       border: 1px solid var(--line);
       border-radius: 8px;
-      padding: 18px;
+      padding: 20px;
       margin-bottom: 14px;
-      box-shadow: 0 10px 30px rgba(28, 39, 54, 0.06);
+      box-shadow: var(--shadow);
     }}
     .hero-top {{
       display: flex;
@@ -1032,6 +1068,45 @@ def write_status_page(
     .badge.ok {{ background: var(--ok); }}
     .badge.warn {{ background: var(--warn); }}
     .badge.critical {{ background: var(--critical); }}
+    .eyebrow {{
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0;
+      text-transform: uppercase;
+      margin-bottom: 6px;
+    }}
+    .incident {{
+      display: grid;
+      grid-template-columns: 1fr minmax(300px, 0.9fr);
+      gap: 14px;
+      align-items: stretch;
+      border: 1px solid var(--line);
+      border-left: 6px solid var(--ok);
+      background: var(--panel);
+      border-radius: 8px;
+      padding: 14px;
+      margin-bottom: 14px;
+      box-shadow: var(--shadow);
+    }}
+    .incident.warn {{ border-left-color: var(--warn); background: linear-gradient(90deg, var(--warn-soft), #ffffff 42%); }}
+    .incident.critical {{ border-left-color: var(--critical); background: linear-gradient(90deg, var(--critical-soft), #ffffff 42%); }}
+    .incident h2 {{ font-size: 28px; margin: 0 0 6px; }}
+    .incident p {{ margin: 0; color: var(--muted); line-height: 1.45; }}
+    .incident-facts {{
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+    }}
+    .incident-facts div {{
+      background: rgba(255, 255, 255, 0.72);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 10px;
+      min-width: 0;
+    }}
+    .incident-facts span {{ display: block; color: var(--muted); font-size: 12px; margin-bottom: 4px; }}
+    .incident-facts strong {{ display: block; overflow-wrap: anywhere; font-size: 13px; }}
     .hero-strip {{
       display: grid;
       grid-template-columns: 1fr 1fr;
@@ -1052,12 +1127,12 @@ def write_status_page(
       height: 10px;
       border-radius: 999px;
       overflow: hidden;
-      background: #e8edf4;
+      background: #e7ecef;
     }}
     .bar-fill {{
       height: 100%;
       width: var(--fill);
-      background: var(--teal);
+      background: var(--accent);
       border-radius: inherit;
     }}
     .bar-fill.ok {{ background: var(--ok); }}
@@ -1074,11 +1149,13 @@ def write_status_page(
       border-radius: 8px;
       padding: 12px;
       min-width: 0;
+      box-shadow: 0 8px 20px rgba(31, 41, 51, 0.04);
     }}
     .v-card.ok {{ background: var(--ok-soft); border-color: #b9e3ca; }}
     .v-card.warn {{ background: var(--warn-soft); border-color: #f4d493; }}
+    .v-card.critical {{ background: var(--critical-soft); border-color: #f1b8b2; }}
     .v-label {{ color: var(--muted); font-size: 12px; margin-bottom: 5px; font-weight: 700; }}
-    .v-value {{ font-size: 22px; font-weight: 800; line-height: 1.1; overflow-wrap: anywhere; }}
+    .v-value {{ font-size: 21px; font-weight: 800; line-height: 1.1; overflow-wrap: anywhere; }}
     .v-detail {{ color: var(--muted); font-size: 12px; margin-top: 5px; min-height: 16px; }}
     .layout {{ display: grid; grid-template-columns: 1.1fr 0.9fr; gap: 14px; margin-bottom: 14px; }}
     .chart-grid {{ display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-bottom: 14px; }}
@@ -1122,6 +1199,8 @@ def write_status_page(
     @media (max-width: 760px) {{
       main {{ padding: 14px; }}
       .hero-top, .hero-strip, .layout, .chart-grid, .context-grid {{ display: block; }}
+      .incident, .incident-facts {{ display: block; }}
+      .incident-facts div {{ margin-top: 8px; }}
       .chart-head {{ display: block; }}
       .chart-value {{ text-align: left; margin-bottom: 8px; }}
       .visual-grid {{ display: block; }}
@@ -1153,6 +1232,7 @@ def write_status_page(
         </div>
       </div>
     </section>
+    {incident_panel}
     <section class="visual-grid">
       {visual_cards}
     </section>
