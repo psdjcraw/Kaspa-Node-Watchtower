@@ -1243,6 +1243,10 @@ def write_status_page(
     if sum(1 for item in mempool_history if numeric(item.get("mempool_size")) is not None) == 1:
         mempool_history.append({"mempool_size": grpc_metrics.get("mempool_size")})
     mempool_chart = sparkline_svg(mempool_history, "mempool_size", "#276b74")
+    hashrate_history = history_items + [{"network_hashes_per_second": grpc_metrics.get("network_hashes_per_second")}]
+    if sum(1 for item in hashrate_history if numeric(item.get("network_hashes_per_second")) is not None) == 1:
+        hashrate_history.append({"network_hashes_per_second": grpc_metrics.get("network_hashes_per_second")})
+    hashrate_chart = sparkline_svg(hashrate_history, "network_hashes_per_second", "#5b6c00")
     severity_chart = severity_timeline(history_items)
     latest_processed = progress.get("latest_processed") or {}
     processed_chart = processed_rate_chart(progress.get("processed_samples") or [])
@@ -1815,6 +1819,10 @@ def write_status_page(
       <section class="panel">
         <div class="chart-head"><h2>Mempool Activity</h2><div class="chart-value">{compact_number(grpc_metrics.get('mempool_size'))}</div></div>
         {mempool_chart}
+      </section>
+      <section class="panel">
+        <div class="chart-head"><h2>Hashrate</h2><div class="chart-value">{format_hashrate(grpc_metrics.get('network_hashes_per_second'))}</div></div>
+        {hashrate_chart}
       </section>
       <section class="panel">
         <div class="chart-head"><h2>Severity Timeline</h2><div class="chart-value">{html.escape(severity.upper())}</div></div>

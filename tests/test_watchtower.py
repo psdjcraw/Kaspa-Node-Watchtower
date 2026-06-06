@@ -639,6 +639,7 @@ class WatchtowerUnitTests(unittest.TestCase):
             self.assertIn("KAS/USDT", html)
             self.assertIn("Hashrate", html)
             self.assertIn("1.25 PH/s", html)
+            self.assertIn("network_hashes_per_second trend", html)
             self.assertIn("KAS/USDT 15m", html)
             self.assertIn("KAS/USDT 4h", html)
             self.assertIn("KAS/USDT 1D", html)

@@ -9,6 +9,7 @@ All notable changes to Kaspa Node Watchtower are tracked here.
 - gRPC network hashrate estimate collection via
   `EstimateNetworkHashesPerSecond`, with status dashboard, summary, benchmark,
   and Prometheus output.
+- Status dashboard now includes a network hashrate trend chart.
 
 ### Changed
 

@@ -47,6 +47,8 @@ which supports a more resilient decentralized network.
 - Blocks-per-second processing chart from recent `Processed N blocks ...`
   kaspad log entries
 - Mempool size history chart in the generated status dashboard
+- Estimated network hashrate card and trend chart in the generated status
+  dashboard
 - Live KAS/USDT market watch in the generated status dashboard, including
   Bybit spot price, 15-minute/4-hour/daily/weekly/monthly candle charts, and a
   normalized daily KAS/USDT vs BTC/USDT cross chart with browser cache fallback
