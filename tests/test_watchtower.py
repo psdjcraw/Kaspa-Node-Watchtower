@@ -656,6 +656,8 @@ class WatchtowerUnitTests(unittest.TestCase):
             self.assertIn('id="market-chart-1m"', html)
             self.assertIn('id="market-cross-chart"', html)
             self.assertIn("min-height: 322px", html)
+            self.assertIn(".market-watch > .panel + .panel", html)
+            self.assertIn(".market-timeframe-grid > .panel + .panel", html)
             self.assertIn("drawMarketCrossChart", html)
             self.assertIn("marketEmaPoints", html)
             self.assertIn("market-ema-line", html)

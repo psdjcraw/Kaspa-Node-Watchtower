@@ -1456,6 +1456,7 @@ def write_status_page(
       display: grid;
       grid-template-columns: 300px 1fr;
       gap: 14px;
+      align-items: stretch;
       margin-bottom: 14px;
     }}
     .market-price {{
@@ -1507,6 +1508,10 @@ def write_status_page(
     .market-timeframe-grid > .panel,
     .market-cross-panel {{
       min-height: 322px;
+    }}
+    .market-watch > .panel + .panel,
+    .market-timeframe-grid > .panel + .panel {{
+      margin-top: 0;
     }}
     .market-watch > .panel:not(.market-price),
     .market-timeframe-grid > .panel,
