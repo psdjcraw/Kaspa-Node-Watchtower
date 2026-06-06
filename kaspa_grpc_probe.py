@@ -33,6 +33,12 @@ def _requests() -> list[Any]:
             ),
         ),
         messages_pb2.KaspadRequest(id=6, getSyncStatusRequest=rpc_pb2.GetSyncStatusRequestMessage()),
+        messages_pb2.KaspadRequest(
+            id=7,
+            estimateNetworkHashesPerSecondRequest=rpc_pb2.EstimateNetworkHashesPerSecondRequestMessage(
+                windowSize=1000,
+            ),
+        ),
     ]
 
 
@@ -73,6 +79,7 @@ def fetch_grpc_metrics(endpoint: str, timeout: float = 5.0) -> dict[str, Any]:
         peers = responses.get("getConnectedPeerInfoResponse")
         raw_metrics = responses.get("getMetricsResponse")
         sync = responses.get("getSyncStatusResponse")
+        network_hashrate = responses.get("estimateNetworkHashesPerSecondResponse")
 
         peer_infos = list(peers.infos) if peers is not None else []
         user_agents = Counter(peer.userAgent for peer in peer_infos)
@@ -105,6 +112,12 @@ def fetch_grpc_metrics(endpoint: str, timeout: float = 5.0) -> dict[str, Any]:
                 "tip_count": len(getattr(dag, "tipHashes", [])),
                 "virtual_parent_count": len(getattr(dag, "virtualParentHashes", [])),
                 "difficulty": float(getattr(dag, "difficulty", 0.0)),
+                "network_hashes_per_second": int(
+                    getattr(network_hashrate, "networkHashesPerSecond", 0)
+                )
+                if network_hashrate is not None
+                else None,
+                "network_hashrate_window_size": 1000,
                 "pruning_point_hash": getattr(dag, "pruningPointHash", ""),
                 "peer_count": len(peer_infos),
                 "outbound_peer_count": outbound_peers,

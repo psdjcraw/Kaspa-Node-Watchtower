@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 
-VERSION = "0.5.0"
+VERSION = "0.6.0-dev"
 
 DEFAULT_CONFIG = {
     "config_version": 1,
@@ -687,6 +687,22 @@ def format_gib(value: Any) -> str:
     return f"{parsed:.2f} GiB"
 
 
+def format_hashrate(value: Any) -> str:
+    parsed = numeric(value)
+    if parsed is None:
+        return "unknown"
+    units = ["H/s", "KH/s", "MH/s", "GH/s", "TH/s", "PH/s", "EH/s"]
+    index = 0
+    while abs(parsed) >= 1000 and index < len(units) - 1:
+        parsed /= 1000
+        index += 1
+    if abs(parsed) >= 100:
+        return f"{parsed:.0f} {units[index]}"
+    if abs(parsed) >= 10:
+        return f"{parsed:.1f} {units[index]}"
+    return f"{parsed:.2f} {units[index]}"
+
+
 def short_hash(value: Any, length: int = 12) -> str:
     text = str(value or "")
     return text[:length] if text else "unknown"
@@ -707,6 +723,7 @@ def history_item(report: dict[str, Any]) -> dict[str, Any]:
         "block_count": grpc_metrics.get("block_count"),
         "header_count": grpc_metrics.get("header_count"),
         "mempool_size": grpc_metrics.get("mempool_size"),
+        "network_hashes_per_second": grpc_metrics.get("network_hashes_per_second"),
         "relay_blocks_in_window": progress.get("relay_blocks_in_window"),
     }
 
@@ -1269,6 +1286,7 @@ def write_status_page(
             visual_card("Relay", latest_relay_text, f"{compact_number(progress.get('relay_blocks_in_window'))} blocks / {progress.get('window_minutes', 'unknown')}m", tone_for_check(report, "block_progress")),
             visual_card("Sync", "synced" if sync_text is True else str(sync_text), f"network {network_text}", tone_for_check(report, "sync_status")),
             visual_card("DAA Score", compact_number(grpc_metrics.get("virtual_daa_score")), f"tips {grpc_metrics.get('tip_count', 'unknown')}", "neutral"),
+            visual_card("Hashrate", format_hashrate(grpc_metrics.get("network_hashes_per_second")), f"window {grpc_metrics.get('network_hashrate_window_size', 'unknown')}", "neutral"),
             visual_card("Disk Free", format_gib(disk.get("free_gb")), f"{disk.get('free_percent', 'unknown')}% free", tone_for_check(report, "disk_free")),
             visual_card("Benchmark OK", format_ratio(ok_ratio), f"{benchmark_summary.get('snapshots')} snapshots", "ok" if (ok_ratio or 0) >= 0.95 else "warn"),
         ]
@@ -1426,7 +1444,7 @@ def write_status_page(
     .bar-fill.warn {{ background: var(--warn); }}
     .visual-grid {{
       display: grid;
-      grid-template-columns: repeat(6, minmax(0, 1fr));
+      grid-template-columns: repeat(7, minmax(0, 1fr));
       gap: 10px;
       margin-bottom: 14px;
     }}
@@ -2541,7 +2559,8 @@ def format_summary(report: dict[str, Any]) -> str:
             f"network={grpc_metrics.get('network_id', 'unknown')} "
             f"daa={grpc_metrics.get('virtual_daa_score', 'unknown')} "
             f"mempool={grpc_metrics.get('mempool_size', 'unknown')} "
-            f"tips={grpc_metrics.get('tip_count', 'unknown')}"
+            f"tips={grpc_metrics.get('tip_count', 'unknown')} "
+            f"hashrate={format_hashrate(grpc_metrics.get('network_hashes_per_second'))}"
         ),
         (
             "dag="
@@ -2656,7 +2675,8 @@ def format_diagnostics_summary(report: dict[str, Any]) -> str:
                 f"synced={grpc_metrics.get('is_synced', 'unknown')} "
                 f"peers={grpc_metrics.get('peer_count', 'unknown')} "
                 f"active={grpc_metrics.get('active_peers', 'unknown')} "
-                f"daa={grpc_metrics.get('virtual_daa_score', 'unknown')}"
+                f"daa={grpc_metrics.get('virtual_daa_score', 'unknown')} "
+                f"hashrate={format_hashrate(grpc_metrics.get('network_hashes_per_second'))}"
             ),
             (
                 "relay="
@@ -2753,6 +2773,7 @@ def benchmark_item(report: dict[str, Any]) -> dict[str, Any]:
         "tip_count": grpc_metrics.get("tip_count"),
         "virtual_parent_count": grpc_metrics.get("virtual_parent_count"),
         "difficulty": grpc_metrics.get("difficulty"),
+        "network_hashes_per_second": grpc_metrics.get("network_hashes_per_second"),
         "pruning_point_hash": grpc_metrics.get("pruning_point_hash"),
         "outbound_peer_count": grpc_metrics.get("outbound_peer_count"),
         "inbound_peer_count": grpc_metrics.get("inbound_peer_count"),
@@ -3197,6 +3218,12 @@ def format_prometheus_metrics(
         node_labels,
     )
     add_prometheus_metric(lines, "kaspa_watchtower_difficulty", grpc_metrics.get("difficulty"), node_labels)
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_network_hashes_per_second",
+        grpc_metrics.get("network_hashes_per_second"),
+        node_labels,
+    )
     process = grpc_metrics.get("process") or {}
     add_prometheus_metric(
         lines,

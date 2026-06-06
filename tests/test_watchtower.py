@@ -176,6 +176,8 @@ class WatchtowerUnitTests(unittest.TestCase):
                 "tip_count": 4,
                 "virtual_parent_count": 2,
                 "difficulty": 12.5,
+                "network_hashes_per_second": 1_250_000_000_000_000,
+                "network_hashrate_window_size": 1000,
                 "process": {
                     "resident_set_gib": 1.25,
                     "cpu_usage": 0.5,
@@ -233,6 +235,8 @@ class WatchtowerUnitTests(unittest.TestCase):
         self.assertIn("kaspa_watchtower_mempool_size", metrics)
         self.assertIn("kaspa_watchtower_tip_count", metrics)
         self.assertIn("kaspa_watchtower_process_fd_num", metrics)
+        self.assertIn("kaspa_watchtower_network_hashes_per_second", metrics)
+        self.assertIn("1.25e+15", metrics)
         self.assertIn("kaspa_watchtower_sync_active", metrics)
         self.assertIn("kaspa_watchtower_sync_header_rate_per_hour", metrics)
         self.assertIn("kaspa_watchtower_require_synced", metrics)
@@ -568,6 +572,8 @@ class WatchtowerUnitTests(unittest.TestCase):
                     "virtual_daa_score": 100,
                     "tip_count": 2,
                     "mempool_size": 0,
+                    "network_hashes_per_second": 1_250_000_000_000_000,
+                    "network_hashrate_window_size": 1000,
                 },
                 "progress": {
                     "relay_blocks_in_window": 0,
@@ -631,6 +637,8 @@ class WatchtowerUnitTests(unittest.TestCase):
             self.assertIn('data-copy="make recover-dry-run"', html)
             self.assertIn("Copied", html)
             self.assertIn("KAS/USDT", html)
+            self.assertIn("Hashrate", html)
+            self.assertIn("1.25 PH/s", html)
             self.assertIn("KAS/USDT 15m", html)
             self.assertIn("KAS/USDT 4h", html)
             self.assertIn("KAS/USDT 1D", html)
