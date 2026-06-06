@@ -20,6 +20,7 @@
   "thresholds": {
     "alert_repeat_minutes": 60,
     "stale_log_minutes": 15,
+    "stale_processed_stats_minutes": 3,
     "progress_window_minutes": 10,
     "min_relay_blocks_in_window": 1,
     "min_peer_count": 1,

@@ -32,7 +32,7 @@ The local watchtower reports an alert when any of these fail:
 Severity mapping:
 
 - `critical`: process, data directory, RPC, gRPC, sync, peer count, or log file failure.
-- `warn`: disk, log freshness, or relay progress failure.
+- `warn`: disk, log freshness, processed-stats freshness, or relay progress failure.
 - `ok`: all checks pass.
 
 Mainnet bootstrap mode:

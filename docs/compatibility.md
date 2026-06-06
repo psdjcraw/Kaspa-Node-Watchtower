@@ -96,6 +96,7 @@ Testnet peer count and relay expectations may be lower than mainnet. Tune:
 - `thresholds.min_peer_count`
 - `thresholds.min_relay_blocks_in_window`
 - `thresholds.progress_window_minutes`
+- `thresholds.stale_processed_stats_minutes`
 
 ### Simnet
 

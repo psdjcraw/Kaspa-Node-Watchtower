@@ -16,6 +16,14 @@ class WatchtowerUnitTests(unittest.TestCase):
         self.assertEqual(watchtower.positive_int("-1", 100), 100)
         self.assertEqual(watchtower.positive_int("nope", 100), 100)
 
+    def test_config_example_includes_default_threshold_keys(self):
+        example = json.loads(Path("config.example.json").read_text(encoding="utf-8"))
+
+        self.assertEqual(
+            set(watchtower.DEFAULT_CONFIG["thresholds"]),
+            set(example["thresholds"]),
+        )
+
     def test_prune_jsonl_keeps_latest_entries(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "items.jsonl"

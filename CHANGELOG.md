@@ -31,6 +31,8 @@ All notable changes to Kaspa Node Watchtower are tracked here.
   processed-stats age from both exporter and Prometheus views.
 - `watchtower.py --summary` and diagnostics summaries now include latest
   processed transaction rate and processed-stats age for chat and daily reports.
+- `config.example.json` now documents `thresholds.stale_processed_stats_minutes`
+  so fresh installs can tune processed-stats freshness checks explicitly.
 
 ### Changed
 
