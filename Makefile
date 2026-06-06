@@ -1,12 +1,13 @@
 PYTHON ?= .venv/bin/python
 CONFIG ?= config.json
 
-.PHONY: help bootstrap version status summary sync-report json alert smoke ci integrations ensure-exporter diagnostics diagnostics-archive daily-report benchmark benchmark-report prometheus export-history history-report prune validate recover-dry-run recover force-recover-dry-run
+.PHONY: help bootstrap proto-check version status summary sync-report json alert smoke ci integrations ensure-exporter diagnostics diagnostics-archive daily-report benchmark benchmark-report prometheus export-history history-report prune validate recover-dry-run recover force-recover-dry-run
 
 help:
 	@printf 'Kaspa Node Watchtower operator commands\n'
 	@printf '\n'
 	@printf '  make bootstrap           Create venv, install deps, generate protobuf\n'
+	@printf '  make proto-check         Verify generated protobuf files are current\n'
 	@printf '  make version             Print watchtower version\n'
 	@printf '  make status              Run the cron-style health check\n'
 	@printf '  make summary             Print a one-shot health summary\n'
@@ -31,6 +32,9 @@ help:
 
 bootstrap:
 	@scripts/bootstrap_env.sh
+
+proto-check:
+	@scripts/check_generated_proto.sh
 
 version:
 	@$(PYTHON) watchtower.py --version

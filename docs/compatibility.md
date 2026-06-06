@@ -43,6 +43,29 @@ If upstream `rusty-kaspa` changes protobuf names, removes a response field, or
 changes the bidirectional stream behavior, `kaspa_grpc_probe.py` and the
 generated files under `generated_proto/` must be reviewed together.
 
+## Protobuf Update Workflow
+
+When updating `proto/rpc.proto` or `proto/messages.proto` from upstream:
+
+```bash
+make bootstrap
+make proto-check
+python3 -m unittest discover -s tests
+make smoke
+```
+
+`make proto-check` regenerates protobuf files in a temporary directory and
+compares them against the checked-in files under `generated_proto/`. It fails if
+the generated files are stale.
+
+After a protobuf refresh, verify that `kaspa_grpc_probe.py` still receives the
+expected read-only responses:
+
+```bash
+.venv/bin/python watchtower.py -c config.json --summary
+make integrations
+```
+
 ## Network Notes
 
 ### Mainnet

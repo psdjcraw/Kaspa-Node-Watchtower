@@ -60,12 +60,15 @@ Run:
 
 ```bash
 make validate
+make proto-check
 make summary
 make smoke
 ```
 
 `make validate` prints failed setting names with expected value hints when a
 path, endpoint, threshold, boolean flag, or retention setting needs correction.
+`make proto-check` verifies that checked-in generated protobuf files match
+`proto/rpc.proto` and `proto/messages.proto`.
 
 For external endpoints and dashboards:
 

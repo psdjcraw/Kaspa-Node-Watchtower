@@ -41,6 +41,7 @@ the primary source of truth.
 - Add compatibility notes for mainnet, testnet, simnet, and devnet usage.
   Initial notes are in `docs/compatibility.md`.
 - Improve gRPC/protobuf update handling when upstream APIs change.
+  `make proto-check` now verifies generated protobuf files are current.
 - Add more failure simulations for stale logs, stalled relay blocks, missing
   metrics, disk pressure, and exporter failures.
 - Strengthen smoke tests so regressions are caught before operator deployment.

@@ -17,6 +17,9 @@ ok "Python compile"
 "$PYTHON_BIN" watchtower.py --version >/dev/null
 ok "watchtower version"
 
+scripts/check_generated_proto.sh >/dev/null
+ok "generated protobuf"
+
 "$PYTHON_BIN" -m unittest discover -s tests >/dev/null
 ok "unit tests"
 

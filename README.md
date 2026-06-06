@@ -123,6 +123,7 @@ For gRPC metrics, create the local virtualenv and generated protobuf files:
 
 ```bash
 make bootstrap
+make proto-check
 ```
 
 For local edits, copy `config.example.json` to `config.json` and adjust paths.

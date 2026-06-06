@@ -8,10 +8,13 @@ All notable changes to Kaspa Node Watchtower are tracked here.
 
 - Compatibility guide covering the tested `rusty-kaspa` baseline, gRPC API
   surface, network-specific threshold notes, and upgrade checklist.
+- `make proto-check` and `scripts/check_generated_proto.sh` for verifying that
+  checked-in generated protobuf files match `proto/*.proto`.
 
 ### Changed
 
 - Development version now reports `0.3.0-dev` after the v0.2.0 release.
+- GitHub smoke workflow now checks generated protobuf drift.
 
 ## 0.2.0 - 2026-06-06
 

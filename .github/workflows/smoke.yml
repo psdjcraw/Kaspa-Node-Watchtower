@@ -21,6 +21,12 @@ jobs:
       - name: Compile Python
         run: python -m py_compile watchtower.py kaspa_grpc_probe.py prometheus_file_server.py scripts/upgrade_checkpoint.py scripts/export_history_sqlite.py
 
+      - name: Install protobuf tooling
+        run: python -m pip install grpcio-tools protobuf
+
+      - name: Check generated protobuf files
+        run: scripts/check_generated_proto.sh
+
       - name: Run unit tests
         run: python -m unittest discover -s tests
 
