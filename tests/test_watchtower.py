@@ -572,6 +572,9 @@ class WatchtowerUnitTests(unittest.TestCase):
             self.assertIn("Triage Queue", html)
             self.assertIn('class="triage-card critical"', html)
             self.assertIn("Check peer connectivity", html)
+            self.assertIn("Command Center", html)
+            self.assertIn("make incident-report", html)
+            self.assertIn("make recover-dry-run", html)
 
 
 if __name__ == "__main__":

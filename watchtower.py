@@ -920,6 +920,28 @@ def triage_queue(checks: list[dict[str, Any]]) -> str:
     return '<div class="triage-list">' + "\n".join(items) + "</div>"
 
 
+def command_center(severity: str) -> str:
+    commands = [
+        ("Summary", "make summary", "Concise status for chat or quick operator review."),
+        ("Incident", "make incident-report", "Sanitized Markdown report for escalation."),
+        ("Diagnostics", "make diagnostics-archive", "Collect a local diagnostics bundle."),
+    ]
+    if severity == "ok":
+        commands.append(("Smoke", "make smoke", "Run the local release-readiness smoke suite."))
+    else:
+        commands.append(("Recovery Dry-Run", "make recover-dry-run", "Review recovery decision before any approved restart."))
+    cards = []
+    for label, command, detail in commands:
+        cards.append(
+            f"""<article class="command-card">
+  <div class="command-label">{html.escape(label)}</div>
+  <code>{html.escape(command)}</code>
+  <p>{html.escape(detail)}</p>
+</article>"""
+        )
+    return '<div class="command-grid">' + "\n".join(cards) + "</div>"
+
+
 def check_passed(report: dict[str, Any], name: str) -> bool:
     for check in report.get("checks", []):
         if check.get("name") == name:
@@ -1022,9 +1044,10 @@ def write_status_page(
     severity_chart = severity_timeline(history_items)
     check_pills = "\n".join(check_pill(check) for check in report["checks"])
     triage_items = triage_queue(report["checks"])
+    severity = str(report.get("severity", "unknown"))
+    commands = command_center(severity)
     latest_relay_age = progress.get("latest_relay_age_seconds")
     latest_relay_text = "unknown" if latest_relay_age is None else f"{latest_relay_age}s"
-    severity = str(report.get("severity", "unknown"))
     next_action = "No immediate action"
     if severity == "critical":
         next_action = "Review failed checks and run recovery dry-run before approved restart"
@@ -1284,6 +1307,23 @@ def write_status_page(
       padding: 12px;
     }}
     .triage-empty span {{ color: var(--muted); font-size: 13px; }}
+    .command-grid {{
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      gap: 10px;
+    }}
+    .command-card {{
+      display: grid;
+      gap: 8px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfcfe;
+      padding: 11px;
+      min-width: 0;
+    }}
+    .command-label {{ color: var(--muted); font-size: 12px; font-weight: 800; }}
+    .command-card code {{ display: block; font-weight: 800; }}
+    .command-card p {{ margin: 0; color: var(--muted); font-size: 12px; line-height: 1.35; }}
     .check-pill {{
       display: flex;
       align-items: center;
@@ -1388,6 +1428,10 @@ def write_status_page(
           <div class="context-item"><div class="context-label">Recovery mode</div><div class="context-value">{html.escape(str(recovery.get('mode', 'unknown')))}</div></div>
         </div>
       </section>
+    </section>
+    <section class="panel">
+      <h2>Command Center</h2>
+      {commands}
     </section>
     <section class="layout">
       <section class="panel">

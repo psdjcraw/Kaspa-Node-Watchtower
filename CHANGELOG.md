@@ -24,6 +24,8 @@ All notable changes to Kaspa Node Watchtower are tracked here.
   recent state changes.
 - Status dashboard now includes a triage queue that surfaces failed checks with
   detail and recommended operator actions.
+- Status dashboard now includes a command center with common summary,
+  diagnostics, incident-report, smoke, and recovery dry-run commands.
 
 ## 0.4.0 - 2026-06-06
 
