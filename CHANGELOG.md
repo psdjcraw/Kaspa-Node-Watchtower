@@ -40,8 +40,9 @@ All notable changes to Kaspa Node Watchtower are tracked here.
   candlestick charts.
 - KAS/USDT market watch now includes a normalized daily KAS/USDT vs BTC/USDT
   cross chart.
-- KAS/USDT timeframe charts now include EMA overlays: 9EMA on 15-minute,
-  20EMA on 4-hour and daily, and 50EMA on weekly and monthly.
+- KAS/USDT timeframe charts now include short-trend EMA overlays tuned to each
+  visible range: 21EMA on 15-minute, 12EMA on 4-hour, 10EMA on daily, 13EMA on
+  weekly, and 6EMA on monthly.
 - KAS/USDT timeframe charts now request operator-focused ranges: 24 hours for
   15-minute, one week for 4-hour, one month for daily, one year for weekly, and
   full available history for monthly.

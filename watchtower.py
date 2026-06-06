@@ -1913,7 +1913,7 @@ def write_status_page(
       klines: [
         {{
           label: "15m",
-          emaPeriod: 9,
+          emaPeriod: 21,
           limit: 120,
           intervalMs: 15 * 60 * 1000,
           lookbackMs: 24 * 60 * 60 * 1000,
@@ -1923,7 +1923,7 @@ def write_status_page(
         }},
         {{
           label: "4h",
-          emaPeriod: 20,
+          emaPeriod: 12,
           limit: 48,
           intervalMs: 4 * 60 * 60 * 1000,
           lookbackMs: 7 * 24 * 60 * 60 * 1000,
@@ -1933,7 +1933,7 @@ def write_status_page(
         }},
         {{
           label: "1D",
-          emaPeriod: 20,
+          emaPeriod: 10,
           axisMode: "day",
           limit: 40,
           intervalMs: 24 * 60 * 60 * 1000,
@@ -1944,7 +1944,7 @@ def write_status_page(
         }},
         {{
           label: "1W",
-          emaPeriod: 50,
+          emaPeriod: 13,
           axisMode: "month",
           limit: 60,
           intervalMs: 7 * 24 * 60 * 60 * 1000,
@@ -1955,7 +1955,7 @@ def write_status_page(
         }},
         {{
           label: "1M",
-          emaPeriod: 50,
+          emaPeriod: 6,
           axisMode: "year",
           limit: 1000,
           chartId: "market-chart-1m",
