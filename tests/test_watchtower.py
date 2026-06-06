@@ -575,6 +575,9 @@ class WatchtowerUnitTests(unittest.TestCase):
             self.assertIn("Command Center", html)
             self.assertIn("make incident-report", html)
             self.assertIn("make recover-dry-run", html)
+            self.assertIn('class="command-copy"', html)
+            self.assertIn('data-copy="make recover-dry-run"', html)
+            self.assertIn("Copied", html)
 
 
 if __name__ == "__main__":

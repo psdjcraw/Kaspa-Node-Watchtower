@@ -934,7 +934,10 @@ def command_center(severity: str) -> str:
     for label, command, detail in commands:
         cards.append(
             f"""<article class="command-card">
-  <div class="command-label">{html.escape(label)}</div>
+  <div class="command-top">
+    <div class="command-label">{html.escape(label)}</div>
+    <button type="button" class="command-copy" data-copy="{html.escape(command)}">Copy</button>
+  </div>
   <code>{html.escape(command)}</code>
   <p>{html.escape(detail)}</p>
 </article>"""
@@ -1321,7 +1324,28 @@ def write_status_page(
       padding: 11px;
       min-width: 0;
     }}
+    .command-top {{
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      min-width: 0;
+    }}
     .command-label {{ color: var(--muted); font-size: 12px; font-weight: 800; }}
+    .command-copy {{
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #ffffff;
+      color: var(--ink);
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 800;
+      min-height: 30px;
+      padding: 5px 9px;
+      flex: 0 0 auto;
+    }}
+    .command-copy:hover {{ border-color: var(--accent); color: var(--accent); }}
+    .command-copy.copied {{ background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }}
     .command-card code {{ display: block; font-weight: 800; }}
     .command-card p {{ margin: 0; color: var(--muted); font-size: 12px; line-height: 1.35; }}
     .check-pill {{
@@ -1476,6 +1500,39 @@ def write_status_page(
       </table>
     </section>
   </main>
+  <script>
+    document.querySelectorAll(".command-copy").forEach((button) => {{
+      button.addEventListener("click", async () => {{
+        const command = button.dataset.copy || "";
+        try {{
+          if (navigator.clipboard && window.isSecureContext) {{
+            await navigator.clipboard.writeText(command);
+          }} else {{
+            const textArea = document.createElement("textarea");
+            textArea.value = command;
+            textArea.style.position = "fixed";
+            textArea.style.left = "-9999px";
+            document.body.appendChild(textArea);
+            textArea.focus();
+            textArea.select();
+            document.execCommand("copy");
+            document.body.removeChild(textArea);
+          }}
+          button.classList.add("copied");
+          button.textContent = "Copied";
+          window.setTimeout(() => {{
+            button.classList.remove("copied");
+            button.textContent = "Copy";
+          }}, 1600);
+        }} catch (error) {{
+          button.textContent = "Copy failed";
+          window.setTimeout(() => {{
+            button.textContent = "Copy";
+          }}, 1600);
+        }}
+      }});
+    }});
+  </script>
 </body>
 </html>
 """
