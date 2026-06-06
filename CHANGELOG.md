@@ -27,6 +27,8 @@ All notable changes to Kaspa Node Watchtower are tracked here.
 - Status dashboard now includes a command center with common summary,
   diagnostics, incident-report, smoke, and recovery dry-run commands.
 - Command center entries now include copy buttons for local operator commands.
+- README dashboard preview asset now matches the refreshed status-first
+  operator dashboard.
 
 ## 0.4.0 - 2026-06-06
 

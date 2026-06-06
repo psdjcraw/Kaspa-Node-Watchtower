@@ -1,109 +1,157 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="680" viewBox="0 0 1200 680" role="img" aria-labelledby="title desc">
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="720" viewBox="0 0 1200 720" role="img" aria-labelledby="title desc">
   <title id="title">Kaspa Node Watchtower dashboard preview</title>
-  <desc id="desc">Static preview of node health, sync status, Prometheus metrics, and recovery panels.</desc>
+  <desc id="desc">Static preview of the status-first operator dashboard with verdict, triage, command center, charts, and node context.</desc>
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#101820"/>
-      <stop offset="0.55" stop-color="#15252b"/>
-      <stop offset="1" stop-color="#182225"/>
-    </linearGradient>
-    <linearGradient id="panel" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#223039"/>
-      <stop offset="1" stop-color="#18242b"/>
-    </linearGradient>
-    <filter id="softShadow" x="-10%" y="-10%" width="120%" height="120%">
-      <feDropShadow dx="0" dy="12" stdDeviation="18" flood-color="#000000" flood-opacity="0.28"/>
+    <filter id="shadow" x="-8%" y="-8%" width="116%" height="116%">
+      <feDropShadow dx="0" dy="12" stdDeviation="16" flood-color="#1f2933" flood-opacity="0.09"/>
     </filter>
     <style>
-      .frame { fill: url(#bg); }
-      .panel { fill: url(#panel); stroke: #31434b; stroke-width: 1; rx: 8; }
-      .panel-strong { fill: #203139; stroke: #4bc0a0; stroke-width: 1.5; rx: 8; }
-      .title { fill: #eef7f3; font: 700 34px Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-      .subtitle { fill: #9fb7b0; font: 500 17px Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-      .label { fill: #a8bab7; font: 600 14px Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; letter-spacing: 0; }
-      .metric { fill: #f6fffc; font: 700 28px Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; letter-spacing: 0; }
-      .small { fill: #8fa5a0; font: 500 13px Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-      .ok { fill: #62d6a7; }
-      .warn { fill: #f4c86a; }
-      .muted { fill: #7c918d; }
-      .grid { stroke: #314047; stroke-width: 1; opacity: 0.55; }
-      .line-a { fill: none; stroke: #62d6a7; stroke-width: 4; stroke-linecap: round; stroke-linejoin: round; }
-      .line-b { fill: none; stroke: #6aa7ff; stroke-width: 4; stroke-linecap: round; stroke-linejoin: round; }
-      .bar-a { fill: #62d6a7; opacity: 0.9; rx: 3; }
-      .bar-b { fill: #6aa7ff; opacity: 0.82; rx: 3; }
-      .chip { fill: #15332e; stroke: #3fbf98; stroke-width: 1; rx: 14; }
-      .chip-text { fill: #abf2dc; font: 700 13px Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      .page { fill: #f5f7f8; }
+      .panel { fill: #ffffff; stroke: #d9e1e8; stroke-width: 1.2; rx: 8; filter: url(#shadow); }
+      .soft { fill: #e8f5ee; stroke: #b9e3ca; stroke-width: 1.2; rx: 8; }
+      .muted-panel { fill: #f8fafc; stroke: #edf1f6; stroke-width: 1.2; rx: 8; }
+      .title { fill: #1f2933; font: 800 30px Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; letter-spacing: 0; }
+      .h2 { fill: #1f2933; font: 800 18px Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; letter-spacing: 0; }
+      .label { fill: #66727f; font: 800 12px Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; letter-spacing: 0; }
+      .small { fill: #66727f; font: 600 13px Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; letter-spacing: 0; }
+      .value { fill: #1f2933; font: 800 28px Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; letter-spacing: 0; }
+      .mono { fill: #1f2933; font: 800 13px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: 0; }
+      .ok { fill: #147a46; }
+      .accent { fill: #276b74; }
+      .warn { fill: #a86400; }
+      .critical { fill: #b42318; }
+      .line-ok { fill: none; stroke: #147a46; stroke-width: 4; stroke-linecap: round; stroke-linejoin: round; }
+      .line-blue { fill: none; stroke: #3858e9; stroke-width: 4; stroke-linecap: round; stroke-linejoin: round; }
+      .line-warn { fill: none; stroke: #b26a00; stroke-width: 4; stroke-linecap: round; }
+      .bar-bg { fill: #e7ecef; rx: 5; }
+      .badge-text { fill: #ffffff; font: 800 13px Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; letter-spacing: 0; }
     </style>
   </defs>
 
-  <rect class="frame" width="1200" height="680"/>
-  <rect x="34" y="30" width="1132" height="620" rx="16" fill="#0d1519" opacity="0.44" filter="url(#softShadow)"/>
-  <rect x="52" y="48" width="1096" height="584" rx="14" fill="#142027" stroke="#2d4249"/>
+  <rect class="page" width="1200" height="720"/>
 
-  <g transform="translate(84 82)">
-    <text class="title" x="0" y="0">Kaspa Node Watchtower</text>
-    <text class="subtitle" x="0" y="34">Local-first node health, sync, metrics, and recovery dashboard</text>
-    <rect class="chip" x="824" y="-25" width="164" height="34"/>
-    <circle cx="846" cy="-8" r="6" class="ok"/>
-    <text class="chip-text" x="862" y="-3">relay mode healthy</text>
+  <g transform="translate(64 36)">
+    <rect class="panel" x="0" y="0" width="1072" height="114"/>
+    <text class="title" x="20" y="40">Kaspa Node Watchtower</text>
+    <text class="small" x="20" y="68">kaspa-mainnet-local · checked at 2026-06-06T17:40:00+09:00 · auto-refresh 60s</text>
+    <rect class="ok" x="958" y="20" width="92" height="30" rx="15"/>
+    <text class="badge-text" x="990" y="40">OK</text>
+    <text class="label" x="20" y="92">checks passing</text>
+    <text class="label" x="560" y="92">benchmark OK ratio</text>
+    <rect class="bar-bg" x="130" y="82" width="390" height="10"/>
+    <rect class="ok" x="130" y="82" width="390" height="10" rx="5"/>
+    <rect class="bar-bg" x="710" y="82" width="340" height="10"/>
+    <rect class="accent" x="710" y="82" width="340" height="10" rx="5"/>
   </g>
 
-  <g transform="translate(84 148)">
-    <rect class="panel-strong" x="0" y="0" width="248" height="118"/>
-    <text class="label" x="22" y="34">NODE HEALTH</text>
-    <text class="metric ok" x="22" y="74">OK</text>
-    <text class="small" x="22" y="98">process, RPC, gRPC, logs</text>
-
-    <rect class="panel" x="272" y="0" width="248" height="118"/>
-    <text class="label" x="294" y="34">DAA SCORE</text>
-    <text class="metric" x="294" y="74">148.2M</text>
-    <text class="small" x="294" y="98">latest local metric</text>
-
-    <rect class="panel" x="544" y="0" width="248" height="118"/>
-    <text class="label" x="566" y="34">PEERS</text>
-    <text class="metric" x="566" y="74">32</text>
-    <text class="small" x="566" y="98">stable peer set</text>
-
-    <rect class="panel" x="816" y="0" width="248" height="118"/>
-    <text class="label" x="838" y="34">LOG FRESHNESS</text>
-    <text class="metric ok" x="838" y="74">18s</text>
-    <text class="small" x="838" y="98">recent logs</text>
+  <g transform="translate(64 168)">
+    <rect class="panel" x="0" y="0" width="1072" height="92"/>
+    <rect class="ok" x="0" y="0" width="6" height="92" rx="3"/>
+    <text class="label" x="20" y="30">OPERATOR VERDICT</text>
+    <text class="value" x="20" y="62">OK</text>
+    <text class="small" x="94" y="58">No immediate action</text>
+    <rect class="muted-panel" x="620" y="18" width="132" height="56"/>
+    <rect class="muted-panel" x="768" y="18" width="132" height="56"/>
+    <rect class="muted-panel" x="916" y="18" width="132" height="56"/>
+    <text class="small" x="636" y="42">Failed</text>
+    <text class="h2" x="636" y="62">None</text>
+    <text class="small" x="784" y="42">Network</text>
+    <text class="h2" x="784" y="62">mainnet</text>
+    <text class="small" x="932" y="42">Recovery</text>
+    <text class="h2" x="932" y="62">none</text>
   </g>
 
-  <g transform="translate(84 294)">
-    <rect class="panel" x="0" y="0" width="520" height="238"/>
-    <text class="label" x="24" y="34">SYNC AND RELAY PROGRESS</text>
-    <line class="grid" x1="24" y1="74" x2="494" y2="74"/>
-    <line class="grid" x1="24" y1="116" x2="494" y2="116"/>
-    <line class="grid" x1="24" y1="158" x2="494" y2="158"/>
-    <line class="grid" x1="24" y1="200" x2="494" y2="200"/>
-    <path class="line-a" d="M34 192 C84 166, 118 151, 162 139 S245 107, 302 96 S408 84, 482 58"/>
-    <path class="line-b" d="M34 204 C94 194, 152 174, 218 148 S350 118, 482 88"/>
-    <circle cx="482" cy="58" r="6" class="ok"/>
-    <circle cx="482" cy="88" r="6" fill="#6aa7ff"/>
-    <text class="small" x="24" y="224">green: blocks and headers progressing</text>
-    <text class="small" x="306" y="224">blue: relay freshness</text>
-
-    <rect class="panel" x="544" y="0" width="520" height="238"/>
-    <text class="label" x="568" y="34">PROMETHEUS AND RECOVERY SIGNALS</text>
-    <rect class="bar-a" x="578" y="166" width="36" height="44"/>
-    <rect class="bar-a" x="632" y="128" width="36" height="82"/>
-    <rect class="bar-a" x="686" y="104" width="36" height="106"/>
-    <rect class="bar-b" x="740" y="86" width="36" height="124"/>
-    <rect class="bar-b" x="794" y="68" width="36" height="142"/>
-    <rect class="bar-a" x="848" y="98" width="36" height="112"/>
-    <rect class="bar-a" x="902" y="78" width="36" height="132"/>
-    <rect class="bar-b" x="956" y="56" width="36" height="154"/>
-    <line class="grid" x1="568" y1="210" x2="1038" y2="210"/>
-    <line class="grid" x1="568" y1="160" x2="1038" y2="160"/>
-    <line class="grid" x1="568" y1="110" x2="1038" y2="110"/>
-    <text class="small" x="568" y="224">alerts, benchmark trends, and recovery attempts</text>
+  <g transform="translate(64 280)">
+    <rect class="soft" x="0" y="0" width="168" height="82"/>
+    <rect class="soft" x="180" y="0" width="168" height="82"/>
+    <rect class="soft" x="360" y="0" width="168" height="82"/>
+    <rect class="panel" x="540" y="0" width="168" height="82"/>
+    <rect class="soft" x="720" y="0" width="168" height="82"/>
+    <rect class="soft" x="900" y="0" width="172" height="82"/>
+    <text class="label" x="14" y="28">Peers</text>
+    <text class="value" x="14" y="58">8</text>
+    <text class="label" x="194" y="28">Relay</text>
+    <text class="value" x="194" y="58">1.2s</text>
+    <text class="label" x="374" y="28">Sync</text>
+    <text class="value" x="374" y="58">synced</text>
+    <text class="label" x="554" y="28">DAA Score</text>
+    <text class="value" x="554" y="58">453.16M</text>
+    <text class="label" x="734" y="28">Disk Free</text>
+    <text class="value" x="734" y="58">159 GiB</text>
+    <text class="label" x="914" y="28">Benchmark OK</text>
+    <text class="value" x="914" y="58">100%</text>
   </g>
 
-  <g transform="translate(84 560)">
-    <rect class="panel" x="0" y="0" width="1064" height="48"/>
-    <circle cx="28" cy="24" r="6" class="ok"/>
-    <text class="small" x="44" y="29">Generated from local process, filesystem, log, RPC, gRPC, Prometheus, and Grafana signals.</text>
-    <text class="small muted" x="784" y="29">Static preview for documentation</text>
+  <g transform="translate(64 382)">
+    <rect class="panel" x="0" y="0" width="254" height="132"/>
+    <rect class="panel" x="274" y="0" width="254" height="132"/>
+    <rect class="panel" x="548" y="0" width="254" height="132"/>
+    <rect class="panel" x="822" y="0" width="250" height="132"/>
+    <text class="h2" x="16" y="30">Relay Activity</text>
+    <text class="h2" x="206" y="30">6.0K</text>
+    <path class="line-ok" d="M24 88 L44 58 L64 76 L84 50 L104 68 L124 56 L144 96 L164 48 L184 82 L204 58 L230 66"/>
+    <text class="h2" x="290" y="30">DAA Score</text>
+    <text class="h2" x="438" y="30">453.16M</text>
+    <path class="line-blue" d="M298 92 C342 86, 378 76, 418 62 S484 42, 510 38"/>
+    <text class="h2" x="564" y="30">Peer Floor</text>
+    <text class="h2" x="758" y="30">8</text>
+    <path class="line-warn" d="M574 88 L780 88"/>
+    <text class="h2" x="838" y="30">Severity Timeline</text>
+    <text class="h2" x="1032" y="30">OK</text>
+    <g transform="translate(844 54)">
+      <rect class="muted-panel" x="0" y="0" width="214" height="60"/>
+      <g transform="translate(10 10)">
+        <rect class="ok" x="0" y="0" width="4" height="40" rx="2"/>
+        <rect class="ok" x="10" y="0" width="4" height="40" rx="2"/>
+        <rect class="ok" x="20" y="0" width="4" height="40" rx="2"/>
+        <rect class="ok" x="30" y="0" width="4" height="40" rx="2"/>
+        <rect class="ok" x="40" y="0" width="4" height="40" rx="2"/>
+        <rect class="ok" x="50" y="0" width="4" height="40" rx="2"/>
+        <rect class="ok" x="60" y="0" width="4" height="40" rx="2"/>
+        <rect class="ok" x="70" y="0" width="4" height="40" rx="2"/>
+        <rect class="ok" x="80" y="0" width="4" height="40" rx="2"/>
+        <rect class="ok" x="90" y="0" width="4" height="40" rx="2"/>
+        <rect class="ok" x="100" y="0" width="4" height="40" rx="2"/>
+        <rect class="ok" x="110" y="0" width="4" height="40" rx="2"/>
+        <rect class="ok" x="120" y="0" width="4" height="40" rx="2"/>
+        <rect class="ok" x="130" y="0" width="4" height="40" rx="2"/>
+        <rect class="ok" x="140" y="0" width="4" height="40" rx="2"/>
+        <rect class="ok" x="150" y="0" width="4" height="40" rx="2"/>
+        <rect class="ok" x="160" y="0" width="4" height="40" rx="2"/>
+        <rect class="ok" x="170" y="0" width="4" height="40" rx="2"/>
+        <rect class="ok" x="180" y="0" width="4" height="40" rx="2"/>
+        <rect class="ok" x="190" y="0" width="4" height="40" rx="2"/>
+      </g>
+    </g>
+  </g>
+
+  <g transform="translate(64 534)">
+    <rect class="panel" x="0" y="0" width="548" height="82"/>
+    <text class="h2" x="16" y="28">Triage Queue</text>
+    <rect class="soft" x="16" y="42" width="516" height="26"/>
+    <text class="small" x="28" y="60">No active triage items · all latest checks passed</text>
+    <rect class="panel" x="572" y="0" width="500" height="82"/>
+    <text class="h2" x="588" y="28">Run Context</text>
+    <rect class="muted-panel" x="588" y="42" width="110" height="26"/>
+    <rect class="muted-panel" x="710" y="42" width="110" height="26"/>
+    <rect class="muted-panel" x="832" y="42" width="110" height="26"/>
+    <text class="small" x="604" y="60">latest 1.2s</text>
+    <text class="small" x="726" y="60">manual</text>
+    <text class="small" x="848" y="60">mainnet</text>
+  </g>
+
+  <g transform="translate(64 634)">
+    <rect class="panel" x="0" y="0" width="1072" height="58"/>
+    <text class="h2" x="16" y="34">Command Center</text>
+    <rect class="muted-panel" x="196" y="14" width="156" height="30"/>
+    <rect class="muted-panel" x="368" y="14" width="184" height="30"/>
+    <rect class="muted-panel" x="568" y="14" width="210" height="30"/>
+    <rect class="muted-panel" x="794" y="14" width="136" height="30"/>
+    <text class="mono" x="212" y="34">make summary</text>
+    <text class="mono" x="384" y="34">make incident-report</text>
+    <text class="mono" x="584" y="34">make diagnostics-archive</text>
+    <text class="mono" x="810" y="34">make smoke</text>
+    <rect x="954" y="14" width="86" height="30" rx="6" fill="#ffffff" stroke="#d9e1e8"/>
+    <text class="h2" x="976" y="35">Copy</text>
   </g>
 </svg>
