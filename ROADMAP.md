@@ -55,6 +55,7 @@ the primary source of truth.
   Diagnostics now start with a sanitized incident summary.
 - Explore external long-lived storage options beyond local SQLite.
 - Add optional report generation for daily or weekly operator summaries.
+  Weekly report generation is available through `make weekly-report`.
 - Evaluate packaging options for easier deployment on common node hosts.
 
 ## AI-Assisted Maintenance Opportunities

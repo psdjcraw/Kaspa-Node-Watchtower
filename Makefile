@@ -1,7 +1,7 @@
 PYTHON ?= .venv/bin/python
 CONFIG ?= config.json
 
-.PHONY: help bootstrap proto-check version status summary sync-report diagnostics-summary json alert smoke ci integrations simulate-exporter-failure ensure-exporter diagnostics diagnostics-archive daily-report benchmark benchmark-report prometheus export-history history-report prune validate recover-dry-run recover force-recover-dry-run
+.PHONY: help bootstrap proto-check version status summary sync-report diagnostics-summary json alert smoke ci integrations simulate-exporter-failure ensure-exporter diagnostics diagnostics-archive daily-report weekly-report benchmark benchmark-report prometheus export-history history-report prune validate recover-dry-run recover force-recover-dry-run
 
 help:
 	@printf 'Kaspa Node Watchtower operator commands\n'
@@ -22,6 +22,7 @@ help:
 	@printf '  make diagnostics         Collect diagnostic report\n'
 	@printf '  make diagnostics-archive Collect diagnostic report and tar archive\n'
 	@printf '  make daily-report        Print the daily operator report\n'
+	@printf '  make weekly-report       Print the weekly operator report\n'
 	@printf '  make benchmark           Save a benchmark snapshot\n'
 	@printf '  make benchmark-report    Print benchmark trend report\n'
 	@printf '  make prometheus          Write Prometheus textfile metrics\n'
@@ -82,6 +83,9 @@ diagnostics-archive:
 
 daily-report:
 	@./run_daily_report.sh
+
+weekly-report:
+	@./run_weekly_report.sh
 
 benchmark:
 	@./run_benchmark_snapshot.sh

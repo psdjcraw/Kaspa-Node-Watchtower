@@ -14,6 +14,8 @@ All notable changes to Kaspa Node Watchtower are tracked here.
   detection in integration checks.
 - `make diagnostics-summary` and a sanitized incident summary at the top of
   diagnostics bundles.
+- `make weekly-report` and `run_weekly_report.sh` for 7-day and 30-day operator
+  history review.
 
 ### Changed
 

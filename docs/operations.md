@@ -127,6 +127,7 @@ Daily operator report:
 
 ```bash
 ./run_daily_report.sh
+./run_weekly_report.sh
 ```
 
 Human-readable status:
@@ -365,6 +366,8 @@ status, GitHub Actions status, recovery attempts, and dashboard locations.
 Integration and GitHub status failures are reported inline instead of stopping
 the rest of the report. Unlike alert and smoke wrappers, it intentionally emits
 output while healthy.
+The weekly report focuses on diagnostics summary, 7-day and 30-day SQLite
+history windows, benchmark trend, recovery attempts, and upgrade checkpoints.
 
 Prometheus textfile metrics:
 

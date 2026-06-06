@@ -144,6 +144,7 @@ make status
 make sync-report
 make smoke
 make daily-report
+make weekly-report
 make ensure-exporter
 make diagnostics-archive
 make history-report
@@ -289,11 +290,14 @@ Generate a daily operator report:
 ```bash
 ./run_daily_report.sh
 make daily-report
+make weekly-report
 ```
 
 The daily report includes an operator verdict, node health, mainnet sync
 progress, benchmark stability, recent SQLite history summary, integration
 status, and smoke/CodeQL workflow status.
+The weekly report focuses on diagnostics summary, 7-day and 30-day SQLite
+history, benchmark trend, recovery attempts, and upgrade checkpoints.
 
 See [Documentation](#documentation) for setup, integrations, operations,
 security, roadmap, and release history.

@@ -58,6 +58,9 @@ if [ -f "config.json" ]; then
   ./run_benchmark_snapshot.sh >/dev/null
   ok "benchmark wrapper"
 
+  ./run_weekly_report.sh >/dev/null
+  ok "weekly report"
+
   if [ "${KASPA_WATCHTOWER_SMOKE_INTEGRATIONS:-0}" = "1" ]; then
     scripts/check_integrations.sh >/dev/null
     ok "external integrations"
