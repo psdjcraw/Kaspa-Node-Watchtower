@@ -1658,32 +1658,62 @@ def write_status_page(
       }}
       const width = 720;
       const height = 230;
-      const padX = 24;
-      const padY = 18;
+      const leftPad = 24;
+      const rightPad = 70;
+      const topPad = 18;
+      const bottomPad = 34;
       const highs = candles.map((row) => row.high);
       const lows = candles.map((row) => row.low);
       const high = Math.max(...highs);
       const low = Math.min(...lows);
       const span = high - low || 1;
-      const step = (width - padX * 2) / candles.length;
+      const chartWidth = width - leftPad - rightPad;
+      const chartHeight = height - topPad - bottomPad;
+      const step = chartWidth / candles.length;
       const bodyWidth = Math.max(4, Math.min(12, step * 0.56));
-      const y = (price) => height - padY - ((price - low) / span) * (height - padY * 2);
+      const y = (price) => topPad + chartHeight - ((price - low) / span) * chartHeight;
       const ns = "http://www.w3.org/2000/svg";
 
-      [0.25, 0.5, 0.75].forEach((ratio) => {{
+      [0, 0.25, 0.5, 0.75, 1].forEach((ratio) => {{
         const line = document.createElementNS(ns, "line");
-        const lineY = padY + (height - padY * 2) * ratio;
-        line.setAttribute("x1", String(padX));
-        line.setAttribute("x2", String(width - padX));
+        const lineY = topPad + chartHeight * ratio;
+        line.setAttribute("x1", String(leftPad));
+        line.setAttribute("x2", String(width - rightPad));
         line.setAttribute("y1", String(lineY));
         line.setAttribute("y2", String(lineY));
         line.setAttribute("stroke", "#d9e1e8");
         line.setAttribute("stroke-width", "1");
         svg.appendChild(line);
+
+        const price = high - span * ratio;
+        const label = document.createElementNS(ns, "text");
+        label.textContent = "$" + price.toFixed(5);
+        label.setAttribute("x", String(width - rightPad + 10));
+        label.setAttribute("y", String(lineY + 4));
+        label.setAttribute("fill", "#66727f");
+        label.setAttribute("font-size", "11");
+        label.setAttribute("font-weight", "700");
+        label.setAttribute("class", "market-axis-label");
+        svg.appendChild(label);
+      }});
+
+      [0, Math.floor((candles.length - 1) / 2), candles.length - 1].forEach((index) => {{
+        const candle = candles[index];
+        const x = leftPad + step * index + step / 2;
+        const label = document.createElementNS(ns, "text");
+        label.textContent = new Date(candle.time).toLocaleTimeString([], {{ hour: "2-digit", minute: "2-digit" }});
+        label.setAttribute("x", String(x));
+        label.setAttribute("y", String(height - 9));
+        label.setAttribute("text-anchor", index === 0 ? "start" : index === candles.length - 1 ? "end" : "middle");
+        label.setAttribute("fill", "#66727f");
+        label.setAttribute("font-size", "11");
+        label.setAttribute("font-weight", "700");
+        label.setAttribute("class", "market-axis-label");
+        svg.appendChild(label);
       }});
 
       candles.forEach((candle, index) => {{
-        const x = padX + step * index + step / 2;
+        const x = leftPad + step * index + step / 2;
         const up = candle.close >= candle.open;
         const color = up ? "#147a46" : "#b42318";
         const wick = document.createElementNS(ns, "line");

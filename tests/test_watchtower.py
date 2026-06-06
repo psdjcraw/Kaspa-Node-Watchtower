@@ -583,6 +583,8 @@ class WatchtowerUnitTests(unittest.TestCase):
             self.assertIn("api.bybit.com/v5/market/tickers", html)
             self.assertIn("api.bybit.com/v5/market/kline", html)
             self.assertIn('id="market-chart"', html)
+            self.assertIn("market-axis-label", html)
+            self.assertIn('hour: "2-digit"', html)
 
 
 if __name__ == "__main__":

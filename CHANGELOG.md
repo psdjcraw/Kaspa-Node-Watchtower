@@ -16,6 +16,8 @@ All notable changes to Kaspa Node Watchtower are tracked here.
 - `config_version` validation for future config migration checks.
 - Live KAS/USDT market watch in `status.html`, with Bybit spot price,
   24-hour stats, and a client-rendered 15-minute candle chart.
+- KAS/USDT 15-minute candle chart now renders X-axis time labels and Y-axis
+  price labels.
 
 ### Changed
 
