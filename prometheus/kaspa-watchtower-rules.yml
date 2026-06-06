@@ -76,6 +76,16 @@ groups:
           summary: "Kaspa watchtower metrics are stale"
           description: "Prometheus sample age is above 180 seconds for node {{ $labels.node }}."
 
+      - alert: KaspaProcessedStatsStale
+        expr: (kaspa_watchtower_latest_processed_age_seconds{job="kaspa-watchtower"} > 180) and on(job,node) (kaspa_watchtower_synced{job="kaspa-watchtower"} == 1)
+        for: 5m
+        labels:
+          severity: warning
+          service: kaspa-watchtower
+        annotations:
+          summary: "Kaspa processed transaction stats are stale"
+          description: "Latest processed block/transaction stats are older than 180 seconds for node {{ $labels.node }}."
+
       - alert: KaspaWatchtowerRecoveryUnavailable
         expr: increase(kaspa_watchtower_recovery_unavailable_total{job="kaspa-watchtower"}[30m]) > 0
         labels:

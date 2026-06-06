@@ -20,6 +20,8 @@ All notable changes to Kaspa Node Watchtower are tracked here.
   throughput chart derived from recent processed-stats log entries.
 - Prometheus metrics and the bundled Grafana dashboard now expose latest
   processed transaction throughput.
+- Processed-stats freshness is now exposed in status details and Prometheus,
+  with an alert rule for stale processed transaction stats.
 
 ### Changed
 

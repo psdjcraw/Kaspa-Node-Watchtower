@@ -155,6 +155,37 @@ tests:
         exp_alerts: []
 
   - interval: 1m
+    input_series:
+      - series: 'kaspa_watchtower_latest_processed_age_seconds{job="kaspa-watchtower",node="test"}'
+        values: '240+0x10'
+      - series: 'kaspa_watchtower_synced{job="kaspa-watchtower",node="test"}'
+        values: '1+0x10'
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: KaspaProcessedStatsStale
+        exp_alerts:
+          - exp_labels:
+              alertname: KaspaProcessedStatsStale
+              job: kaspa-watchtower
+              node: test
+              service: kaspa-watchtower
+              severity: warning
+            exp_annotations:
+              summary: "Kaspa processed transaction stats are stale"
+              description: "Latest processed block/transaction stats are older than 180 seconds for node test."
+
+  - interval: 1m
+    input_series:
+      - series: 'kaspa_watchtower_latest_processed_age_seconds{job="kaspa-watchtower",node="test"}'
+        values: '240+0x10'
+      - series: 'kaspa_watchtower_synced{job="kaspa-watchtower",node="test"}'
+        values: '0+0x10'
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: KaspaProcessedStatsStale
+        exp_alerts: []
+
+  - interval: 1m
     input_series: []
     alert_rule_test:
       - eval_time: 3m

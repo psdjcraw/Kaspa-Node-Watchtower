@@ -188,6 +188,7 @@ class WatchtowerUnitTests(unittest.TestCase):
                 "relay_blocks_in_window": 10,
                 "relay_events_in_window": 5,
                 "latest_relay_age_seconds": 1,
+                "latest_processed_age_seconds": 2.5,
                 "latest_processed": {
                     "timestamp": "2026-06-06T10:00:00+09:00",
                     "blocks": 92,
@@ -246,6 +247,7 @@ class WatchtowerUnitTests(unittest.TestCase):
         self.assertIn("kaspa_watchtower_latest_processed_transactions", metrics)
         self.assertIn("kaspa_watchtower_latest_processed_transactions_per_second", metrics)
         self.assertIn("kaspa_watchtower_latest_processed_timestamp_seconds", metrics)
+        self.assertIn("kaspa_watchtower_latest_processed_age_seconds", metrics)
         self.assertIn("131.1", metrics)
         self.assertIn("kaspa_watchtower_tip_count", metrics)
         self.assertIn("kaspa_watchtower_process_fd_num", metrics)
@@ -594,6 +596,7 @@ class WatchtowerUnitTests(unittest.TestCase):
                     "relay_events_in_window": 0,
                     "window_minutes": 10,
                     "latest_relay_age_seconds": None,
+                    "latest_processed_age_seconds": 3.2,
                     "relay_samples": [
                         {"timestamp": "2026-06-06T09:59:58+09:00", "blocks": 9},
                         {"timestamp": "2026-06-06T10:00:00+09:00", "blocks": 16},
@@ -751,6 +754,7 @@ class WatchtowerUnitTests(unittest.TestCase):
             self.assertIn("Transaction Throughput", html)
             self.assertIn("131.1/s", html)
             self.assertIn("1311 tx / 10.0s", html)
+            self.assertIn("3.2s old", html)
             self.assertIn("Recent transactions per second", html)
             self.assertIn("processed-chart", html)
             self.assertIn("Mempool Activity", html)

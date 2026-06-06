@@ -392,6 +392,7 @@ def build_report(config: dict) -> dict[str, Any]:
         "relay_events_in_window": 0,
         "latest_relay_age_seconds": None,
         "latest_processed": None,
+        "latest_processed_age_seconds": None,
         "relay_samples": [],
         "processed_samples": [],
     }
@@ -470,6 +471,10 @@ def build_report(config: dict) -> dict[str, Any]:
                     else latest_processed.transactions / latest_processed.seconds,
                     "line": latest_processed.line,
                 }
+                progress["latest_processed_age_seconds"] = round(
+                    max(0.0, (now - latest_processed.timestamp).total_seconds()),
+                    1,
+                )
             min_relay_blocks = int(thresholds.get("min_relay_blocks_in_window", 1))
             require_unsynced_progress = bool(
                 thresholds.get("require_relay_progress_when_unsynced", False)
@@ -1328,6 +1333,8 @@ def write_status_page(
     transaction_chart = transaction_rate_chart(progress.get("processed_samples") or [])
     transaction_rate = latest_processed.get("transactions_per_second")
     transaction_rate_text = "unknown" if transaction_rate is None else f"{float(transaction_rate):.1f}/s"
+    latest_processed_age = progress.get("latest_processed_age_seconds")
+    latest_processed_age_text = "unknown" if latest_processed_age is None else f"{latest_processed_age}s old"
     processed_detail = (
         "No recent processed stats"
         if not latest_processed
@@ -1341,7 +1348,8 @@ def write_status_page(
         if not latest_processed
         else (
             f"{latest_processed.get('transactions', 'unknown')} tx / "
-            f"{latest_processed.get('seconds', 'unknown')}s"
+            f"{latest_processed.get('seconds', 'unknown')}s · "
+            f"{latest_processed_age_text}"
         )
     )
     relay_samples = progress.get("relay_samples") or []
@@ -3743,6 +3751,12 @@ def format_prometheus_metrics(
         lines,
         "kaspa_watchtower_latest_processed_timestamp_seconds",
         iso_timestamp_seconds(latest_processed.get("timestamp")),
+        node_labels,
+    )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_latest_processed_age_seconds",
+        progress.get("latest_processed_age_seconds"),
         node_labels,
     )
     add_prometheus_metric(
