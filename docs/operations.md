@@ -100,6 +100,10 @@ Operational snapshot:
 scripts/ops_snapshot.sh
 ```
 
+The snapshot prints processed transaction rate and processed-stats age from both
+the exporter endpoint and Prometheus query path, so stale transaction-throughput
+telemetry is visible without opening Grafana.
+
 Sanitized status examples:
 
 ```text

@@ -27,6 +27,8 @@ All notable changes to Kaspa Node Watchtower are tracked here.
 - Bundled Grafana dashboard now includes a processed-stats freshness panel.
 - Status dashboard Tx Rate card now reflects stale processed-stats warnings
   instead of staying visually neutral.
+- `scripts/ops_snapshot.sh` now includes latest processed transaction rate and
+  processed-stats age from both exporter and Prometheus views.
 
 ### Changed
 

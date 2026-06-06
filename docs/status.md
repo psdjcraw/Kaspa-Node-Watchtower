@@ -67,6 +67,10 @@
 scripts/ops_snapshot.sh
 ```
 
+The snapshot includes local watchtower summary output, exporter and Prometheus
+processed transaction rate, processed-stats age, relay freshness, sync progress,
+recovery counters, alert count, Grafana reachability, and GitHub Actions status.
+
 ## One-Command Smoke Test
 
 ```bash
