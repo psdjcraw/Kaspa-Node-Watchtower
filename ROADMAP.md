@@ -37,7 +37,9 @@ the primary source of truth.
 ## v0.3 - Broader Compatibility
 
 - Track compatibility with current `rusty-kaspa` and `kaspad` releases.
+  Initial notes are in `docs/compatibility.md`.
 - Add compatibility notes for mainnet, testnet, simnet, and devnet usage.
+  Initial notes are in `docs/compatibility.md`.
 - Improve gRPC/protobuf update handling when upstream APIs change.
 - Add more failure simulations for stale logs, stalled relay blocks, missing
   metrics, disk pressure, and exporter failures.

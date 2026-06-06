@@ -4,7 +4,14 @@ All notable changes to Kaspa Node Watchtower are tracked here.
 
 ## Unreleased
 
-- No changes yet.
+### Added
+
+- Compatibility guide covering the tested `rusty-kaspa` baseline, gRPC API
+  surface, network-specific threshold notes, and upgrade checklist.
+
+### Changed
+
+- Development version now reports `0.3.0-dev` after the v0.2.0 release.
 
 ## 0.2.0 - 2026-06-06
 

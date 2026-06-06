@@ -61,6 +61,7 @@ Current target environment:
 - [Install guide](docs/install.md)
 - [Operations guide](docs/operations.md)
 - [Prometheus/Grafana integrations](docs/integrations.md)
+- [Compatibility guide](docs/compatibility.md)
 - [Failure handling runbook](docs/runbook.md)
 - [Deployment status](docs/status.md)
 - [Sample status reports](docs/sample-status-reports.md)

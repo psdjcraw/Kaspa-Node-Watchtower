@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 
-VERSION = "0.2.0"
+VERSION = "0.3.0-dev"
 
 DEFAULT_CONFIG = {
     "node_name": "kaspa-local",
