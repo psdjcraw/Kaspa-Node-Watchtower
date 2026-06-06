@@ -1,6 +1,6 @@
 # Kaspa Node Watchtower v0.6.0 Release Notes
 
-Release date: TBD
+Release date: 2026-06-07
 
 v0.6.0 focuses on transaction-throughput observability and processed-stats
 freshness. The watchtower now treats recent `Processed N blocks ... (N

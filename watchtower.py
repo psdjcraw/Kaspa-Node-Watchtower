@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 
-VERSION = "0.6.0-dev"
+VERSION = "0.6.0"
 
 DEFAULT_CONFIG = {
     "config_version": 1,

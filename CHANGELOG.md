@@ -4,6 +4,10 @@ All notable changes to Kaspa Node Watchtower are tracked here.
 
 ## Unreleased
 
+No changes yet.
+
+## 0.6.0 - 2026-06-07
+
 ### Added
 
 - gRPC network hashrate estimate collection via
@@ -46,7 +50,7 @@ All notable changes to Kaspa Node Watchtower are tracked here.
 
 ### Changed
 
-- Development version now reports `0.6.0-dev` after the v0.5.0 release.
+- Version now reports `0.6.0` for the v0.6.0 release.
 - Market watch grid panels now suppress flow-layout sibling margins so cards in
   the same grid row align at the same height.
 
