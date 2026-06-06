@@ -1934,6 +1934,7 @@ def write_status_page(
         {{
           label: "1D",
           emaPeriod: 20,
+          axisMode: "day",
           limit: 40,
           intervalMs: 24 * 60 * 60 * 1000,
           lookbackMonths: 1,
@@ -1944,6 +1945,7 @@ def write_status_page(
         {{
           label: "1W",
           emaPeriod: 50,
+          axisMode: "month",
           limit: 60,
           intervalMs: 7 * 24 * 60 * 60 * 1000,
           lookbackMs: 365 * 24 * 60 * 60 * 1000,
@@ -1954,6 +1956,7 @@ def write_status_page(
         {{
           label: "1M",
           emaPeriod: 50,
+          axisMode: "year",
           limit: 1000,
           chartId: "market-chart-1m",
           statusId: "market-status-1m",
@@ -1963,6 +1966,7 @@ def write_status_page(
       cross: {{
         chartId: "market-cross-chart",
         statusId: "market-cross-status",
+        axisMode: "day",
         series: [
           {{
             label: "KAS/USDT",
@@ -2166,7 +2170,33 @@ def write_status_page(
       }});
     }}
 
-    function drawMarketCandles(rows, chartId, statusId, labelText, emaPeriod) {{
+    function marketPad2(value) {{
+      return String(value).padStart(2, "0");
+    }}
+
+    function marketAxisTimeLabel(time, mode) {{
+      const date = new Date(time);
+      const year = String(date.getFullYear());
+      const month = marketPad2(date.getMonth() + 1);
+      const day = marketPad2(date.getDate());
+      if (mode === "year") {{
+        return year;
+      }}
+      if (mode === "month") {{
+        return year + "-" + month;
+      }}
+      if (mode === "day") {{
+        return month + "/" + day;
+      }}
+      return date.toLocaleString([], {{
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+      }});
+    }}
+
+    function drawMarketCandles(rows, chartId, statusId, labelText, emaPeriod, axisMode) {{
       const svg = document.getElementById(chartId);
       if (!svg) {{
         return;
@@ -2222,12 +2252,7 @@ def write_status_page(
         const candle = candles[index];
         const x = leftPad + step * index + step / 2;
         const label = document.createElementNS(ns, "text");
-        label.textContent = new Date(candle.time).toLocaleString([], {{
-          month: "2-digit",
-          day: "2-digit",
-          hour: "2-digit",
-          minute: "2-digit",
-        }});
+        label.textContent = marketAxisTimeLabel(candle.time, axisMode);
         label.setAttribute("x", String(x));
         label.setAttribute("y", String(height - 9));
         label.setAttribute("text-anchor", index === 0 ? "start" : index === candles.length - 1 ? "end" : "middle");
@@ -2298,7 +2323,7 @@ def write_status_page(
       marketText(statusId, labelText + " candles updated at " + new Date(latest.time).toLocaleTimeString());
     }}
 
-    function drawMarketCrossChart(seriesRows, chartId, statusId) {{
+    function drawMarketCrossChart(seriesRows, chartId, statusId, axisMode) {{
       const svg = document.getElementById(chartId);
       if (!svg) {{
         return;
@@ -2375,12 +2400,7 @@ def write_status_page(
       [0, Math.floor((minLength - 1) / 2), minLength - 1].forEach((index) => {{
         const point = normalized[0].points[index];
         const label = document.createElementNS(ns, "text");
-        label.textContent = new Date(point.time).toLocaleString([], {{
-          month: "2-digit",
-          day: "2-digit",
-          hour: "2-digit",
-          minute: "2-digit",
-        }});
+        label.textContent = marketAxisTimeLabel(point.time, axisMode);
         label.setAttribute("x", String(x(index)));
         label.setAttribute("y", String(height - 9));
         label.setAttribute("text-anchor", index === 0 ? "start" : index === minLength - 1 ? "end" : "middle");
@@ -2434,7 +2454,7 @@ def write_status_page(
     async function refreshMarketChart(config) {{
       try {{
         const payload = await fetchMarketJson(marketKlineUrl(config));
-        drawMarketCandles(((payload.result || {{}}).list || []), config.chartId, config.statusId, config.label, config.emaPeriod);
+        drawMarketCandles(((payload.result || {{}}).list || []), config.chartId, config.statusId, config.label, config.emaPeriod, config.axisMode);
       }} catch (error) {{
         marketText(config.statusId, "KAS/USDT " + config.label + " candles unavailable");
       }}
@@ -2448,7 +2468,7 @@ def write_status_page(
           color: marketConfig.cross.series[index].color,
           rows: ((payload.result || {{}}).list || []),
         }}));
-        drawMarketCrossChart(seriesRows, marketConfig.cross.chartId, marketConfig.cross.statusId);
+        drawMarketCrossChart(seriesRows, marketConfig.cross.chartId, marketConfig.cross.statusId, marketConfig.cross.axisMode);
       }} catch (error) {{
         marketText(marketConfig.cross.statusId, "KAS/BTC daily cross unavailable");
       }}

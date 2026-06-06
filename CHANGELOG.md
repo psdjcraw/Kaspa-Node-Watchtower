@@ -45,7 +45,9 @@ All notable changes to Kaspa Node Watchtower are tracked here.
 - KAS/USDT timeframe charts now request operator-focused ranges: 24 hours for
   15-minute, one week for 4-hour, one month for daily, one year for weekly, and
   full available history for monthly.
-- Chart X-axis labels now include both date and time where axis labels are
+- Daily, weekly, and monthly market chart X-axis labels now omit time and
+  collapse to day, month, and year granularity respectively.
+- Intraday chart X-axis labels include both date and time where axis labels are
   rendered.
 - Market data fetches now use timeout/retry handling with browser cache fallback.
 
