@@ -51,7 +51,8 @@ which supports a more resilient decentralized network.
   dashboard
 - Live KAS/USDT market watch in the generated status dashboard, including
   Bybit spot price, 15-minute/4-hour/daily/weekly/monthly candle charts, and a
-  normalized daily KAS/USDT vs BTC/USDT cross chart with browser cache fallback
+  normalized daily KAS/USDT vs BTC/USDT cross chart with browser cache fallback;
+  KAS/USDT timeframe charts include EMA overlays
 - Prometheus textfile metrics for local scraping or textfile collectors
 - Long-lived SQLite history export and operator summary reporting
 

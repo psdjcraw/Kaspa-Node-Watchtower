@@ -1913,30 +1913,35 @@ def write_status_page(
       klines: [
         {{
           label: "15m",
+          emaPeriod: 20,
           chartId: "market-chart",
           statusId: "market-status",
           url: "https://api.bybit.com/v5/market/kline?category=spot&symbol=KASUSDT&interval=15&limit=32",
         }},
         {{
           label: "4h",
+          emaPeriod: 50,
           chartId: "market-chart-4h",
           statusId: "market-status-4h",
           url: "https://api.bybit.com/v5/market/kline?category=spot&symbol=KASUSDT&interval=240&limit=32",
         }},
         {{
           label: "1D",
+          emaPeriod: 100,
           chartId: "market-chart-1d",
           statusId: "market-status-1d",
           url: "https://api.bybit.com/v5/market/kline?category=spot&symbol=KASUSDT&interval=D&limit=32",
         }},
         {{
           label: "1W",
+          emaPeriod: 200,
           chartId: "market-chart-1w",
           statusId: "market-status-1w",
           url: "https://api.bybit.com/v5/market/kline?category=spot&symbol=KASUSDT&interval=W&limit=32",
         }},
         {{
           label: "1M",
+          emaPeriod: 365,
           chartId: "market-chart-1m",
           statusId: "market-status-1m",
           url: "https://api.bybit.com/v5/market/kline?category=spot&symbol=KASUSDT&interval=M&limit=32",
@@ -2094,7 +2099,23 @@ def write_status_page(
         .reverse();
     }}
 
-    function drawMarketCandles(rows, chartId, statusId, labelText) {{
+    function marketEmaPoints(candles, period) {{
+      const parsedPeriod = Number(period);
+      if (!Number.isFinite(parsedPeriod) || parsedPeriod <= 0 || candles.length < 2) {{
+        return [];
+      }}
+      const multiplier = 2 / (parsedPeriod + 1);
+      let previous = candles[0].close;
+      return candles.map((candle) => {{
+        previous = candle.close * multiplier + previous * (1 - multiplier);
+        return {{
+          time: candle.time,
+          value: previous,
+        }};
+      }});
+    }}
+
+    function drawMarketCandles(rows, chartId, statusId, labelText, emaPeriod) {{
       const svg = document.getElementById(chartId);
       if (!svg) {{
         return;
@@ -2192,6 +2213,35 @@ def write_status_page(
         body.setAttribute("opacity", up ? "0.92" : "0.82");
         svg.appendChild(body);
       }});
+
+      const emaPoints = marketEmaPoints(candles, emaPeriod);
+      if (emaPoints.length > 1) {{
+        const emaPath = document.createElementNS(ns, "path");
+        const d = emaPoints
+          .map((point, index) => {{
+            const lineX = leftPad + step * index + step / 2;
+            return (index === 0 ? "M" : "L") + lineX.toFixed(1) + " " + y(point.value).toFixed(1);
+          }})
+          .join(" ");
+        emaPath.setAttribute("d", d);
+        emaPath.setAttribute("fill", "none");
+        emaPath.setAttribute("stroke", "#d97706");
+        emaPath.setAttribute("stroke-width", "3");
+        emaPath.setAttribute("stroke-linecap", "round");
+        emaPath.setAttribute("stroke-linejoin", "round");
+        emaPath.setAttribute("class", "market-ema-line");
+        svg.appendChild(emaPath);
+
+        const emaLabel = document.createElementNS(ns, "text");
+        emaLabel.textContent = String(emaPeriod) + "EMA";
+        emaLabel.setAttribute("x", String(leftPad));
+        emaLabel.setAttribute("y", String(topPad + 4));
+        emaLabel.setAttribute("fill", "#d97706");
+        emaLabel.setAttribute("font-size", "11");
+        emaLabel.setAttribute("font-weight", "800");
+        emaLabel.setAttribute("class", "market-ema-label");
+        svg.appendChild(emaLabel);
+      }}
 
       const latest = candles[candles.length - 1];
       marketText(statusId, labelText + " candles updated at " + new Date(latest.time).toLocaleTimeString());
@@ -2333,7 +2383,7 @@ def write_status_page(
     async function refreshMarketChart(config) {{
       try {{
         const payload = await fetchMarketJson(config.url);
-        drawMarketCandles(((payload.result || {{}}).list || []), config.chartId, config.statusId, config.label);
+        drawMarketCandles(((payload.result || {{}}).list || []), config.chartId, config.statusId, config.label, config.emaPeriod);
       }} catch (error) {{
         marketText(config.statusId, "KAS/USDT " + config.label + " candles unavailable");
       }}
