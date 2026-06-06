@@ -423,6 +423,30 @@ class WatchtowerUnitTests(unittest.TestCase):
         self.assertTrue(any(check.name == "thresholds.alert_repeat_minutes" for check in checks))
         self.assertTrue(any(check.name == "recovery.mode" for check in checks))
 
+    def test_format_recovery_decision_includes_next_action(self):
+        report = {
+            "node_name": "test-node",
+            "status": "alert",
+            "severity": "critical",
+            "checks": [
+                {"name": "process", "ok": False, "detail": "not running"},
+                {"name": "rpc_tcp", "ok": False, "detail": "connect failed"},
+            ],
+        }
+
+        text = watchtower.format_recovery_decision(
+            report,
+            mode="manual",
+            restart_command=["launchctl", "kickstart", "-k", "service"],
+            force=False,
+            dry_run=True,
+        )
+
+        self.assertIn("Recovery decision:", text)
+        self.assertIn("failed_checks=process,rpc_tcp", text)
+        self.assertIn("restart_command_configured=True", text)
+        self.assertIn("review command", text)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -17,6 +17,8 @@ All notable changes to Kaspa Node Watchtower are tracked here.
 
 - Development version now reports `0.3.0-dev` after the v0.2.0 release.
 - GitHub smoke workflow now checks generated protobuf drift.
+- Recovery dry-runs now print a decision block with failed checks, restart
+  command status, and recommended next action.
 
 ## 0.2.0 - 2026-06-06
 

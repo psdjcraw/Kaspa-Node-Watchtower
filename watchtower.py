@@ -2342,6 +2342,44 @@ def report_recovery_record(config: dict, record: dict[str, Any]) -> None:
     print(f"Recovery record written: {path}")
 
 
+def format_recovery_decision(
+    report: dict[str, Any],
+    *,
+    mode: str,
+    restart_command: list[str],
+    force: bool,
+    dry_run: bool,
+) -> str:
+    failed = failed_check_names(report)
+    failed_text = ",".join(failed) if failed else "none"
+    configured = bool(restart_command)
+    if not configured:
+        next_action = "configure recovery.restart_command before recovery"
+    elif mode != "manual":
+        next_action = f"unsupported recovery mode {mode}"
+    elif report.get("severity") == "ok" and not force:
+        next_action = "skip recovery; node is healthy"
+    elif dry_run:
+        next_action = "review command and rerun without --dry-run only after approval"
+    else:
+        next_action = "execute configured restart command"
+
+    return "\n".join(
+        [
+            "Recovery decision:",
+            (
+                f"  node={report.get('node_name', 'unknown')} "
+                f"status={report.get('status', 'unknown')} "
+                f"severity={report.get('severity', 'unknown')}"
+            ),
+            f"  failed_checks={failed_text}",
+            f"  mode={mode} force={force} dry_run={dry_run}",
+            f"  restart_command_configured={configured}",
+            f"  next={next_action}",
+        ]
+    )
+
+
 def recover(config: dict, *, force: bool = False, dry_run: bool = False) -> int:
     report = build_report(config)
     recovery = config.get("recovery", {})
@@ -2358,6 +2396,15 @@ def recover(config: dict, *, force: bool = False, dry_run: bool = False) -> int:
         "dry_run": dry_run,
         "restart_command": restart_command,
     }
+    print(
+        format_recovery_decision(
+            report,
+            mode=mode,
+            restart_command=restart_command,
+            force=force,
+            dry_run=dry_run,
+        )
+    )
 
     if not restart_command:
         record.update({"action": "unavailable", "reason": "restart_command is not configured"})

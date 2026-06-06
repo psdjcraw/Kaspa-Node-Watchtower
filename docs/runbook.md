@@ -62,6 +62,10 @@ If restart is approved:
 .venv/bin/python watchtower.py -c config.json --recover
 ```
 
+Read the recovery decision block first. It should list the failed checks, show
+`restart_command_configured=True`, and recommend reviewing the command before
+running without `--dry-run`.
+
 ## `grpc_metrics` or `rpc_tcp` Failed
 
 Confirm the port:

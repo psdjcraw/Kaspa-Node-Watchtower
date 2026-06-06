@@ -317,6 +317,10 @@ Manual recovery dry-run:
 .venv/bin/python watchtower.py -c config.json --recover --dry-run
 ```
 
+Dry-run output starts with a recovery decision block that shows the node status,
+severity, failed checks, recovery mode, force/dry-run flags, whether the restart
+command is configured, and the recommended next action.
+
 Manual recovery when an alert requires it:
 
 ```bash

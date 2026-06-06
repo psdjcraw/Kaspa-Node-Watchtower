@@ -50,6 +50,7 @@ the primary source of truth.
 ## v0.4 - Operator Automation
 
 - Improve recovery dry-run output and decision support.
+  Recovery now prints a decision block before dry-run or execution.
 - Add richer diagnostics summaries for issue reports and incident review.
 - Explore external long-lived storage options beyond local SQLite.
 - Add optional report generation for daily or weekly operator summaries.

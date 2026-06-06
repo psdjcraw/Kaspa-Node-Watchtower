@@ -150,4 +150,6 @@ if [ "$recovery_status" -ne 0 ]; then
 fi
 assert_contains "$recovery_output" "Recovery command:"
 assert_contains "$recovery_output" "Recovery dry-run"
+assert_contains "$recovery_output" "Recovery decision:"
+assert_contains "$recovery_output" "failed_checks=peer_count"
 printf 'OK recovery dry-run\n'
