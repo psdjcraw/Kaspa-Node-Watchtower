@@ -18,6 +18,8 @@ All notable changes to Kaspa Node Watchtower are tracked here.
   24-hour stats, and a client-rendered 15-minute candle chart.
 - KAS/USDT 15-minute candle chart now renders X-axis time labels and Y-axis
   price labels.
+- Status dashboard now visualizes recent `Processed N blocks ... in the last
+  Ns` log entries as a blocks-per-second chart.
 
 ### Changed
 

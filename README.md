@@ -40,6 +40,8 @@ which supports a more resilient decentralized network.
 - Concise `--summary` output for quick Discord/operator status checks
 - Benchmark snapshots and reports for version/configuration comparison
 - Benchmark trend section in the generated status dashboard
+- Blocks-per-second processing chart from recent `Processed N blocks ...`
+  kaspad log entries
 - Live KAS/USDT market watch in the generated status dashboard, including
   Bybit spot price and a client-rendered 15-minute candle chart
 - Prometheus textfile metrics for local scraping or textfile collectors

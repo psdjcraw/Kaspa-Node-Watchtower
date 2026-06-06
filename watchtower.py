@@ -392,6 +392,7 @@ def build_report(config: dict) -> dict[str, Any]:
         "relay_events_in_window": 0,
         "latest_relay_age_seconds": None,
         "latest_processed": None,
+        "processed_samples": [],
     }
     if log_path.exists():
         lines = tail_lines(log_path, int(config["log_scan_bytes"]))
@@ -430,6 +431,19 @@ def build_report(config: dict) -> dict[str, Any]:
             progress["relay_blocks_in_window"] = recent_relay_blocks
             progress["relay_events_in_window"] = len(recent_relay_events)
             if processed_stats:
+                progress["processed_samples"] = [
+                    {
+                        "timestamp": item.timestamp.isoformat(),
+                        "blocks": item.blocks,
+                        "headers": item.headers,
+                        "seconds": item.seconds,
+                        "transactions": item.transactions,
+                        "blocks_per_second": None if item.seconds <= 0 else item.blocks / item.seconds,
+                        "headers_per_second": None if item.seconds <= 0 else item.headers / item.seconds,
+                        "transactions_per_second": None if item.seconds <= 0 else item.transactions / item.seconds,
+                    }
+                    for item in processed_stats[-36:]
+                ]
                 latest_processed = processed_stats[-1]
                 progress["latest_processed"] = {
                     "timestamp": latest_processed.timestamp.isoformat(),
@@ -437,6 +451,15 @@ def build_report(config: dict) -> dict[str, Any]:
                     "headers": latest_processed.headers,
                     "seconds": latest_processed.seconds,
                     "transactions": latest_processed.transactions,
+                    "blocks_per_second": None
+                    if latest_processed.seconds <= 0
+                    else latest_processed.blocks / latest_processed.seconds,
+                    "headers_per_second": None
+                    if latest_processed.seconds <= 0
+                    else latest_processed.headers / latest_processed.seconds,
+                    "transactions_per_second": None
+                    if latest_processed.seconds <= 0
+                    else latest_processed.transactions / latest_processed.seconds,
                     "line": latest_processed.line,
                 }
             min_relay_blocks = int(thresholds.get("min_relay_blocks_in_window", 1))
@@ -865,6 +888,79 @@ def severity_timeline(items: list[dict[str, Any]]) -> str:
     return '<div class="severity-timeline" aria-label="Recent severity timeline">' + "".join(segments) + "</div>"
 
 
+def processed_rate_chart(samples: list[dict[str, Any]]) -> str:
+    points = [
+        {
+            "timestamp": str(item.get("timestamp") or ""),
+            "rate": numeric(item.get("blocks_per_second")),
+        }
+        for item in samples
+    ]
+    points = [item for item in points if item["rate"] is not None]
+    if not points:
+        return '<div class="empty-chart">No processed block stats</div>'
+
+    width = 720
+    height = 164
+    left_pad = 32
+    right_pad = 66
+    top_pad = 14
+    bottom_pad = 30
+    chart_width = width - left_pad - right_pad
+    chart_height = height - top_pad - bottom_pad
+    high = max(float(item["rate"]) for item in points) or 1
+    step = chart_width / len(points)
+    bar_width = max(4, min(14, step * 0.58))
+
+    grid_parts = []
+    for ratio in [0, 0.5, 1]:
+        line_y = top_pad + chart_height * ratio
+        value = high * (1 - ratio)
+        grid_parts.append(
+            f'<line x1="{left_pad}" x2="{width - right_pad}" y1="{line_y:.1f}" y2="{line_y:.1f}" '
+            'stroke="#d9e1e8" stroke-width="1"></line>'
+        )
+        grid_parts.append(
+            f'<text x="{width - right_pad + 10}" y="{line_y + 4:.1f}" fill="#66727f" '
+            f'font-size="11" font-weight="700">{html.escape(f"{value:.1f}/s")}</text>'
+        )
+
+    bars = []
+    for index, item in enumerate(points):
+        rate = float(item["rate"])
+        bar_height = max(2, (rate / high) * chart_height)
+        x = left_pad + step * index + (step - bar_width) / 2
+        y = top_pad + chart_height - bar_height
+        bars.append(
+            f'<rect x="{x:.1f}" y="{y:.1f}" width="{bar_width:.1f}" height="{bar_height:.1f}" '
+            f'rx="2" fill="#147a46" opacity="0.88">'
+            f'<title>{html.escape(item["timestamp"])} {rate:.2f} blocks/s</title>'
+            '</rect>'
+        )
+
+    labels = []
+    label_indexes = sorted({0, len(points) // 2, len(points) - 1})
+    for index in label_indexes:
+        item = points[index]
+        parsed = parse_iso_datetime(item["timestamp"])
+        label = parsed.strftime("%H:%M:%S") if parsed else item["timestamp"][-8:]
+        x = left_pad + step * index + step / 2
+        anchor = "start" if index == 0 else "end" if index == len(points) - 1 else "middle"
+        labels.append(
+            f'<text x="{x:.1f}" y="{height - 8}" text-anchor="{anchor}" fill="#66727f" '
+            f'font-size="11" font-weight="700">{html.escape(label)}</text>'
+        )
+
+    return (
+        '<svg class="processed-chart" viewBox="0 0 720 164" role="img" '
+        'aria-label="Recent processed blocks per second">'
+        + "".join(grid_parts)
+        + "".join(bars)
+        + "".join(labels)
+        + "</svg>"
+    )
+
+
 def visual_card(label: str, value: Any, detail: str = "", tone: str = "neutral") -> str:
     return f"""<section class="v-card {html.escape(tone)}">
   <div class="v-label">{html.escape(str(label))}</div>
@@ -1045,6 +1141,18 @@ def write_status_page(
     daa_chart = sparkline_svg(history_items, "virtual_daa_score", "#3858e9")
     peer_chart = sparkline_svg(history_items, "peer_count", "#b26a00")
     severity_chart = severity_timeline(history_items)
+    latest_processed = progress.get("latest_processed") or {}
+    processed_chart = processed_rate_chart(progress.get("processed_samples") or [])
+    processed_rate = latest_processed.get("blocks_per_second")
+    processed_rate_text = "unknown" if processed_rate is None else f"{float(processed_rate):.1f}/s"
+    processed_detail = (
+        "No recent processed stats"
+        if not latest_processed
+        else (
+            f"{latest_processed.get('blocks', 'unknown')} blocks / "
+            f"{latest_processed.get('seconds', 'unknown')}s"
+        )
+    )
     check_pills = "\n".join(check_pill(check) for check in report["checks"])
     triage_items = triage_queue(report["checks"])
     severity = str(report.get("severity", "unknown"))
@@ -1290,6 +1398,7 @@ def write_status_page(
     .chart-head {{ display: flex; justify-content: space-between; gap: 10px; margin-bottom: 8px; min-width: 0; }}
     .chart-value {{ font-size: 18px; font-weight: 800; overflow-wrap: anywhere; text-align: right; }}
     .sparkline {{ width: 100%; height: 92px; display: block; }}
+    .processed-chart {{ width: 100%; height: 164px; display: block; background: #f8fafc; border-radius: 8px; }}
     .empty-chart {{ height: 92px; display: grid; place-items: center; color: var(--muted); font-size: 13px; background: #f8fafc; border-radius: 8px; }}
     .severity-timeline {{
       height: 92px;
@@ -1507,6 +1616,14 @@ def write_status_page(
         <div class="chart-head"><h2>Severity Timeline</h2><div class="chart-value">{html.escape(severity.upper())}</div></div>
         {severity_chart}
       </section>
+    </section>
+    <section class="panel">
+      <div class="chart-head">
+        <h2>Block Processing</h2>
+        <div class="chart-value">{html.escape(processed_rate_text)}</div>
+      </div>
+      <div class="subtle">{html.escape(processed_detail)}</div>
+      {processed_chart}
     </section>
     <section class="layout">
       <section class="panel">

@@ -38,6 +38,22 @@ class WatchtowerUnitTests(unittest.TestCase):
         self.assertEqual([item.blocks for item in accepted], [2, 1])
         self.assertEqual(accepted[0].timestamp.isoformat(), "2026-06-05T16:10:00+09:00")
 
+    def test_parse_processed_stats(self):
+        lines = [
+            (
+                "2026-06-06 18:02:27.389+09:00 [INFO ] Processed 92 blocks and "
+                "92 headers in the last 10.00s (1311 transactions; 34 UTXO-validated blocks)"
+            )
+        ]
+
+        stats = watchtower.parse_processed_stats(lines)
+
+        self.assertEqual(len(stats), 1)
+        self.assertEqual(stats[0].blocks, 92)
+        self.assertEqual(stats[0].headers, 92)
+        self.assertEqual(stats[0].seconds, 10.0)
+        self.assertEqual(stats[0].transactions, 1311)
+
     def test_benchmark_summary_computes_rates(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "benchmarks.jsonl"
@@ -544,6 +560,24 @@ class WatchtowerUnitTests(unittest.TestCase):
                     "relay_events_in_window": 0,
                     "window_minutes": 10,
                     "latest_relay_age_seconds": None,
+                    "latest_processed": {
+                        "timestamp": "2026-06-06T10:00:00+09:00",
+                        "blocks": 92,
+                        "headers": 92,
+                        "seconds": 10.0,
+                        "transactions": 1311,
+                        "blocks_per_second": 9.2,
+                    },
+                    "processed_samples": [
+                        {
+                            "timestamp": "2026-06-06T09:59:50+09:00",
+                            "blocks_per_second": 8.7,
+                        },
+                        {
+                            "timestamp": "2026-06-06T10:00:00+09:00",
+                            "blocks_per_second": 9.2,
+                        },
+                    ],
                 },
                 "disk": {"exists": True, "free_gb": 10, "free_percent": 2},
                 "recovery": {
@@ -585,6 +619,9 @@ class WatchtowerUnitTests(unittest.TestCase):
             self.assertIn('id="market-chart"', html)
             self.assertIn("market-axis-label", html)
             self.assertIn('hour: "2-digit"', html)
+            self.assertIn("Block Processing", html)
+            self.assertIn("9.2/s", html)
+            self.assertIn("processed-chart", html)
 
 
 if __name__ == "__main__":
