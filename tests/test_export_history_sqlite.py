@@ -44,6 +44,8 @@ class ExportHistorySqliteTests(unittest.TestCase):
                             "virtual_daa_score": 100,
                             "block_count": 200,
                             "disk_free_gb": 300,
+                            "latest_processed_transactions_per_second": 120.0,
+                            "latest_processed_age_seconds": 4.0,
                         },
                         {
                             "checked_at": "2026-06-06T10:00:00+09:00",
@@ -54,6 +56,8 @@ class ExportHistorySqliteTests(unittest.TestCase):
                             "virtual_daa_score": 160,
                             "block_count": 260,
                             "disk_free_gb": 299.5,
+                            "latest_processed_transactions_per_second": 180.0,
+                            "latest_processed_age_seconds": 12.0,
                         },
                     ],
                 )
@@ -85,6 +89,9 @@ class ExportHistorySqliteTests(unittest.TestCase):
             self.assertEqual(summary["min_disk_free_gb"], 299.5)
             self.assertEqual(summary["daa_delta"], 60)
             self.assertEqual(summary["block_delta"], 60)
+            self.assertEqual(summary["latest_processed_tx_rate"], 180.0)
+            self.assertEqual(summary["avg_processed_tx_rate"], 150.0)
+            self.assertEqual(summary["max_processed_age_seconds"], 12.0)
             self.assertEqual(summary["recovery_attempts"], 1)
             self.assertEqual(summary["recovery_dry_runs"], 1)
 
@@ -139,6 +146,28 @@ class ExportHistorySqliteTests(unittest.TestCase):
             self.assertEqual(summary["daa_delta"], 60)
             self.assertEqual(summary["block_delta"], 60)
 
+    def test_create_schema_adds_processed_columns_to_existing_database(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "history.sqlite"
+            with closing(sqlite3.connect(db_path)) as connection:
+                connection.execute(
+                    """
+                    create table benchmark_snapshots (
+                      checked_at text primary key,
+                      data_json text not null
+                    )
+                    """
+                )
+                export_history_sqlite.create_schema(connection)
+
+                columns = {
+                    row[1]
+                    for row in connection.execute("pragma table_info(benchmark_snapshots)")
+                }
+
+            self.assertIn("latest_processed_age_seconds", columns)
+            self.assertIn("latest_processed_transactions_per_second", columns)
+
     def test_export_writes_portable_archive(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -158,6 +187,8 @@ class ExportHistorySqliteTests(unittest.TestCase):
                         "virtual_daa_score": 160,
                         "block_count": 260,
                         "disk_free_gb": 299.5,
+                        "latest_processed_transactions_per_second": 131.1,
+                        "latest_processed_age_seconds": 2.5,
                     }
                 )
                 + "\n",
@@ -195,6 +226,7 @@ class ExportHistorySqliteTests(unittest.TestCase):
             summary = json.loads((target / "history-summary-7d.json").read_text(encoding="utf-8"))
             self.assertEqual(summary["benchmark_snapshots"], 1)
             self.assertEqual(summary["latest_severity"], "ok")
+            self.assertEqual(summary["latest_processed_tx_rate"], 131.1)
 
     def test_multi_node_summary_groups_each_node(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -216,6 +248,8 @@ class ExportHistorySqliteTests(unittest.TestCase):
                             "virtual_daa_score": 100,
                             "block_count": 200,
                             "disk_free_gb": 300,
+                            "latest_processed_transactions_per_second": 100.0,
+                            "latest_processed_age_seconds": 3.0,
                         },
                         {
                             "checked_at": "2026-06-06T10:00:00+09:00",
@@ -226,6 +260,8 @@ class ExportHistorySqliteTests(unittest.TestCase):
                             "virtual_daa_score": 160,
                             "block_count": 260,
                             "disk_free_gb": 299,
+                            "latest_processed_transactions_per_second": 150.0,
+                            "latest_processed_age_seconds": 5.0,
                         },
                         {
                             "checked_at": "2026-06-06T10:01:00+09:00",
@@ -236,6 +272,8 @@ class ExportHistorySqliteTests(unittest.TestCase):
                             "virtual_daa_score": 90,
                             "block_count": 190,
                             "disk_free_gb": 250,
+                            "latest_processed_transactions_per_second": 0.0,
+                            "latest_processed_age_seconds": 240.0,
                         },
                     ],
                 )
@@ -247,7 +285,10 @@ class ExportHistorySqliteTests(unittest.TestCase):
             self.assertEqual(set(by_node), {"mainnet-a", "mainnet-b"})
             self.assertEqual(by_node["mainnet-a"]["snapshots"], 2)
             self.assertEqual(by_node["mainnet-a"]["daa_delta"], 60)
+            self.assertEqual(by_node["mainnet-a"]["latest_processed_tx_rate"], 150.0)
+            self.assertEqual(by_node["mainnet-a"]["max_processed_age_seconds"], 5.0)
             self.assertEqual(by_node["mainnet-b"]["latest_severity"], "critical")
+            self.assertEqual(by_node["mainnet-b"]["max_processed_age_seconds"], 240.0)
 
 
 if __name__ == "__main__":

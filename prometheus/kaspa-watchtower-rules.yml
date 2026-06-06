@@ -84,7 +84,7 @@ groups:
           service: kaspa-watchtower
         annotations:
           summary: "Kaspa processed transaction stats are stale"
-          description: "Latest processed block/transaction stats are older than 180 seconds for node {{ $labels.node }}."
+          description: "Latest processed block/transaction stats are {{ $value }} seconds old for node {{ $labels.node }}; inspect kaspad processed-stats log output and the watchtower runbook."
 
       - alert: KaspaWatchtowerRecoveryUnavailable
         expr: increase(kaspa_watchtower_recovery_unavailable_total{job="kaspa-watchtower"}[30m]) > 0

@@ -480,15 +480,25 @@ def build_report(config: dict) -> dict[str, Any]:
             processed_stats_age = progress.get("latest_processed_age_seconds")
             require_processed_stats = bool(grpc_metrics.get("is_synced")) if grpc_metrics.get("ok") else False
             if require_processed_stats:
+                processed_ok = (
+                    processed_stats_age is not None and processed_stats_age <= processed_stats_limit
+                )
+                if processed_stats_age is None:
+                    processed_detail = (
+                        "no processed stats observed in readable kaspad log; "
+                        f"threshold={processed_stats_limit:.0f}s"
+                    )
+                else:
+                    processed_detail = (
+                        f"latest processed stats are {processed_stats_age:.1f}s old "
+                        f"(threshold={processed_stats_limit:.0f}s); "
+                        "inspect kaspad processed-stats log output"
+                    )
                 checks.append(
                     Check(
                         "processed_stats_freshness",
-                        processed_stats_age is not None and processed_stats_age <= processed_stats_limit,
-                        (
-                            "no processed stats observed"
-                            if processed_stats_age is None
-                            else f"latest processed stats are {processed_stats_age:.1f}s old"
-                        ),
+                        processed_ok,
+                        processed_detail,
                     )
                 )
             min_relay_blocks = int(thresholds.get("min_relay_blocks_in_window", 1))
@@ -749,6 +759,7 @@ def format_processed_progress(progress: dict[str, Any]) -> str:
 def history_item(report: dict[str, Any]) -> dict[str, Any]:
     grpc_metrics = report.get("grpc_metrics") or {}
     progress = report.get("progress") or {}
+    latest_processed = progress.get("latest_processed") or {}
     return {
         "checked_at": report["checked_at"],
         "status": report["status"],
@@ -763,6 +774,11 @@ def history_item(report: dict[str, Any]) -> dict[str, Any]:
         "mempool_size": grpc_metrics.get("mempool_size"),
         "network_hashes_per_second": grpc_metrics.get("network_hashes_per_second"),
         "relay_blocks_in_window": progress.get("relay_blocks_in_window"),
+        "latest_processed_age_seconds": progress.get("latest_processed_age_seconds"),
+        "latest_processed_transactions_per_second": latest_processed.get("transactions_per_second"),
+        "latest_processed_transactions": latest_processed.get("transactions"),
+        "latest_processed_blocks": latest_processed.get("blocks"),
+        "latest_processed_seconds": latest_processed.get("seconds"),
     }
 
 

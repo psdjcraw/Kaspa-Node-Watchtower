@@ -141,6 +141,30 @@ Check benchmark trend:
 .venv/bin/python watchtower.py -c config.json --benchmark-report --benchmark-limit 48
 ```
 
+## `processed_stats_freshness` Failed
+
+This warning means the node is synced, but recent `Processed N blocks ... (N transactions)`
+log entries are missing or older than `thresholds.stale_processed_stats_minutes`.
+Core node health may still be OK, but transaction-throughput telemetry is stale.
+
+Check the summary and snapshot first:
+
+```bash
+.venv/bin/python watchtower.py -c config.json --summary
+scripts/ops_snapshot.sh
+```
+
+Inspect recent processed-stats log output:
+
+```bash
+grep 'Processed .* transactions' /Users/psdjc/kaspa/rusty-kaspa-mainnet-data/kaspa-mainnet/logs/rusty-kaspa.log | tail -40
+```
+
+If relay, peers, and sync are healthy but processed stats are stale, review
+whether `kaspad` log format changed or whether the node is temporarily quiet.
+Tune `thresholds.stale_processed_stats_minutes` only after confirming the stale
+window is expected for the current network and host.
+
 ## Prometheus Target Down
 
 Check exporter:

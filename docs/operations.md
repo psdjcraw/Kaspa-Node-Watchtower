@@ -102,7 +102,7 @@ scripts/ops_snapshot.sh
 
 The snapshot prints processed transaction rate and processed-stats age from both
 the exporter endpoint and Prometheus query path, so stale transaction-throughput
-telemetry is visible without opening Grafana.
+telemetry and active watchtower alert names are visible without opening Grafana.
 
 Sanitized status examples:
 
@@ -223,7 +223,8 @@ make weekly-archive
 The export includes benchmark snapshots, upgrade checkpoints, and recovery
 attempts in `state/watchtower-history.sqlite`. The summary mode reports recent
 OK ratio, warning/critical counts, minimum peer and disk floors, DAA/block
-deltas, recovery attempts, and latest upgrade checkpoint.
+deltas, processed transaction rate, processed-stats age, recovery attempts, and
+latest upgrade checkpoint.
 Archive mode writes a portable directory with the SQLite snapshot, source JSONL
 files, summary JSON, and `manifest.json` for off-host backup.
 `make weekly-archive` prints the weekly operator report and writes a dated

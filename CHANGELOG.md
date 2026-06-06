@@ -33,6 +33,16 @@ All notable changes to Kaspa Node Watchtower are tracked here.
   processed transaction rate and processed-stats age for chat and daily reports.
 - `config.example.json` now documents `thresholds.stale_processed_stats_minutes`
   so fresh installs can tune processed-stats freshness checks explicitly.
+- Processed-stats freshness warnings now include threshold and operator action
+  detail.
+- Prometheus processed-stats stale alerts now include the observed age and
+  runbook hint in annotations.
+- `scripts/ops_snapshot.sh` now lists active watchtower alert names and states,
+  not only the alert count.
+- SQLite history export now stores and summarizes processed transaction rate and
+  processed-stats age for single-node and multi-node history reports.
+- Runbook, sample status reports, and v0.6.0 release notes now cover stale
+  processed-stats operations.
 
 ### Changed
 

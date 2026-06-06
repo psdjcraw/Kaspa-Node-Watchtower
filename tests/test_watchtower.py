@@ -70,11 +70,22 @@ class WatchtowerUnitTests(unittest.TestCase):
                 "severity": "ok",
                 "checks": [],
                 "grpc_metrics": {"mempool_size": 12},
-                "progress": {},
+                "progress": {
+                    "latest_processed_age_seconds": 2.5,
+                    "latest_processed": {
+                        "transactions_per_second": 131.1,
+                        "transactions": 1311,
+                        "blocks": 92,
+                        "seconds": 10.0,
+                    },
+                },
             }
         )
 
         self.assertEqual(item["mempool_size"], 12)
+        self.assertEqual(item["latest_processed_age_seconds"], 2.5)
+        self.assertEqual(item["latest_processed_transactions_per_second"], 131.1)
+        self.assertEqual(item["latest_processed_transactions"], 1311)
 
     def test_benchmark_summary_computes_rates(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -390,6 +401,8 @@ class WatchtowerUnitTests(unittest.TestCase):
             self.assertEqual(report["severity"], "warn")
             self.assertFalse(checks["processed_stats_freshness"]["ok"])
             self.assertIn("latest processed stats are", checks["processed_stats_freshness"]["detail"])
+            self.assertIn("threshold=180s", checks["processed_stats_freshness"]["detail"])
+            self.assertIn("inspect kaspad processed-stats log output", checks["processed_stats_freshness"]["detail"])
             self.assertGreaterEqual(report["progress"]["latest_processed_age_seconds"], 260.0)
 
     def test_unsynced_sync_progress_stall_warns(self):

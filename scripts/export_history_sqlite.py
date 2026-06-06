@@ -28,6 +28,11 @@ BENCHMARK_COLUMNS = [
     "tip_count",
     "relay_blocks_in_window",
     "relay_events_in_window",
+    "latest_processed_age_seconds",
+    "latest_processed_transactions_per_second",
+    "latest_processed_transactions",
+    "latest_processed_blocks",
+    "latest_processed_seconds",
     "disk_free_gb",
     "disk_free_percent",
     "process_resident_set_gib",
@@ -119,6 +124,11 @@ def create_schema(connection: sqlite3.Connection) -> None:
           tip_count integer,
           relay_blocks_in_window integer,
           relay_events_in_window integer,
+          latest_processed_age_seconds real,
+          latest_processed_transactions_per_second real,
+          latest_processed_transactions integer,
+          latest_processed_blocks integer,
+          latest_processed_seconds real,
           disk_free_gb real,
           disk_free_percent real,
           process_resident_set_gib real,
@@ -171,6 +181,31 @@ def create_schema(connection: sqlite3.Connection) -> None:
         );
         """
     )
+    ensure_columns(
+        connection,
+        "benchmark_snapshots",
+        {
+            "latest_processed_age_seconds": "real",
+            "latest_processed_transactions_per_second": "real",
+            "latest_processed_transactions": "integer",
+            "latest_processed_blocks": "integer",
+            "latest_processed_seconds": "real",
+        },
+    )
+
+
+def ensure_columns(connection: sqlite3.Connection, table: str, columns: dict[str, str]) -> None:
+    existing = {
+        row[1]
+        for row in connection.execute(f"pragma table_info({table})")
+    }
+    for name, column_type in columns.items():
+        if name not in existing:
+            try:
+                connection.execute(f"alter table {table} add column {name} {column_type}")
+            except sqlite3.OperationalError as exc:
+                if "duplicate column name" not in str(exc).lower():
+                    raise
 
 
 def upsert_items(
@@ -235,6 +270,12 @@ def format_gib(value: float | None) -> str:
     return f"{value:.2f} GiB"
 
 
+def format_per_second(value: float | None) -> str:
+    if value is None:
+        return "unknown"
+    return f"{format_optional_number(value)}/s"
+
+
 def safe_archive_label(label: str) -> str:
     cleaned = re.sub(r"[^A-Za-z0-9_.-]+", "-", label.strip())
     return cleaned.strip("-") or "history-archive"
@@ -264,7 +305,9 @@ def history_summary(connection: sqlite3.Connection, days: int) -> dict[str, Any]
         connection.execute(
             """
             select checked_at, node_name, status, severity, peer_count,
-                   virtual_daa_score, block_count, disk_free_gb
+                   virtual_daa_score, block_count, disk_free_gb,
+                   latest_processed_transactions_per_second,
+                   latest_processed_age_seconds
             from benchmark_snapshots
             order by checked_at
             """
@@ -282,6 +325,16 @@ def history_summary(connection: sqlite3.Connection, days: int) -> dict[str, Any]
     disks = [value for row in benchmark_window if (value := numeric(row["disk_free_gb"])) is not None]
     daa_values = [value for row in benchmark_window if (value := numeric(row["virtual_daa_score"])) is not None]
     block_values = [value for row in benchmark_window if (value := numeric(row["block_count"])) is not None]
+    processed_rates = [
+        value
+        for row in benchmark_window
+        if (value := numeric(row["latest_processed_transactions_per_second"])) is not None
+    ]
+    processed_ages = [
+        value
+        for row in benchmark_window
+        if (value := numeric(row["latest_processed_age_seconds"])) is not None
+    ]
 
     recovery_rows = list(
         connection.execute(
@@ -344,6 +397,13 @@ def history_summary(connection: sqlite3.Connection, days: int) -> dict[str, Any]
         "min_disk_free_gb": min(disks) if disks else None,
         "daa_delta": None if len(daa_values) < 2 else daa_values[-1] - daa_values[0],
         "block_delta": None if len(block_values) < 2 else block_values[-1] - block_values[0],
+        "latest_processed_tx_rate": None
+        if latest_benchmark is None
+        else numeric(latest_benchmark["latest_processed_transactions_per_second"]),
+        "avg_processed_tx_rate": None
+        if not processed_rates
+        else sum(processed_rates) / len(processed_rates),
+        "max_processed_age_seconds": max(processed_ages) if processed_ages else None,
         "recovery_attempts": len(recovery_window),
         "recovery_executed": sum(1 for row in recovery_window if not row["dry_run"]),
         "recovery_dry_runs": sum(1 for row in recovery_window if row["dry_run"]),
@@ -368,6 +428,11 @@ def summarize_benchmark_window(rows: list[sqlite3.Row], days: int) -> list[dict[
         disks = [value for row in node_rows if (value := numeric(row["disk_free_gb"])) is not None]
         daa_values = [value for row in node_rows if (value := numeric(row["virtual_daa_score"])) is not None]
         block_values = [value for row in node_rows if (value := numeric(row["block_count"])) is not None]
+        processed_ages = [
+            value
+            for row in node_rows
+            if (value := numeric(row["latest_processed_age_seconds"])) is not None
+        ]
         summaries.append(
             {
                 "node_name": node_name,
@@ -380,6 +445,10 @@ def summarize_benchmark_window(rows: list[sqlite3.Row], days: int) -> list[dict[
                 "min_disk_free_gb": min(disks) if disks else None,
                 "daa_delta": None if len(daa_values) < 2 else daa_values[-1] - daa_values[0],
                 "block_delta": None if len(block_values) < 2 else block_values[-1] - block_values[0],
+                "latest_processed_tx_rate": numeric(
+                    latest["latest_processed_transactions_per_second"]
+                ),
+                "max_processed_age_seconds": max(processed_ages) if processed_ages else None,
             }
         )
     return summaries
@@ -391,7 +460,9 @@ def multi_node_summary(connection: sqlite3.Connection, days: int) -> list[dict[s
         connection.execute(
             """
             select checked_at, node_name, status, severity, peer_count,
-                   virtual_daa_score, block_count, disk_free_gb
+                   virtual_daa_score, block_count, disk_free_gb,
+                   latest_processed_transactions_per_second,
+                   latest_processed_age_seconds
             from benchmark_snapshots
             order by checked_at
             """
@@ -413,6 +484,9 @@ def print_history_summary(summary: dict[str, Any]) -> None:
     print(f"benchmark_min_disk_free={format_gib(summary['min_disk_free_gb'])}")
     print(f"benchmark_daa_delta={format_optional_number(summary['daa_delta'])}")
     print(f"benchmark_block_delta={format_optional_number(summary['block_delta'])}")
+    print(f"processed_latest_tx_rate={format_per_second(summary['latest_processed_tx_rate'])}")
+    print(f"processed_avg_tx_rate={format_per_second(summary['avg_processed_tx_rate'])}")
+    print(f"processed_max_age_seconds={format_optional_number(summary['max_processed_age_seconds'])}")
     print(
         "recovery_attempts="
         f"{summary['recovery_attempts']} "
@@ -462,7 +536,9 @@ def print_multi_node_summary(summaries: list[dict[str, Any]], days: int) -> None
             f"min_peers={format_optional_number(item['min_peer_count'])} "
             f"min_disk={format_gib(item['min_disk_free_gb'])} "
             f"daa_delta={format_optional_number(item['daa_delta'])} "
-            f"block_delta={format_optional_number(item['block_delta'])}"
+            f"block_delta={format_optional_number(item['block_delta'])} "
+            f"processed_tx_rate={format_per_second(item['latest_processed_tx_rate'])} "
+            f"processed_max_age_seconds={format_optional_number(item['max_processed_age_seconds'])}"
         )
 
 

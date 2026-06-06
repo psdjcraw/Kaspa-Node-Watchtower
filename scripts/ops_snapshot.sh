@@ -104,7 +104,14 @@ alerts = [
     item for item in data.get("data", {}).get("alerts", [])
     if item.get("labels", {}).get("service") == "kaspa-watchtower"
 ]
-print(len(alerts))'
+if not alerts:
+    print("0")
+else:
+    names = [
+        f"{item.get('labels', {}).get('alertname', 'unknown')}({item.get('state', 'unknown')})"
+        for item in alerts
+    ]
+    print(f"{len(alerts)} " + ", ".join(names))'
 
 section "Grafana"
 status="$(curl -s -o /dev/null -w '%{http_code}' "$GRAFANA_URL$GRAFANA_DASHBOARD_PATH")"

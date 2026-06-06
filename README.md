@@ -88,6 +88,7 @@ Current target environment:
 - [Sample status reports](docs/sample-status-reports.md)
 - [Long-lived storage options](docs/storage-options.md)
 - [Packaging options](docs/packaging-options.md)
+- [v0.6.0 release notes](docs/release-notes-v0.6.0.md)
 - [v0.5.0 release notes](docs/release-notes-v0.5.0.md)
 - [v0.4.0 release notes](docs/release-notes-v0.4.0.md)
 - [v0.2.0 release notes](docs/release-notes-v0.2.0.md)
@@ -209,7 +210,8 @@ make weekly-archive
 ```
 
 This imports benchmark snapshots, upgrade checkpoints, and recovery attempts,
-then can summarize the latest history window for operator review.
+then can summarize the latest history window for operator review, including
+processed transaction rate and processed-stats freshness trends.
 `make history-archive` also writes a portable archive under
 `state/history-archives/` with the SQLite snapshot, source JSONL files, summary
 JSON, and a manifest for off-host backup or object storage upload.

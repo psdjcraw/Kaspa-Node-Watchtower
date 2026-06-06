@@ -100,6 +100,33 @@ scripts/ops_snapshot.sh
 Only run the non-dry-run recovery command after confirming the restart is
 approved.
 
+## Stale Processed Stats Warning
+
+Expected when the node is synced but recent processed block/transaction log
+entries are missing or older than the configured freshness threshold.
+
+```text
+Kaspa watchtower: kaspa-mainnet-local status=warn severity=warn
+checked_at=2026-06-06T05:10:00+09:00
+network=mainnet synced=true peers=8 active_peers=8
+relay_window=10m relay_blocks=610 relay_events=315 latest_relay_age=4s
+processed=tx_rate=18.50/s age=240s tx=185 blocks=22 window=10.0s
+failed_checks=processed_stats_freshness
+recovery_action=none
+```
+
+Recommended action:
+
+```bash
+scripts/ops_snapshot.sh
+grep 'Processed .* transactions' /path/to/rusty-kaspa.log | tail -40
+```
+
+Do not restart a healthy node only because processed transaction telemetry is
+stale. Confirm peer, relay, and sync health first, then inspect the log parser
+or tune `thresholds.stale_processed_stats_minutes` if the stale window is
+expected.
+
 ## Disk Pressure Warning
 
 Expected when the node is otherwise healthy but free disk space drops below the

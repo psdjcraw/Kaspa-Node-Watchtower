@@ -172,7 +172,7 @@ tests:
               severity: warning
             exp_annotations:
               summary: "Kaspa processed transaction stats are stale"
-              description: "Latest processed block/transaction stats are older than 180 seconds for node test."
+              description: "Latest processed block/transaction stats are 240 seconds old for node test; inspect kaspad processed-stats log output and the watchtower runbook."
 
   - interval: 1m
     input_series:
