@@ -44,6 +44,7 @@ the primary source of truth.
   `make proto-check` now verifies generated protobuf files are current.
 - Add more failure simulations for stale logs, stalled relay blocks, missing
   metrics, disk pressure, and exporter failures.
+  Exporter failure detection is now covered by `make simulate-exporter-failure`.
 - Strengthen smoke tests so regressions are caught before operator deployment.
 
 ## v0.4 - Operator Automation

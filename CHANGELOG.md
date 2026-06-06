@@ -10,6 +10,8 @@ All notable changes to Kaspa Node Watchtower are tracked here.
   surface, network-specific threshold notes, and upgrade checklist.
 - `make proto-check` and `scripts/check_generated_proto.sh` for verifying that
   checked-in generated protobuf files match `proto/*.proto`.
+- `make simulate-exporter-failure` and explicit exporter health failure
+  detection in integration checks.
 
 ### Changed
 

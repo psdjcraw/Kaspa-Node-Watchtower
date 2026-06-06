@@ -384,12 +384,13 @@ Simulation test without touching the live node:
 
 ```bash
 scripts/simulate_failures.sh
+make simulate-exporter-failure
 ```
 
 The simulation script uses temporary config/state files. It verifies peer-count
 critical alerts, relay-progress warnings, RPC critical alerts, missing gRPC
 metrics, disk pressure, stale logs, repeat suppression, recovered transitions,
-and recovery dry-run output.
+recovery dry-run output, and exporter health failure detection.
 
 ## Git Push
 

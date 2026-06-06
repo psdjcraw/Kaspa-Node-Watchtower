@@ -46,6 +46,9 @@ if [ -f "config.json" ]; then
   scripts/simulate_failures.sh >/dev/null
   ok "failure simulations"
 
+  scripts/simulate_exporter_failure.sh >/dev/null
+  ok "exporter failure simulation"
+
   ./run_watchtower.sh >/dev/null
   ok "alert wrapper"
 

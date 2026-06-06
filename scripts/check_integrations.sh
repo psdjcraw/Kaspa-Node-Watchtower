@@ -13,8 +13,14 @@ ok() {
 }
 
 check_exporter() {
-  curl -fsS "$EXPORTER_URL/-/healthy" >/dev/null
-  curl -fsS "$EXPORTER_URL/metrics" | grep -q 'kaspa_watchtower_status_ok'
+  if ! curl -fsS "$EXPORTER_URL/-/healthy" >/dev/null; then
+    printf 'FAIL exporter health endpoint unavailable: %s/-/healthy\n' "$EXPORTER_URL" >&2
+    return 1
+  fi
+  if ! curl -fsS "$EXPORTER_URL/metrics" | grep -q 'kaspa_watchtower_status_ok'; then
+    printf 'FAIL exporter metrics missing kaspa_watchtower_status_ok: %s/metrics\n' "$EXPORTER_URL" >&2
+    return 1
+  fi
   ok "exporter metrics endpoint"
 }
 
