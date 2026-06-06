@@ -578,6 +578,11 @@ class WatchtowerUnitTests(unittest.TestCase):
             self.assertIn('class="command-copy"', html)
             self.assertIn('data-copy="make recover-dry-run"', html)
             self.assertIn("Copied", html)
+            self.assertIn("KAS/USDT", html)
+            self.assertIn("KAS/USDT 15m", html)
+            self.assertIn("api.bybit.com/v5/market/tickers", html)
+            self.assertIn("api.bybit.com/v5/market/kline", html)
+            self.assertIn('id="market-chart"', html)
 
 
 if __name__ == "__main__":

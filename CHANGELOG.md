@@ -14,6 +14,8 @@ All notable changes to Kaspa Node Watchtower are tracked here.
 - `watchtower.py --incident-report` and `make incident-report` for sanitized
   Markdown incident reports.
 - `config_version` validation for future config migration checks.
+- Live KAS/USDT market watch in `status.html`, with Bybit spot price,
+  24-hour stats, and a client-rendered 15-minute candle chart.
 
 ### Changed
 

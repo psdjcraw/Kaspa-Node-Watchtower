@@ -1225,6 +1225,52 @@ def write_status_page(
       gap: 10px;
       margin-bottom: 14px;
     }}
+    .market-watch {{
+      display: grid;
+      grid-template-columns: 300px 1fr;
+      gap: 14px;
+      margin-bottom: 14px;
+    }}
+    .market-price {{
+      display: grid;
+      gap: 9px;
+      align-content: start;
+    }}
+    .market-pair {{
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }}
+    .market-source {{
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+    }}
+    .market-last {{ font-size: 34px; font-weight: 900; line-height: 1; overflow-wrap: anywhere; }}
+    .market-change {{ font-size: 14px; font-weight: 800; }}
+    .market-change.up {{ color: var(--ok); }}
+    .market-change.down {{ color: var(--critical); }}
+    .market-meta {{
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }}
+    .market-chart-head {{
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 10px;
+    }}
+    .market-chart {{
+      width: 100%;
+      height: 230px;
+      display: block;
+      background: #f8fafc;
+      border: 1px solid #edf1f6;
+      border-radius: 8px;
+    }}
+    .market-status {{ color: var(--muted); font-size: 12px; font-weight: 700; }}
     .v-card, .panel {{
       background: var(--panel);
       border: 1px solid var(--line);
@@ -1382,7 +1428,7 @@ def write_status_page(
     .panel + .panel {{ margin-top: 14px; }}
     @media (max-width: 760px) {{
       main {{ padding: 14px; }}
-      .hero-top, .hero-strip, .layout, .chart-grid, .context-grid {{ display: block; }}
+      .hero-top, .hero-strip, .layout, .chart-grid, .market-watch, .context-grid {{ display: block; }}
       .incident, .incident-facts {{ display: block; }}
       .incident-facts div {{ margin-top: 8px; }}
       .chart-head {{ display: block; }}
@@ -1390,6 +1436,7 @@ def write_status_page(
       .visual-grid {{ display: block; }}
       .badge {{ margin-top: 10px; }}
       .v-card, .panel {{ margin-bottom: 12px; }}
+      .market-meta {{ grid-template-columns: 1fr; }}
       .panel {{ overflow-x: auto; }}
       .bar-block, .context-item {{ margin-bottom: 10px; }}
     }}
@@ -1419,6 +1466,29 @@ def write_status_page(
     {incident_panel}
     <section class="visual-grid">
       {visual_cards}
+    </section>
+    <section class="market-watch">
+      <section class="panel market-price">
+        <div class="market-pair">
+          <h2>KAS/USDT</h2>
+          <span class="market-source">Bybit spot</span>
+        </div>
+        <div id="market-last" class="market-last">Loading</div>
+        <div id="market-change" class="market-change">24h change pending</div>
+        <div class="market-meta">
+          <div class="context-item"><div class="context-label">24h high</div><div id="market-high" class="context-value">unknown</div></div>
+          <div class="context-item"><div class="context-label">24h low</div><div id="market-low" class="context-value">unknown</div></div>
+          <div class="context-item"><div class="context-label">24h volume</div><div id="market-volume" class="context-value">unknown</div></div>
+          <div class="context-item"><div class="context-label">Updated</div><div id="market-updated" class="context-value">pending</div></div>
+        </div>
+      </section>
+      <section class="panel">
+        <div class="market-chart-head">
+          <h2>KAS/USDT 15m</h2>
+          <div id="market-status" class="market-status">Loading candles</div>
+        </div>
+        <svg id="market-chart" class="market-chart" viewBox="0 0 720 230" role="img" aria-label="KAS/USDT 15 minute candlestick chart"></svg>
+      </section>
     </section>
     <section class="chart-grid">
       <section class="panel">
@@ -1501,6 +1571,178 @@ def write_status_page(
     </section>
   </main>
   <script>
+    const marketConfig = {{
+      tickerUrl: "https://api.bybit.com/v5/market/tickers?category=spot&symbol=KASUSDT",
+      klineUrl: "https://api.bybit.com/v5/market/kline?category=spot&symbol=KASUSDT&interval=15&limit=32",
+    }};
+
+    function marketText(id, value) {{
+      const element = document.getElementById(id);
+      if (element) {{
+        element.textContent = value;
+      }}
+    }}
+
+    function marketNumber(value) {{
+      const parsed = Number(value);
+      return Number.isFinite(parsed) ? parsed : null;
+    }}
+
+    function formatMarketPrice(value) {{
+      const parsed = marketNumber(value);
+      if (parsed === null) {{
+        return "unknown";
+      }}
+      return "$" + parsed.toLocaleString(undefined, {{
+        minimumFractionDigits: 5,
+        maximumFractionDigits: 5,
+      }});
+    }}
+
+    function formatMarketPercent(value) {{
+      const parsed = marketNumber(value);
+      if (parsed === null) {{
+        return "unknown";
+      }}
+      return (parsed * 100).toLocaleString(undefined, {{
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      }}) + "%";
+    }}
+
+    function formatMarketVolume(value) {{
+      const parsed = marketNumber(value);
+      if (parsed === null) {{
+        return "unknown";
+      }}
+      if (parsed >= 1000000) {{
+        return (parsed / 1000000).toLocaleString(undefined, {{ maximumFractionDigits: 2 }}) + "M KAS";
+      }}
+      if (parsed >= 1000) {{
+        return (parsed / 1000).toLocaleString(undefined, {{ maximumFractionDigits: 1 }}) + "K KAS";
+      }}
+      return parsed.toLocaleString(undefined, {{ maximumFractionDigits: 2 }}) + " KAS";
+    }}
+
+    async function fetchMarketJson(url) {{
+      const response = await fetch(url, {{ cache: "no-store" }});
+      if (!response.ok) {{
+        throw new Error("HTTP " + response.status);
+      }}
+      const payload = await response.json();
+      if (payload.retCode !== 0) {{
+        throw new Error(payload.retMsg || "market API error");
+      }}
+      return payload;
+    }}
+
+    function drawMarketCandles(rows) {{
+      const svg = document.getElementById("market-chart");
+      if (!svg) {{
+        return;
+      }}
+      svg.replaceChildren();
+      const candles = rows
+        .map((row) => ({{
+          time: marketNumber(row[0]),
+          open: marketNumber(row[1]),
+          high: marketNumber(row[2]),
+          low: marketNumber(row[3]),
+          close: marketNumber(row[4]),
+        }}))
+        .filter((row) => row.open !== null && row.high !== null && row.low !== null && row.close !== null)
+        .reverse();
+      if (candles.length < 2) {{
+        marketText("market-status", "Not enough candle data");
+        return;
+      }}
+      const width = 720;
+      const height = 230;
+      const padX = 24;
+      const padY = 18;
+      const highs = candles.map((row) => row.high);
+      const lows = candles.map((row) => row.low);
+      const high = Math.max(...highs);
+      const low = Math.min(...lows);
+      const span = high - low || 1;
+      const step = (width - padX * 2) / candles.length;
+      const bodyWidth = Math.max(4, Math.min(12, step * 0.56));
+      const y = (price) => height - padY - ((price - low) / span) * (height - padY * 2);
+      const ns = "http://www.w3.org/2000/svg";
+
+      [0.25, 0.5, 0.75].forEach((ratio) => {{
+        const line = document.createElementNS(ns, "line");
+        const lineY = padY + (height - padY * 2) * ratio;
+        line.setAttribute("x1", String(padX));
+        line.setAttribute("x2", String(width - padX));
+        line.setAttribute("y1", String(lineY));
+        line.setAttribute("y2", String(lineY));
+        line.setAttribute("stroke", "#d9e1e8");
+        line.setAttribute("stroke-width", "1");
+        svg.appendChild(line);
+      }});
+
+      candles.forEach((candle, index) => {{
+        const x = padX + step * index + step / 2;
+        const up = candle.close >= candle.open;
+        const color = up ? "#147a46" : "#b42318";
+        const wick = document.createElementNS(ns, "line");
+        wick.setAttribute("x1", String(x));
+        wick.setAttribute("x2", String(x));
+        wick.setAttribute("y1", String(y(candle.high)));
+        wick.setAttribute("y2", String(y(candle.low)));
+        wick.setAttribute("stroke", color);
+        wick.setAttribute("stroke-width", "2");
+        wick.setAttribute("stroke-linecap", "round");
+        svg.appendChild(wick);
+
+        const body = document.createElementNS(ns, "rect");
+        const openY = y(candle.open);
+        const closeY = y(candle.close);
+        body.setAttribute("x", String(x - bodyWidth / 2));
+        body.setAttribute("y", String(Math.min(openY, closeY)));
+        body.setAttribute("width", String(bodyWidth));
+        body.setAttribute("height", String(Math.max(2, Math.abs(openY - closeY))));
+        body.setAttribute("rx", "2");
+        body.setAttribute("fill", color);
+        body.setAttribute("opacity", up ? "0.92" : "0.82");
+        svg.appendChild(body);
+      }});
+
+      const latest = candles[candles.length - 1];
+      marketText("market-status", "15m candles updated at " + new Date(latest.time).toLocaleTimeString());
+    }}
+
+    async function refreshMarketWatch() {{
+      try {{
+        const [tickerPayload, klinePayload] = await Promise.all([
+          fetchMarketJson(marketConfig.tickerUrl),
+          fetchMarketJson(marketConfig.klineUrl),
+        ]);
+        const ticker = ((tickerPayload.result || {{}}).list || [])[0] || {{}};
+        marketText("market-last", formatMarketPrice(ticker.lastPrice));
+        marketText("market-high", formatMarketPrice(ticker.highPrice24h));
+        marketText("market-low", formatMarketPrice(ticker.lowPrice24h));
+        marketText("market-volume", formatMarketVolume(ticker.volume24h));
+        marketText("market-updated", new Date(Number(tickerPayload.time || Date.now())).toLocaleTimeString());
+        const change = document.getElementById("market-change");
+        if (change) {{
+          const changeValue = marketNumber(ticker.price24hPcnt);
+          change.textContent = "24h " + formatMarketPercent(ticker.price24hPcnt);
+          change.classList.toggle("up", changeValue !== null && changeValue >= 0);
+          change.classList.toggle("down", changeValue !== null && changeValue < 0);
+        }}
+        drawMarketCandles(((klinePayload.result || {{}}).list || []));
+      }} catch (error) {{
+        marketText("market-last", "Unavailable");
+        marketText("market-change", "Market API unavailable");
+        marketText("market-status", "KAS/USDT 15m candles unavailable");
+      }}
+    }}
+
+    refreshMarketWatch();
+    window.setInterval(refreshMarketWatch, 30000);
+
     document.querySelectorAll(".command-copy").forEach((button) => {{
       button.addEventListener("click", async () => {{
         const command = button.dataset.copy || "";
