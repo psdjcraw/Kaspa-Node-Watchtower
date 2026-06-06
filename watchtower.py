@@ -987,6 +987,79 @@ def processed_rate_chart(samples: list[dict[str, Any]]) -> str:
     )
 
 
+def transaction_rate_chart(samples: list[dict[str, Any]]) -> str:
+    points = [
+        {
+            "timestamp": str(item.get("timestamp") or ""),
+            "rate": numeric(item.get("transactions_per_second")),
+        }
+        for item in samples
+    ]
+    points = [item for item in points if item["rate"] is not None]
+    if not points:
+        return '<div class="empty-chart">No transaction stats</div>'
+
+    width = 720
+    height = 164
+    left_pad = 32
+    right_pad = 66
+    top_pad = 14
+    bottom_pad = 30
+    chart_width = width - left_pad - right_pad
+    chart_height = height - top_pad - bottom_pad
+    high = max(float(item["rate"]) for item in points) or 1
+    step = chart_width / len(points)
+    bar_width = max(4, min(14, step * 0.58))
+
+    grid_parts = []
+    for ratio in [0, 0.5, 1]:
+        line_y = top_pad + chart_height * ratio
+        value = high * (1 - ratio)
+        grid_parts.append(
+            f'<line x1="{left_pad}" x2="{width - right_pad}" y1="{line_y:.1f}" y2="{line_y:.1f}" '
+            'stroke="#d9e1e8" stroke-width="1"></line>'
+        )
+        grid_parts.append(
+            f'<text x="{width - right_pad + 10}" y="{line_y + 4:.1f}" fill="#66727f" '
+            f'font-size="11" font-weight="700">{html.escape(f"{value:.1f}/s")}</text>'
+        )
+
+    bars = []
+    for index, item in enumerate(points):
+        rate = float(item["rate"])
+        bar_height = max(2, (rate / high) * chart_height)
+        x = left_pad + step * index + (step - bar_width) / 2
+        y = top_pad + chart_height - bar_height
+        bars.append(
+            f'<rect x="{x:.1f}" y="{y:.1f}" width="{bar_width:.1f}" height="{bar_height:.1f}" '
+            f'rx="2" fill="#a86400" opacity="0.86">'
+            f'<title>{html.escape(item["timestamp"])} {rate:.2f} tx/s</title>'
+            '</rect>'
+        )
+
+    labels = []
+    label_indexes = sorted({0, len(points) // 2, len(points) - 1})
+    for index in label_indexes:
+        item = points[index]
+        parsed = parse_iso_datetime(item["timestamp"])
+        label = parsed.strftime("%m-%d %H:%M:%S") if parsed else item["timestamp"][-14:]
+        x = left_pad + step * index + step / 2
+        anchor = "start" if index == 0 else "end" if index == len(points) - 1 else "middle"
+        labels.append(
+            f'<text x="{x:.1f}" y="{height - 8}" text-anchor="{anchor}" fill="#66727f" '
+            f'font-size="10" font-weight="700">{html.escape(label)}</text>'
+        )
+
+    return (
+        '<svg class="processed-chart" viewBox="0 0 720 164" role="img" '
+        'aria-label="Recent transactions per second">'
+        + "".join(grid_parts)
+        + "".join(bars)
+        + "".join(labels)
+        + "</svg>"
+    )
+
+
 def relay_intake_chart(samples: list[dict[str, Any]]) -> str:
     points = [
         {
@@ -1252,11 +1325,22 @@ def write_status_page(
     processed_chart = processed_rate_chart(progress.get("processed_samples") or [])
     processed_rate = latest_processed.get("blocks_per_second")
     processed_rate_text = "unknown" if processed_rate is None else f"{float(processed_rate):.1f}/s"
+    transaction_chart = transaction_rate_chart(progress.get("processed_samples") or [])
+    transaction_rate = latest_processed.get("transactions_per_second")
+    transaction_rate_text = "unknown" if transaction_rate is None else f"{float(transaction_rate):.1f}/s"
     processed_detail = (
         "No recent processed stats"
         if not latest_processed
         else (
             f"{latest_processed.get('blocks', 'unknown')} blocks / "
+            f"{latest_processed.get('seconds', 'unknown')}s"
+        )
+    )
+    transaction_detail = (
+        "No recent transaction stats"
+        if not latest_processed
+        else (
+            f"{latest_processed.get('transactions', 'unknown')} tx / "
             f"{latest_processed.get('seconds', 'unknown')}s"
         )
     )
@@ -1289,6 +1373,7 @@ def write_status_page(
             visual_card("Peers", grpc_metrics.get("peer_count", "unknown"), f"active {grpc_metrics.get('active_peers', 'unknown')}", tone_for_check(report, "peer_count")),
             visual_card("Relay", latest_relay_text, f"{compact_number(progress.get('relay_blocks_in_window'))} blocks / {progress.get('window_minutes', 'unknown')}m", tone_for_check(report, "block_progress")),
             visual_card("Sync", "synced" if sync_text is True else str(sync_text), f"network {network_text}", tone_for_check(report, "sync_status")),
+            visual_card("Tx Rate", transaction_rate_text, transaction_detail, "neutral"),
             visual_card("DAA Score", compact_number(grpc_metrics.get("virtual_daa_score")), f"tips {grpc_metrics.get('tip_count', 'unknown')}", "neutral"),
             visual_card("Hashrate", format_hashrate(grpc_metrics.get("network_hashes_per_second")), f"window {grpc_metrics.get('network_hashrate_window_size', 'unknown')}", "neutral"),
             visual_card("Disk Free", format_gib(disk.get("free_gb")), f"{disk.get('free_percent', 'unknown')}% free", tone_for_check(report, "disk_free")),
@@ -1448,7 +1533,7 @@ def write_status_page(
     .bar-fill.warn {{ background: var(--warn); }}
     .visual-grid {{
       display: grid;
-      grid-template-columns: repeat(7, minmax(0, 1fr));
+      grid-template-columns: repeat(8, minmax(0, 1fr));
       gap: 10px;
       margin-bottom: 14px;
     }}
@@ -1937,6 +2022,14 @@ def write_status_page(
       </div>
       <div class="subtle">{html.escape(processed_detail)}</div>
       {processed_chart}
+    </section>
+    <section class="panel">
+      <div class="chart-head">
+        <h2>Transaction Throughput</h2>
+        <div class="chart-value">{html.escape(transaction_rate_text)}</div>
+      </div>
+      <div class="subtle">{html.escape(transaction_detail)}</div>
+      {transaction_chart}
     </section>
     <section class="layout">
       <section class="panel">

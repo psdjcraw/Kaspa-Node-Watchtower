@@ -46,6 +46,8 @@ which supports a more resilient decentralized network.
   kaspad log entries
 - Blocks-per-second processing chart from recent `Processed N blocks ...`
   kaspad log entries
+- Transactions-per-second card and throughput chart from recent
+  `Processed N blocks ... (N transactions)` kaspad log entries
 - Mempool size history chart in the generated status dashboard
 - Estimated network hashrate card and trend chart in the generated status
   dashboard

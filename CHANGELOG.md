@@ -16,6 +16,8 @@ All notable changes to Kaspa Node Watchtower are tracked here.
   neutral, or oversold context.
 - Market watch now includes a compact Signal Watch summary for EMA cross,
   RSI extreme, and above/below EMA conditions across visible timeframes.
+- Status dashboard now includes a live transaction-rate card and transaction
+  throughput chart derived from recent processed-stats log entries.
 
 ### Changed
 

@@ -591,15 +591,18 @@ class WatchtowerUnitTests(unittest.TestCase):
                         "seconds": 10.0,
                         "transactions": 1311,
                         "blocks_per_second": 9.2,
+                        "transactions_per_second": 131.1,
                     },
                     "processed_samples": [
                         {
                             "timestamp": "2026-06-06T09:59:50+09:00",
                             "blocks_per_second": 8.7,
+                            "transactions_per_second": 127.2,
                         },
                         {
                             "timestamp": "2026-06-06T10:00:00+09:00",
                             "blocks_per_second": 9.2,
+                            "transactions_per_second": 131.1,
                         },
                     ],
                 },
@@ -730,6 +733,11 @@ class WatchtowerUnitTests(unittest.TestCase):
             self.assertIn('hour: "2-digit"', html)
             self.assertIn("Block Processing", html)
             self.assertIn("9.2/s", html)
+            self.assertIn("Tx Rate", html)
+            self.assertIn("Transaction Throughput", html)
+            self.assertIn("131.1/s", html)
+            self.assertIn("1311 tx / 10.0s", html)
+            self.assertIn("Recent transactions per second", html)
             self.assertIn("processed-chart", html)
             self.assertIn("Mempool Activity", html)
             self.assertIn("Relay Intake", html)
