@@ -2,7 +2,7 @@
 
 All notable changes to Kaspa Node Watchtower are tracked here.
 
-## Unreleased
+## 0.4.0 - 2026-06-06
 
 ### Added
 
@@ -26,7 +26,7 @@ All notable changes to Kaspa Node Watchtower are tracked here.
 
 ### Changed
 
-- Development version now reports `0.4.0-dev` for v0.4 operator automation work.
+- Version now reports `0.4.0` for the v0.4.0 release.
 - GitHub smoke workflow now checks generated protobuf drift.
 - Recovery dry-runs now print a decision block with failed checks, restart
   command status, and recommended next action.
