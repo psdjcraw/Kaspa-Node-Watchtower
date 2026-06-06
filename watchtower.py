@@ -1475,6 +1475,12 @@ def write_status_page(
       border: 1px solid #edf1f6;
       border-radius: 8px;
     }}
+    .market-timeframe-grid {{
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+      margin-bottom: 14px;
+    }}
     .market-status {{ color: var(--muted); font-size: 12px; font-weight: 700; }}
     .v-card, .panel {{
       background: var(--panel);
@@ -1634,7 +1640,7 @@ def write_status_page(
     .panel + .panel {{ margin-top: 14px; }}
     @media (max-width: 760px) {{
       main {{ padding: 14px; }}
-      .hero-top, .hero-strip, .layout, .chart-grid, .market-watch, .context-grid {{ display: block; }}
+      .hero-top, .hero-strip, .layout, .chart-grid, .market-watch, .market-timeframe-grid, .context-grid {{ display: block; }}
       .incident, .incident-facts {{ display: block; }}
       .incident-facts div {{ margin-top: 8px; }}
       .chart-head {{ display: block; }}
@@ -1694,6 +1700,22 @@ def write_status_page(
           <div id="market-status" class="market-status">Loading candles</div>
         </div>
         <svg id="market-chart" class="market-chart" viewBox="0 0 720 230" role="img" aria-label="KAS/USDT 15 minute candlestick chart"></svg>
+      </section>
+    </section>
+    <section class="market-timeframe-grid">
+      <section class="panel">
+        <div class="market-chart-head">
+          <h2>KAS/USDT 4h</h2>
+          <div id="market-status-4h" class="market-status">Loading candles</div>
+        </div>
+        <svg id="market-chart-4h" class="market-chart" viewBox="0 0 720 230" role="img" aria-label="KAS/USDT 4 hour candlestick chart"></svg>
+      </section>
+      <section class="panel">
+        <div class="market-chart-head">
+          <h2>KAS/USDT 1D</h2>
+          <div id="market-status-1d" class="market-status">Loading candles</div>
+        </div>
+        <svg id="market-chart-1d" class="market-chart" viewBox="0 0 720 230" role="img" aria-label="KAS/USDT daily candlestick chart"></svg>
       </section>
     </section>
     <section class="chart-grid">
@@ -1799,7 +1821,26 @@ def write_status_page(
   <script>
     const marketConfig = {{
       tickerUrl: "https://api.bybit.com/v5/market/tickers?category=spot&symbol=KASUSDT",
-      klineUrl: "https://api.bybit.com/v5/market/kline?category=spot&symbol=KASUSDT&interval=15&limit=32",
+      klines: [
+        {{
+          label: "15m",
+          chartId: "market-chart",
+          statusId: "market-status",
+          url: "https://api.bybit.com/v5/market/kline?category=spot&symbol=KASUSDT&interval=15&limit=32",
+        }},
+        {{
+          label: "4h",
+          chartId: "market-chart-4h",
+          statusId: "market-status-4h",
+          url: "https://api.bybit.com/v5/market/kline?category=spot&symbol=KASUSDT&interval=240&limit=32",
+        }},
+        {{
+          label: "1D",
+          chartId: "market-chart-1d",
+          statusId: "market-status-1d",
+          url: "https://api.bybit.com/v5/market/kline?category=spot&symbol=KASUSDT&interval=D&limit=32",
+        }},
+      ],
     }};
 
     function marketText(id, value) {{
@@ -1862,8 +1903,8 @@ def write_status_page(
       return payload;
     }}
 
-    function drawMarketCandles(rows) {{
-      const svg = document.getElementById("market-chart");
+    function drawMarketCandles(rows, chartId, statusId, labelText) {{
+      const svg = document.getElementById(chartId);
       if (!svg) {{
         return;
       }}
@@ -1879,7 +1920,7 @@ def write_status_page(
         .filter((row) => row.open !== null && row.high !== null && row.low !== null && row.close !== null)
         .reverse();
       if (candles.length < 2) {{
-        marketText("market-status", "Not enough candle data");
+        marketText(statusId, "Not enough candle data");
         return;
       }}
       const width = 720;
@@ -1966,15 +2007,21 @@ def write_status_page(
       }});
 
       const latest = candles[candles.length - 1];
-      marketText("market-status", "15m candles updated at " + new Date(latest.time).toLocaleTimeString());
+      marketText(statusId, labelText + " candles updated at " + new Date(latest.time).toLocaleTimeString());
+    }}
+
+    async function refreshMarketChart(config) {{
+      try {{
+        const payload = await fetchMarketJson(config.url);
+        drawMarketCandles(((payload.result || {{}}).list || []), config.chartId, config.statusId, config.label);
+      }} catch (error) {{
+        marketText(config.statusId, "KAS/USDT " + config.label + " candles unavailable");
+      }}
     }}
 
     async function refreshMarketWatch() {{
       try {{
-        const [tickerPayload, klinePayload] = await Promise.all([
-          fetchMarketJson(marketConfig.tickerUrl),
-          fetchMarketJson(marketConfig.klineUrl),
-        ]);
+        const tickerPayload = await fetchMarketJson(marketConfig.tickerUrl);
         const ticker = ((tickerPayload.result || {{}}).list || [])[0] || {{}};
         marketText("market-last", formatMarketPrice(ticker.lastPrice));
         marketText("market-high", formatMarketPrice(ticker.highPrice24h));
@@ -1988,12 +2035,11 @@ def write_status_page(
           change.classList.toggle("up", changeValue !== null && changeValue >= 0);
           change.classList.toggle("down", changeValue !== null && changeValue < 0);
         }}
-        drawMarketCandles(((klinePayload.result || {{}}).list || []));
       }} catch (error) {{
         marketText("market-last", "Unavailable");
         marketText("market-change", "Market API unavailable");
-        marketText("market-status", "KAS/USDT 15m candles unavailable");
       }}
+      await Promise.all(marketConfig.klines.map(refreshMarketChart));
     }}
 
     refreshMarketWatch();

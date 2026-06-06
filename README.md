@@ -46,7 +46,8 @@ which supports a more resilient decentralized network.
   kaspad log entries
 - Mempool size history chart in the generated status dashboard
 - Live KAS/USDT market watch in the generated status dashboard, including
-  Bybit spot price and a client-rendered 15-minute candle chart
+  Bybit spot price and client-rendered 15-minute, 4-hour, and daily candle
+  charts
 - Prometheus textfile metrics for local scraping or textfile collectors
 - Long-lived SQLite history export and operator summary reporting
 

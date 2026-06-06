@@ -23,6 +23,7 @@ All notable changes to Kaspa Node Watchtower are tracked here.
 - Status dashboard now stores and visualizes mempool size history.
 - Status dashboard now visualizes recent relay accepted-block events as a
   relay intake chart.
+- KAS/USDT market watch now includes 4-hour and daily candlestick charts.
 
 ### Changed
 
