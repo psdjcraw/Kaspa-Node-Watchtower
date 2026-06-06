@@ -1717,6 +1717,13 @@ def write_status_page(
         </div>
         <svg id="market-chart-1d" class="market-chart" viewBox="0 0 720 230" role="img" aria-label="KAS/USDT daily candlestick chart"></svg>
       </section>
+      <section class="panel">
+        <div class="market-chart-head">
+          <h2>KAS/USDT 1W</h2>
+          <div id="market-status-1w" class="market-status">Loading candles</div>
+        </div>
+        <svg id="market-chart-1w" class="market-chart" viewBox="0 0 720 230" role="img" aria-label="KAS/USDT weekly candlestick chart"></svg>
+      </section>
     </section>
     <section class="chart-grid">
       <section class="panel">
@@ -1839,6 +1846,12 @@ def write_status_page(
           chartId: "market-chart-1d",
           statusId: "market-status-1d",
           url: "https://api.bybit.com/v5/market/kline?category=spot&symbol=KASUSDT&interval=D&limit=32",
+        }},
+        {{
+          label: "1W",
+          chartId: "market-chart-1w",
+          statusId: "market-status-1w",
+          url: "https://api.bybit.com/v5/market/kline?category=spot&symbol=KASUSDT&interval=W&limit=32",
         }},
       ],
     }};
