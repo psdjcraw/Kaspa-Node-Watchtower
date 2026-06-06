@@ -648,6 +648,8 @@ class WatchtowerUnitTests(unittest.TestCase):
             self.assertIn('id="market-cross-chart"', html)
             self.assertIn("min-height: 322px", html)
             self.assertIn("drawMarketCrossChart", html)
+            self.assertIn('color: "#b42318"', html)
+            self.assertIn('color: "#2563eb"', html)
             self.assertIn("interval=240", html)
             self.assertIn("interval=D", html)
             self.assertIn("interval=W", html)

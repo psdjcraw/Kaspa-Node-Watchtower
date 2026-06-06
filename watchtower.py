@@ -1776,8 +1776,8 @@ def write_status_page(
         <div id="market-cross-status" class="market-status">Loading daily cross</div>
       </div>
       <div class="market-legend">
-        <span style="color: #147a46"><i></i>KAS/USDT</span>
-        <span style="color: #276b74"><i></i>BTC/USDT</span>
+        <span style="color: #b42318"><i></i>KAS/USDT</span>
+        <span style="color: #2563eb"><i></i>BTC/USDT</span>
       </div>
       <svg id="market-cross-chart" class="market-chart" viewBox="0 0 720 230" role="img" aria-label="KAS/USDT and BTC/USDT daily normalized comparison chart"></svg>
     </section>
@@ -1922,12 +1922,12 @@ def write_status_page(
         series: [
           {{
             label: "KAS/USDT",
-            color: "#147a46",
+            color: "#b42318",
             url: "https://api.bybit.com/v5/market/kline?category=spot&symbol=KASUSDT&interval=D&limit=32",
           }},
           {{
             label: "BTC/USDT",
-            color: "#276b74",
+            color: "#2563eb",
             url: "https://api.bybit.com/v5/market/kline?category=spot&symbol=BTCUSDT&interval=D&limit=32",
           }},
         ],

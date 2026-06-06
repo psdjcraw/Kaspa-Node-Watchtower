@@ -36,6 +36,7 @@ All notable changes to Kaspa Node Watchtower are tracked here.
 - Generated `status.html` now uses a status-first operator dashboard layout
   with incident verdict, dynamic health cards, and responsive compact panels.
 - Market watch cards now keep a consistent visual height across timeframes.
+- Market cross chart now uses red for KAS/USDT and blue for BTC/USDT.
 - Status dashboard trend area now includes a compact severity timeline for
   recent state changes.
 - Status dashboard now includes a triage queue that surfaces failed checks with
