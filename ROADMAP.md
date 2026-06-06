@@ -66,12 +66,17 @@ the primary source of truth.
 ## v0.5 - Multi-Host and Distribution Follow-Up
 
 - Draft a Homebrew formula for macOS operator installs.
+  Initial draft is in `packaging/homebrew/kaspa-node-watchtower.rb`.
 - Add an optional object-storage upload helper for history archives and
   diagnostics bundles.
+  Archive copy/upload helper is available through `make upload-archive`.
 - Explore multi-node history comparison for operators running more than one
   `kaspad` host.
+  Per-node SQLite comparison is available through `make history-multi-node`.
 - Add richer incident report export from sanitized diagnostics summaries.
+  Markdown incident reports are available through `make incident-report`.
 - Add config version checks or migration notes when defaults change.
+  `config_version` validation starts at schema version `1`.
 
 ## AI-Assisted Maintenance Opportunities
 

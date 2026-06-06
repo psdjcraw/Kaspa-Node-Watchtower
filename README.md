@@ -114,8 +114,8 @@ Validate local configuration:
 ```
 
 Validation output includes failed setting names and expected value hints so
-operators can fix local path, endpoint, threshold, and retention mistakes
-without reading the code.
+operators can fix local config version, path, endpoint, threshold, and
+retention mistakes without reading the code.
 
 The reporter reads local process state, RPC TCP reachability, direct gRPC
 metrics, data directory size/free space, and recent `kaspad` logs. It reports
@@ -145,6 +145,7 @@ Common operator commands are also available through `make`:
 make help
 make status
 make sync-report
+make incident-report
 make smoke
 make daily-report
 make weekly-report
@@ -152,7 +153,9 @@ make weekly-archive
 make ensure-exporter
 make diagnostics-archive
 make history-report
+make history-multi-node
 make history-archive
+make upload-archive ARCHIVE_SOURCE=state/history-archives/smoke ARCHIVE_TARGET=/Volumes/node-backups
 make package
 ```
 
@@ -176,7 +179,9 @@ Export history to SQLite:
 ```bash
 scripts/export_history_sqlite.py
 scripts/export_history_sqlite.py --summary --days 7
+scripts/export_history_sqlite.py --multi-node-summary --days 7
 make history-report
+make history-multi-node
 make history-archive
 make weekly-archive
 ```
@@ -188,6 +193,15 @@ then can summarize the latest history window for operator review.
 JSON, and a manifest for off-host backup or object storage upload.
 `make weekly-archive` prints the weekly report and writes a dated history
 archive in the same pass.
+`make history-multi-node` compares per-node status, severity, peer floors,
+disk floors, and DAA/block deltas from the SQLite history.
+
+Copy or upload an archive:
+
+```bash
+scripts/upload_archive.sh --source state/history-archives/smoke --target /Volumes/node-backups
+scripts/upload_archive.sh --source state/history-archives/smoke --target s3://bucket/kaspa-watchtower --dry-run
+```
 
 Build a portable release tarball:
 
@@ -283,6 +297,7 @@ Collect a local diagnostics bundle:
 
 ```bash
 make diagnostics-summary
+make incident-report
 scripts/collect_diagnostics.sh
 scripts/collect_diagnostics.sh --archive
 ```

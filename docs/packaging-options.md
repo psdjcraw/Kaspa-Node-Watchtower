@@ -102,6 +102,16 @@ Cons:
 - less useful for Linux nodes
 - still needs config bootstrap
 
+Current draft:
+
+```text
+packaging/homebrew/kaspa-node-watchtower.rb
+```
+
+The draft formula installs the release tarball, exposes `kaspa-watchtower`, and
+keeps source checkout as the recommended path for launchd, Prometheus, Grafana,
+and recovery-wrapper workflows until service installation conventions settle.
+
 ## Candidate: Container Image
 
 Use a container image when:
@@ -133,5 +143,6 @@ Practical next steps:
   as the stable install flow
 - keep generated protobuf drift checks in CI
 - use `make package` for GitHub Release assets or manual operator bundles
-- prefer Homebrew for macOS operator convenience if packaging is needed first
+- iterate on `packaging/homebrew/kaspa-node-watchtower.rb` for macOS operator
+  convenience
 - prefer a container image only for Linux or compose-native deployments

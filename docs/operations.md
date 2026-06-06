@@ -80,8 +80,11 @@ make daily-report
 make weekly-report
 make weekly-archive
 make diagnostics-archive
+make incident-report
 make history-report
+make history-multi-node
 make history-archive
+make upload-archive ARCHIVE_SOURCE=state/history-archives/smoke ARCHIVE_TARGET=/Volumes/node-backups
 make package
 ```
 
@@ -107,6 +110,7 @@ Diagnostic bundle:
 
 ```bash
 make diagnostics-summary
+make incident-report
 scripts/collect_diagnostics.sh
 scripts/collect_diagnostics.sh --archive
 ```
@@ -114,6 +118,8 @@ scripts/collect_diagnostics.sh --archive
 The diagnostics bundle starts with a sanitized incident summary that captures
 status, severity, failed checks, gRPC state, relay freshness, disk free space,
 recovery state, and a recommended next action.
+`make incident-report` prints the same signal as a sanitized Markdown report for
+issue reports or incident review.
 
 Full local smoke test:
 
@@ -160,8 +166,9 @@ Config validation:
 .venv/bin/python watchtower.py -c config.json --validate-config
 ```
 
-Validation checks paths, endpoints, recovery mode, threshold ranges, boolean
-feature flags, and retention limits. Failed checks include expected value hints
+Validation checks `config_version`, paths, endpoints, recovery mode, threshold
+ranges, boolean feature flags, and retention limits. Failed checks include
+expected value hints
 and a final failed-setting summary.
 
 Alert mode for cron:
@@ -201,8 +208,10 @@ SQLite history export:
 ```bash
 scripts/export_history_sqlite.py
 scripts/export_history_sqlite.py --summary --days 7
+scripts/export_history_sqlite.py --multi-node-summary --days 7
 scripts/export_history_sqlite.py --archive-dir state/history-archives
 make history-report
+make history-multi-node
 make history-archive
 make weekly-archive
 ```
@@ -215,6 +224,18 @@ Archive mode writes a portable directory with the SQLite snapshot, source JSONL
 files, summary JSON, and `manifest.json` for off-host backup.
 `make weekly-archive` prints the weekly operator report and writes a dated
 history archive.
+`make history-multi-node` prints a per-node comparison from the SQLite history.
+
+Archive copy/upload helper:
+
+```bash
+scripts/upload_archive.sh --source state/history-archives/smoke --target /Volumes/node-backups
+scripts/upload_archive.sh --source state/history-archives/smoke --target s3://bucket/kaspa-watchtower --dry-run
+scripts/upload_archive.sh --source state/history-archives/smoke --target remote:kaspa-watchtower --dry-run
+```
+
+Local paths and `file://` targets copy directly. `s3://` targets require the AWS
+CLI, and `remote:path` targets require `rclone`.
 
 Portable release package:
 

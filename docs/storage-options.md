@@ -79,6 +79,8 @@ Current implementation:
 make history-archive
 scripts/export_history_sqlite.py --archive-dir state/history-archives
 scripts/export_history_sqlite.py --archive-dir /Volumes/node-backups/kaspa-history --archive-label weekly-$(date +%Y-%m-%d)
+scripts/upload_archive.sh --source state/history-archives/weekly-2026-06-06 --target /Volumes/node-backups
+scripts/upload_archive.sh --source state/history-archives/weekly-2026-06-06 --target s3://bucket/kaspa-watchtower --dry-run
 ```
 
 Each archive directory contains:
@@ -90,6 +92,8 @@ Each archive directory contains:
 
 This keeps the default storage local-first while making the output easy to copy
 to NAS, object storage, or another off-host backup system.
+The upload helper supports local paths, `file://` paths, `s3://` via the AWS
+CLI, and `remote:path` via `rclone`.
 
 ## Candidate: External SQL
 
@@ -122,5 +126,6 @@ Practical next steps:
 - keep `state/watchtower-history.sqlite` in host backups
 - archive `state/diagnostics/*.tar.gz` after incidents
 - run `make history-archive` weekly and copy the archive directory off-host
+- use `make upload-archive` when a NAS, S3 bucket, or rclone remote is ready
 - use Prometheus long retention or remote write if month-scale Grafana history
   becomes important

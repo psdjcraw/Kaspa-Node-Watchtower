@@ -196,6 +196,59 @@ class ExportHistorySqliteTests(unittest.TestCase):
             self.assertEqual(summary["benchmark_snapshots"], 1)
             self.assertEqual(summary["latest_severity"], "ok")
 
+    def test_multi_node_summary_groups_each_node(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "history.sqlite"
+            with closing(sqlite3.connect(db_path)) as connection:
+                export_history_sqlite.create_schema(connection)
+                export_history_sqlite.upsert_items(
+                    connection,
+                    "benchmark_snapshots",
+                    export_history_sqlite.BENCHMARK_COLUMNS,
+                    "checked_at",
+                    [
+                        {
+                            "checked_at": "2026-06-06T09:00:00+09:00",
+                            "node_name": "mainnet-a",
+                            "status": "ok",
+                            "severity": "ok",
+                            "peer_count": 8,
+                            "virtual_daa_score": 100,
+                            "block_count": 200,
+                            "disk_free_gb": 300,
+                        },
+                        {
+                            "checked_at": "2026-06-06T10:00:00+09:00",
+                            "node_name": "mainnet-a",
+                            "status": "ok",
+                            "severity": "ok",
+                            "peer_count": 7,
+                            "virtual_daa_score": 160,
+                            "block_count": 260,
+                            "disk_free_gb": 299,
+                        },
+                        {
+                            "checked_at": "2026-06-06T10:01:00+09:00",
+                            "node_name": "mainnet-b",
+                            "status": "alert",
+                            "severity": "critical",
+                            "peer_count": 0,
+                            "virtual_daa_score": 90,
+                            "block_count": 190,
+                            "disk_free_gb": 250,
+                        },
+                    ],
+                )
+                connection.commit()
+
+                summaries = export_history_sqlite.multi_node_summary(connection, days=7)
+
+            by_node = {item["node_name"]: item for item in summaries}
+            self.assertEqual(set(by_node), {"mainnet-a", "mainnet-b"})
+            self.assertEqual(by_node["mainnet-a"]["snapshots"], 2)
+            self.assertEqual(by_node["mainnet-a"]["daa_delta"], 60)
+            self.assertEqual(by_node["mainnet-b"]["latest_severity"], "critical")
+
 
 if __name__ == "__main__":
     unittest.main()

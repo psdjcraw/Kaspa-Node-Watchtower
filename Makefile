@@ -1,7 +1,9 @@
 PYTHON ?= .venv/bin/python
 CONFIG ?= config.json
+ARCHIVE_SOURCE ?= state/history-archives
+ARCHIVE_TARGET ?=
 
-.PHONY: help bootstrap proto-check version status summary sync-report diagnostics-summary json alert smoke ci integrations simulate-exporter-failure ensure-exporter diagnostics diagnostics-archive daily-report weekly-report weekly-archive benchmark benchmark-report prometheus export-history history-report history-archive package prune validate recover-dry-run recover force-recover-dry-run
+.PHONY: help bootstrap proto-check version status summary sync-report diagnostics-summary incident-report json alert smoke ci integrations simulate-exporter-failure ensure-exporter diagnostics diagnostics-archive daily-report weekly-report weekly-archive benchmark benchmark-report prometheus export-history history-report history-multi-node history-archive upload-archive package prune validate recover-dry-run recover force-recover-dry-run
 
 help:
 	@printf 'Kaspa Node Watchtower operator commands\n'
@@ -13,6 +15,7 @@ help:
 	@printf '  make summary             Print a one-shot health summary\n'
 	@printf '  make sync-report         Print focused mainnet sync progress\n'
 	@printf '  make diagnostics-summary Print sanitized incident summary\n'
+	@printf '  make incident-report     Print sanitized Markdown incident report\n'
 	@printf '  make json                Print the raw JSON health report\n'
 	@printf '  make smoke               Run the local smoke test suite\n'
 	@printf '  make ci                  Check latest GitHub Actions smoke run\n'
@@ -29,7 +32,9 @@ help:
 	@printf '  make prometheus          Write Prometheus textfile metrics\n'
 	@printf '  make export-history      Export JSONL history to SQLite\n'
 	@printf '  make history-report      Export and summarize SQLite history\n'
+	@printf '  make history-multi-node  Export and compare per-node SQLite history\n'
 	@printf '  make history-archive     Export portable SQLite/JSONL history archive\n'
+	@printf '  make upload-archive      Upload/copy archive; set ARCHIVE_SOURCE/TARGET\n'
 	@printf '  make package             Build a portable release tarball\n'
 	@printf '  make prune               Apply retention limits\n'
 	@printf '  make validate            Validate config\n'
@@ -56,6 +61,9 @@ sync-report:
 
 diagnostics-summary:
 	@$(PYTHON) watchtower.py -c $(CONFIG) --diagnostics-summary
+
+incident-report:
+	@$(PYTHON) watchtower.py -c $(CONFIG) --incident-report
 
 json:
 	@$(PYTHON) watchtower.py -c $(CONFIG) --json
@@ -109,8 +117,15 @@ export-history:
 history-report:
 	@scripts/export_history_sqlite.py --summary
 
+history-multi-node:
+	@scripts/export_history_sqlite.py --multi-node-summary
+
 history-archive:
 	@scripts/export_history_sqlite.py --archive-dir state/history-archives
+
+upload-archive:
+	@if [ -z "$(ARCHIVE_TARGET)" ]; then printf 'Set ARCHIVE_TARGET=/path, file:///path, s3://bucket/prefix, or remote:path\n' >&2; exit 2; fi
+	@scripts/upload_archive.sh --source "$(ARCHIVE_SOURCE)" --target "$(ARCHIVE_TARGET)"
 
 package:
 	@scripts/package_release.sh

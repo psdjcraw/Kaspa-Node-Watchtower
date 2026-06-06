@@ -21,6 +21,7 @@ from typing import Any, Iterable
 VERSION = "0.5.0-dev"
 
 DEFAULT_CONFIG = {
+    "config_version": 1,
     "node_name": "kaspa-local",
     "process_match": "kaspad",
     "log_scan_bytes": 100_000_000,
@@ -467,6 +468,7 @@ def build_report(config: dict) -> dict[str, Any]:
     severity = summarize_severity(checks)
     status_text = "ok" if severity == "ok" else "alert"
     report = {
+        "config_version": config.get("config_version", DEFAULT_CONFIG["config_version"]),
         "node_name": config["node_name"],
         "status": status_text,
         "severity": severity,
@@ -1506,6 +1508,46 @@ def diagnostics_summary(config: dict) -> int:
     return 0
 
 
+def format_incident_report(report: dict[str, Any]) -> str:
+    failed = failed_check_names(report)
+    failed_text = ", ".join(failed) if failed else "none"
+    recovery = report.get("recovery") or {}
+    return "\n".join(
+        [
+            f"# Kaspa Watchtower Incident Report: {report.get('node_name', 'unknown')}",
+            "",
+            "## Verdict",
+            "",
+            f"- checked_at: `{report.get('checked_at', 'unknown')}`",
+            f"- status: `{report.get('status', 'unknown')}`",
+            f"- severity: `{report.get('severity', 'unknown')}`",
+            f"- failed_checks: `{failed_text}`",
+            f"- recovery_action: `{recovery.get('action', 'unknown')}`",
+            f"- restart_configured: `{recovery.get('restart_command_configured', 'unknown')}`",
+            "",
+            "## Sanitized Summary",
+            "",
+            "```text",
+            format_diagnostics_summary(report),
+            "```",
+            "",
+            "## Operator Notes",
+            "",
+            "- Review failed checks against local logs and dashboard state.",
+            "- Run recovery dry-run before any approved restart.",
+            "- Attach diagnostics archives only after checking them for local paths or secrets.",
+            "",
+            "sanitized: true",
+        ]
+    )
+
+
+def incident_report(config: dict) -> int:
+    report, _state = build_stateful_report(config)
+    print(format_incident_report(report))
+    return 0
+
+
 def sync_report(config: dict, *, limit: int) -> int:
     report, _state = build_stateful_report(config)
     benchmark_path = Path(config.get("benchmark_path") or DEFAULT_CONFIG["benchmark_path"])
@@ -2253,7 +2295,18 @@ def config_validation_checks(config: dict) -> list[Check]:
         recovery = {}
     restart_command = recovery.get("restart_command") or []
     recovery_mode = recovery.get("mode", DEFAULT_CONFIG["recovery"]["mode"])
+    config_version = config.get("config_version", DEFAULT_CONFIG["config_version"])
+    config_version_ok = isinstance(config_version, int) and 1 <= config_version <= DEFAULT_CONFIG["config_version"]
     checks = [
+        Check(
+            "config_version",
+            config_version_ok,
+            validation_detail(
+                config_version,
+                f"integer between 1 and {DEFAULT_CONFIG['config_version']}",
+                config_version_ok,
+            ),
+        ),
         Check(
             "node_name",
             bool(config.get("node_name")),
@@ -2532,6 +2585,7 @@ def main() -> int:
     parser.add_argument("--summary", action="store_true", help="Print a concise text health summary.")
     parser.add_argument("--sync-report", action="store_true", help="Print a focused mainnet sync progress report.")
     parser.add_argument("--diagnostics-summary", action="store_true", help="Print a sanitized diagnostics summary.")
+    parser.add_argument("--incident-report", action="store_true", help="Print a sanitized Markdown incident report.")
     parser.add_argument("--alert", action="store_true", help="Print only alert transition output and update state.")
     parser.add_argument("--recover", action="store_true", help="Run the configured manual recovery command when unhealthy.")
     parser.add_argument("--force-recover", action="store_true", help="Run recovery even when the current report is healthy.")
@@ -2556,6 +2610,8 @@ def main() -> int:
         return sync_report(config, limit=args.benchmark_limit)
     if args.diagnostics_summary:
         return diagnostics_summary(config)
+    if args.incident_report:
+        return incident_report(config)
     if args.alert:
         return alert(config)
     if args.recover:

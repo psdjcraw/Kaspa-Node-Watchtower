@@ -353,6 +353,53 @@ def history_summary(connection: sqlite3.Connection, days: int) -> dict[str, Any]
     }
 
 
+def summarize_benchmark_window(rows: list[sqlite3.Row], days: int) -> list[dict[str, Any]]:
+    window = latest_window(rows, days)
+    by_node: dict[str, list[sqlite3.Row]] = {}
+    for row in window:
+        node_name = row["node_name"] or "unknown"
+        by_node.setdefault(node_name, []).append(row)
+    summaries = []
+    for node_name in sorted(by_node):
+        node_rows = by_node[node_name]
+        latest = node_rows[-1]
+        ok_count = sum(1 for row in node_rows if row["severity"] == "ok" and row["status"] == "ok")
+        peers = [value for row in node_rows if (value := numeric(row["peer_count"])) is not None]
+        disks = [value for row in node_rows if (value := numeric(row["disk_free_gb"])) is not None]
+        daa_values = [value for row in node_rows if (value := numeric(row["virtual_daa_score"])) is not None]
+        block_values = [value for row in node_rows if (value := numeric(row["block_count"])) is not None]
+        summaries.append(
+            {
+                "node_name": node_name,
+                "snapshots": len(node_rows),
+                "latest_checked_at": latest["checked_at"],
+                "latest_status": latest["status"],
+                "latest_severity": latest["severity"],
+                "ok_ratio": None if not node_rows else ok_count / len(node_rows),
+                "min_peer_count": min(peers) if peers else None,
+                "min_disk_free_gb": min(disks) if disks else None,
+                "daa_delta": None if len(daa_values) < 2 else daa_values[-1] - daa_values[0],
+                "block_delta": None if len(block_values) < 2 else block_values[-1] - block_values[0],
+            }
+        )
+    return summaries
+
+
+def multi_node_summary(connection: sqlite3.Connection, days: int) -> list[dict[str, Any]]:
+    connection.row_factory = sqlite3.Row
+    rows = list(
+        connection.execute(
+            """
+            select checked_at, node_name, status, severity, peer_count,
+                   virtual_daa_score, block_count, disk_free_gb
+            from benchmark_snapshots
+            order by checked_at
+            """
+        )
+    )
+    return summarize_benchmark_window(rows, days)
+
+
 def print_history_summary(summary: dict[str, Any]) -> None:
     print("== History Summary ==")
     print(f"window_days={summary['window_days']}")
@@ -394,6 +441,29 @@ def print_history_summary(summary: dict[str, Any]) -> None:
         )
     else:
         print("latest_upgrade=none")
+
+
+def print_multi_node_summary(summaries: list[dict[str, Any]], days: int) -> None:
+    print("== Multi-Node History Summary ==")
+    print(f"window_days={days}")
+    if not summaries:
+        print("nodes=0")
+        return
+    print(f"nodes={len(summaries)}")
+    for item in summaries:
+        print(
+            "node="
+            f"{item['node_name']} "
+            f"snapshots={item['snapshots']} "
+            f"latest={item['latest_checked_at']} "
+            f"status={item['latest_status']} "
+            f"severity={item['latest_severity']} "
+            f"ok_ratio={format_ratio(item['ok_ratio'])} "
+            f"min_peers={format_optional_number(item['min_peer_count'])} "
+            f"min_disk={format_gib(item['min_disk_free_gb'])} "
+            f"daa_delta={format_optional_number(item['daa_delta'])} "
+            f"block_delta={format_optional_number(item['block_delta'])}"
+        )
 
 
 def copy_if_exists(source: Path, target_dir: Path, target_name: str) -> str | None:
@@ -481,6 +551,7 @@ def export(args: argparse.Namespace) -> int:
         upgrade_count = table_count(connection, "upgrade_checkpoints")
         recovery_count = table_count(connection, "recovery_attempts")
         summary = history_summary(connection, args.days) if args.summary or args.archive_dir else None
+        node_summary = multi_node_summary(connection, args.days) if getattr(args, "multi_node_summary", False) else None
 
     counts = {
         "benchmark_snapshots": benchmark_count,
@@ -513,6 +584,9 @@ def export(args: argparse.Namespace) -> int:
     if args.summary and summary is not None:
         print()
         print_history_summary(summary)
+    if getattr(args, "multi_node_summary", False) and node_summary is not None:
+        print()
+        print_multi_node_summary(node_summary, args.days)
     return 0
 
 
@@ -523,6 +597,7 @@ def main() -> int:
     parser.add_argument("--upgrades", type=Path, default=Path("state/upgrade-checkpoints.jsonl"))
     parser.add_argument("--recovery", type=Path, default=Path("state/recovery-history.jsonl"))
     parser.add_argument("--summary", action="store_true", help="Print an operator summary from the SQLite history.")
+    parser.add_argument("--multi-node-summary", action="store_true", help="Print per-node history summaries from SQLite.")
     parser.add_argument("--days", type=int, default=7, help="History summary window in days.")
     parser.add_argument(
         "--archive-dir",

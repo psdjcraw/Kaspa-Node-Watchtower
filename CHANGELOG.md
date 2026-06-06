@@ -4,6 +4,17 @@ All notable changes to Kaspa Node Watchtower are tracked here.
 
 ## Unreleased
 
+### Added
+
+- Homebrew formula draft under `packaging/homebrew/` for macOS install planning.
+- `scripts/upload_archive.sh` and `make upload-archive` for local, S3, or
+  rclone-backed archive copy/upload flows.
+- `scripts/export_history_sqlite.py --multi-node-summary` and
+  `make history-multi-node` for per-node SQLite history comparison.
+- `watchtower.py --incident-report` and `make incident-report` for sanitized
+  Markdown incident reports.
+- `config_version` validation for future config migration checks.
+
 ### Changed
 
 - Development version now reports `0.5.0-dev` after the v0.4.0 release.

@@ -31,6 +31,13 @@ test -s "$TMP_DIR/dist/kaspa-node-watchtower-smoke.tar.gz.sha256"
 tar -tzf "$TMP_DIR/dist/kaspa-node-watchtower-smoke.tar.gz" | grep -q 'PACKAGE-MANIFEST.json'
 ok "release package"
 
+if command -v ruby >/dev/null 2>&1; then
+  ruby -c packaging/homebrew/kaspa-node-watchtower.rb >/dev/null
+  ok "Homebrew formula syntax"
+else
+  ok "Homebrew formula syntax skipped"
+fi
+
 python3 -m json.tool grafana/kaspa-watchtower.json >/dev/null
 ok "Grafana dashboard JSON"
 
@@ -46,6 +53,9 @@ if [ -f "config.json" ]; then
 
   "$PYTHON_BIN" watchtower.py -c config.json --diagnostics-summary >/dev/null
   ok "diagnostics summary"
+
+  "$PYTHON_BIN" watchtower.py -c config.json --incident-report >/dev/null
+  ok "incident report"
 
   "$PYTHON_BIN" watchtower.py -c config.json --prometheus >/dev/null
   test -s state/watchtower.prom
@@ -82,8 +92,11 @@ if [ -f "config.json" ]; then
   scripts/export_history_sqlite.py >/dev/null
   test -s state/watchtower-history.sqlite
   scripts/export_history_sqlite.py --summary --days 7 >/dev/null
+  scripts/export_history_sqlite.py --multi-node-summary --days 7 >/dev/null
   scripts/export_history_sqlite.py --archive-dir state/history-archives --archive-label smoke >/dev/null
   test -s state/history-archives/smoke/manifest.json
+  scripts/upload_archive.sh --source state/history-archives/smoke --target "$TMP_DIR/uploaded" >/dev/null
+  test -s "$TMP_DIR/uploaded/smoke/manifest.json"
   "$PYTHON_BIN" - <<'PY'
 import sqlite3
 

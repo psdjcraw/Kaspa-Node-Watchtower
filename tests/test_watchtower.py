@@ -400,6 +400,19 @@ class WatchtowerUnitTests(unittest.TestCase):
             self.assertIn("expected number between 0 and 100", failed["thresholds.disk_free_percent_min"])
             self.assertIn("expected integer > 0", failed["retention.benchmark_entries"])
 
+    def test_config_validation_rejects_unsupported_config_version(self):
+        config = copy.deepcopy(watchtower.DEFAULT_CONFIG)
+        config["config_version"] = 999
+
+        failed = {
+            check.name: check.detail
+            for check in watchtower.config_validation_checks(config)
+            if not check.ok
+        }
+
+        self.assertIn("config_version", failed)
+        self.assertIn("expected integer between 1 and 1", failed["config_version"])
+
     def test_validate_config_prints_failed_summary(self):
         config = copy.deepcopy(watchtower.DEFAULT_CONFIG)
         config["node_name"] = ""
@@ -481,6 +494,29 @@ class WatchtowerUnitTests(unittest.TestCase):
         self.assertIn("failed_checks=rpc_tcp", text)
         self.assertIn("next=review failed checks", text)
         self.assertIn("sanitized=true", text)
+
+    def test_format_incident_report_is_markdown_and_sanitized(self):
+        report = {
+            "node_name": "test-node",
+            "checked_at": "2026-06-06T10:00:00+09:00",
+            "status": "alert",
+            "severity": "critical",
+            "checks": [{"name": "rpc_tcp", "ok": False, "detail": "connect failed"}],
+            "grpc_metrics": {"network_id": "mainnet"},
+            "progress": {},
+            "disk": {},
+            "recovery": {
+                "action": "manual_approval_required",
+                "restart_command_configured": True,
+            },
+        }
+
+        text = watchtower.format_incident_report(report)
+
+        self.assertIn("# Kaspa Watchtower Incident Report: test-node", text)
+        self.assertIn("- failed_checks: `rpc_tcp`", text)
+        self.assertIn("## Sanitized Summary", text)
+        self.assertIn("sanitized: true", text)
 
 
 if __name__ == "__main__":
