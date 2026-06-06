@@ -447,6 +447,41 @@ class WatchtowerUnitTests(unittest.TestCase):
         self.assertIn("restart_command_configured=True", text)
         self.assertIn("review command", text)
 
+    def test_format_diagnostics_summary_is_sanitized(self):
+        report = {
+            "node_name": "test-node",
+            "checked_at": "2026-06-06T10:00:00+09:00",
+            "status": "alert",
+            "severity": "critical",
+            "checks": [{"name": "rpc_tcp", "ok": False, "detail": "connect failed"}],
+            "grpc_metrics": {
+                "network_id": "mainnet",
+                "is_synced": False,
+                "peer_count": 0,
+                "active_peers": 0,
+                "virtual_daa_score": 100,
+            },
+            "progress": {
+                "relay_blocks_in_window": 0,
+                "relay_events_in_window": 0,
+                "window_minutes": 10,
+                "latest_relay_age_seconds": None,
+            },
+            "disk": {"exists": True, "free_gb": 10, "free_percent": 2},
+            "recovery": {
+                "action": "manual_approval_required",
+                "mode": "manual",
+                "restart_command_configured": True,
+            },
+        }
+
+        text = watchtower.format_diagnostics_summary(report)
+
+        self.assertIn("Kaspa diagnostics summary: test-node", text)
+        self.assertIn("failed_checks=rpc_tcp", text)
+        self.assertIn("next=review failed checks", text)
+        self.assertIn("sanitized=true", text)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1447,6 +1447,65 @@ def format_sync_report(report: dict[str, Any], benchmark_summary: dict[str, Any]
     )
 
 
+def format_diagnostics_summary(report: dict[str, Any]) -> str:
+    grpc_metrics = report.get("grpc_metrics") or {}
+    progress = report.get("progress") or {}
+    disk = report.get("disk") or {}
+    recovery = report.get("recovery") or {}
+    failed = failed_check_names(report)
+    failed_text = ",".join(failed) if failed else "none"
+    severity = report.get("severity", "unknown")
+    if severity == "ok":
+        next_action = "no immediate action"
+    elif severity == "critical":
+        next_action = "review failed checks and run recovery dry-run before approved restart"
+    else:
+        next_action = "inspect warning checks and confirm trend before recovery"
+    latest_relay_age = progress.get("latest_relay_age_seconds")
+    latest_relay_age_text = "unknown" if latest_relay_age is None else f"{latest_relay_age}s"
+    disk_text = "unknown"
+    if disk.get("exists"):
+        disk_text = f"{disk.get('free_gb')} GiB ({disk.get('free_percent')}%)"
+    return "\n".join(
+        [
+            f"Kaspa diagnostics summary: {report.get('node_name', 'unknown')}",
+            f"checked_at={report.get('checked_at', 'unknown')}",
+            f"status={report.get('status', 'unknown')} severity={severity}",
+            f"failed_checks={failed_text}",
+            (
+                "grpc="
+                f"network={grpc_metrics.get('network_id', 'unknown')} "
+                f"synced={grpc_metrics.get('is_synced', 'unknown')} "
+                f"peers={grpc_metrics.get('peer_count', 'unknown')} "
+                f"active={grpc_metrics.get('active_peers', 'unknown')} "
+                f"daa={grpc_metrics.get('virtual_daa_score', 'unknown')}"
+            ),
+            (
+                "relay="
+                f"{progress.get('relay_blocks_in_window', 0)} blocks / "
+                f"{progress.get('relay_events_in_window', 0)} events in "
+                f"{progress.get('window_minutes', 'unknown')}m "
+                f"latest_age={latest_relay_age_text}"
+            ),
+            f"disk_free={disk_text}",
+            (
+                "recovery="
+                f"action={recovery.get('action', 'unknown')} "
+                f"mode={recovery.get('mode', 'unknown')} "
+                f"restart_configured={recovery.get('restart_command_configured', 'unknown')}"
+            ),
+            f"next={next_action}",
+            "sanitized=true",
+        ]
+    )
+
+
+def diagnostics_summary(config: dict) -> int:
+    report, _state = build_stateful_report(config)
+    print(format_diagnostics_summary(report))
+    return 0
+
+
 def sync_report(config: dict, *, limit: int) -> int:
     report, _state = build_stateful_report(config)
     benchmark_path = Path(config.get("benchmark_path") or DEFAULT_CONFIG["benchmark_path"])
@@ -2472,6 +2531,7 @@ def main() -> int:
     parser.add_argument("--json", action="store_true", help="Print a JSON health report.")
     parser.add_argument("--summary", action="store_true", help="Print a concise text health summary.")
     parser.add_argument("--sync-report", action="store_true", help="Print a focused mainnet sync progress report.")
+    parser.add_argument("--diagnostics-summary", action="store_true", help="Print a sanitized diagnostics summary.")
     parser.add_argument("--alert", action="store_true", help="Print only alert transition output and update state.")
     parser.add_argument("--recover", action="store_true", help="Run the configured manual recovery command when unhealthy.")
     parser.add_argument("--force-recover", action="store_true", help="Run recovery even when the current report is healthy.")
@@ -2494,6 +2554,8 @@ def main() -> int:
         return 0 if report["status"] == "ok" else 1
     if args.sync_report:
         return sync_report(config, limit=args.benchmark_limit)
+    if args.diagnostics_summary:
+        return diagnostics_summary(config)
     if args.alert:
         return alert(config)
     if args.recover:

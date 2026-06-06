@@ -102,9 +102,14 @@ docs/sample-status-reports.md
 Diagnostic bundle:
 
 ```bash
+make diagnostics-summary
 scripts/collect_diagnostics.sh
 scripts/collect_diagnostics.sh --archive
 ```
+
+The diagnostics bundle starts with a sanitized incident summary that captures
+status, severity, failed checks, gRPC state, relay freshness, disk free space,
+recovery state, and a recommended next action.
 
 Full local smoke test:
 
@@ -141,6 +146,7 @@ Concise operator summary:
 ```bash
 .venv/bin/python watchtower.py -c config.json --summary
 .venv/bin/python watchtower.py -c config.json --sync-report
+.venv/bin/python watchtower.py -c config.json --diagnostics-summary
 ```
 
 Config validation:

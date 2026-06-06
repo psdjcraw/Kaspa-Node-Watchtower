@@ -94,6 +94,7 @@ For a concise operator summary:
 ```bash
 .venv/bin/python watchtower.py -c config.json --summary
 .venv/bin/python watchtower.py -c config.json --sync-report
+make diagnostics-summary
 ```
 
 Print the watchtower version:
@@ -256,6 +257,7 @@ failure detection.
 Collect a local diagnostics bundle:
 
 ```bash
+make diagnostics-summary
 scripts/collect_diagnostics.sh
 scripts/collect_diagnostics.sh --archive
 ```

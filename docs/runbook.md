@@ -11,9 +11,13 @@ scripts/ops_snapshot.sh
 Collect diagnostics:
 
 ```bash
+make diagnostics-summary
 scripts/collect_diagnostics.sh
 scripts/collect_diagnostics.sh --archive
 ```
+
+Start with the diagnostics summary. It is sanitized for issue review and shows
+the current failed checks plus the next recommended action.
 
 Then run the full smoke test:
 

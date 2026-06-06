@@ -36,6 +36,9 @@ if [ -f "config.json" ]; then
   "$PYTHON_BIN" watchtower.py -c config.json --summary >/dev/null
   ok "watchtower summary"
 
+  "$PYTHON_BIN" watchtower.py -c config.json --diagnostics-summary >/dev/null
+  ok "diagnostics summary"
+
   "$PYTHON_BIN" watchtower.py -c config.json --prometheus >/dev/null
   test -s state/watchtower.prom
   ok "Prometheus textfile"

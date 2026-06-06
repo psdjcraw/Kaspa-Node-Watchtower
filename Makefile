@@ -1,7 +1,7 @@
 PYTHON ?= .venv/bin/python
 CONFIG ?= config.json
 
-.PHONY: help bootstrap proto-check version status summary sync-report json alert smoke ci integrations simulate-exporter-failure ensure-exporter diagnostics diagnostics-archive daily-report benchmark benchmark-report prometheus export-history history-report prune validate recover-dry-run recover force-recover-dry-run
+.PHONY: help bootstrap proto-check version status summary sync-report diagnostics-summary json alert smoke ci integrations simulate-exporter-failure ensure-exporter diagnostics diagnostics-archive daily-report benchmark benchmark-report prometheus export-history history-report prune validate recover-dry-run recover force-recover-dry-run
 
 help:
 	@printf 'Kaspa Node Watchtower operator commands\n'
@@ -12,6 +12,7 @@ help:
 	@printf '  make status              Run the cron-style health check\n'
 	@printf '  make summary             Print a one-shot health summary\n'
 	@printf '  make sync-report         Print focused mainnet sync progress\n'
+	@printf '  make diagnostics-summary Print sanitized incident summary\n'
 	@printf '  make json                Print the raw JSON health report\n'
 	@printf '  make smoke               Run the local smoke test suite\n'
 	@printf '  make ci                  Check latest GitHub Actions smoke run\n'
@@ -48,6 +49,9 @@ summary:
 
 sync-report:
 	@$(PYTHON) watchtower.py -c $(CONFIG) --sync-report
+
+diagnostics-summary:
+	@$(PYTHON) watchtower.py -c $(CONFIG) --diagnostics-summary
 
 json:
 	@$(PYTHON) watchtower.py -c $(CONFIG) --json

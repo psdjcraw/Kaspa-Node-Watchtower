@@ -12,6 +12,8 @@ All notable changes to Kaspa Node Watchtower are tracked here.
   checked-in generated protobuf files match `proto/*.proto`.
 - `make simulate-exporter-failure` and explicit exporter health failure
   detection in integration checks.
+- `make diagnostics-summary` and a sanitized incident summary at the top of
+  diagnostics bundles.
 
 ### Changed
 

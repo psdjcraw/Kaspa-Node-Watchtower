@@ -52,6 +52,7 @@ the primary source of truth.
 - Improve recovery dry-run output and decision support.
   Recovery now prints a decision block before dry-run or execution.
 - Add richer diagnostics summaries for issue reports and incident review.
+  Diagnostics now start with a sanitized incident summary.
 - Explore external long-lived storage options beyond local SQLite.
 - Add optional report generation for daily or weekly operator summaries.
 - Evaluate packaging options for easier deployment on common node hosts.

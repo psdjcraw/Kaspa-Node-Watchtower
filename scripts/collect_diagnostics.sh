@@ -56,6 +56,7 @@ run_section() {
   printf 'host=%s\n' "$(hostname)"
   printf 'user=%s\n' "$(id -un)"
 
+  run_section "Incident Summary" "$PYTHON_BIN" watchtower.py -c config.json --diagnostics-summary
   run_section "Git Revision" git log -1 --oneline
   run_section "Git Status" git status --short --branch
   run_section "Config Validation" "$PYTHON_BIN" watchtower.py -c config.json --validate-config
