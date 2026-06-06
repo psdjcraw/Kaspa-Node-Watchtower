@@ -1484,6 +1484,32 @@ def write_status_page(
       grid-template-columns: 1fr 1fr;
       gap: 8px;
     }}
+    .market-signal-watch {{
+      display: grid;
+      gap: 7px;
+    }}
+    .market-signal-list {{
+      display: grid;
+      gap: 6px;
+    }}
+    .market-signal-row {{
+      display: grid;
+      grid-template-columns: 38px 1fr;
+      gap: 8px;
+      align-items: center;
+      min-height: 28px;
+      padding: 6px 8px;
+      border: 1px solid #edf1f6;
+      border-radius: 8px;
+      background: #f8fafc;
+      font-size: 12px;
+      font-weight: 800;
+    }}
+    .market-signal-row span:first-child {{ color: var(--muted); }}
+    .market-signal-row.up {{ background: var(--ok-soft); border-color: #b9e3ca; color: var(--ok); }}
+    .market-signal-row.down {{ background: var(--critical-soft); border-color: #f1b8b2; color: var(--critical); }}
+    .market-signal-row.warn {{ background: #fff7ed; border-color: #fed7aa; color: #b26a00; }}
+    .market-signal-row.cool {{ background: #ecfeff; border-color: #a5f3fc; color: #276b74; }}
     .market-chart-head {{
       display: flex;
       align-items: flex-start;
@@ -1794,6 +1820,12 @@ def write_status_page(
           <div class="context-item"><div class="context-label">24h volume</div><div id="market-volume" class="context-value">unknown</div></div>
           <div class="context-item"><div class="context-label">Updated</div><div id="market-updated" class="context-value">pending</div></div>
         </div>
+        <div class="market-signal-watch">
+          <div class="context-label">Signal Watch</div>
+          <div id="market-signal-list" class="market-signal-list">
+            <div class="market-signal-row"><span>all</span><strong>Waiting for candles</strong></div>
+          </div>
+        </div>
       </section>
       <section class="panel">
         <div class="market-chart-head">
@@ -2052,6 +2084,7 @@ def write_status_page(
         ],
       }},
     }};
+    const marketSignals = new Map();
 
     function marketText(id, value) {{
       const element = document.getElementById(id);
@@ -2341,6 +2374,56 @@ def write_status_page(
       element.className = "market-rsi-badge" + (state.tone ? " " + state.tone : "");
     }}
 
+    function marketSignalState(candles, emaPoints, rsiValue) {{
+      if (candles.length < 2 || emaPoints.length < 2) {{
+        return {{ tone: "", text: "Waiting for candles" }};
+      }}
+      const latest = candles[candles.length - 1];
+      const previous = candles[candles.length - 2];
+      const latestEma = emaPoints[emaPoints.length - 1].value;
+      const previousEma = emaPoints[emaPoints.length - 2].value;
+      if (previous.close <= previousEma && latest.close > latestEma) {{
+        return {{ tone: "up", text: "EMA cross up" }};
+      }}
+      if (previous.close >= previousEma && latest.close < latestEma) {{
+        return {{ tone: "down", text: "EMA cross down" }};
+      }}
+      if (rsiValue !== null && rsiValue >= 70) {{
+        return {{ tone: "warn", text: "RSI overbought" }};
+      }}
+      if (rsiValue !== null && rsiValue <= 30) {{
+        return {{ tone: "cool", text: "RSI oversold" }};
+      }}
+      if (latest.close >= latestEma) {{
+        return {{ tone: "", text: "Above EMA" }};
+      }}
+      return {{ tone: "", text: "Below EMA" }};
+    }}
+
+    function marketSignalWatch(label, state) {{
+      marketSignals.set(label, state);
+      const list = document.getElementById("market-signal-list");
+      if (!list) {{
+        return;
+      }}
+      list.replaceChildren();
+      marketConfig.klines.forEach((config) => {{
+        const signal = marketSignals.get(config.label) || {{ tone: "", text: "Waiting for candles" }};
+        const row = document.createElement("div");
+        row.className = "market-signal-row" + (signal.tone ? " " + signal.tone : "");
+
+        const labelElement = document.createElement("span");
+        labelElement.textContent = config.label;
+        row.appendChild(labelElement);
+
+        const textElement = document.createElement("strong");
+        textElement.textContent = signal.text;
+        row.appendChild(textElement);
+
+        list.appendChild(row);
+      }});
+    }}
+
     function marketPad2(value) {{
       return String(value).padStart(2, "0");
     }}
@@ -2378,6 +2461,7 @@ def write_status_page(
         marketText(statusId, "Not enough candle data");
         marketTrendBadge(trendId, {{ tone: "", text: "Trend pending", detail: "Not enough candle data" }});
         marketRsiBadge(rsiId, {{ tone: "", text: "RSI pending", detail: "Not enough candle data" }});
+        marketSignalWatch(labelText, {{ tone: "", text: "Not enough data" }});
         return;
       }}
       const width = 720;
@@ -2493,6 +2577,7 @@ def write_status_page(
       }}
       marketTrendBadge(trendId, marketTrendState(candles, emaPoints));
       marketRsiBadge(rsiId, marketRsiState(candles, 14));
+      marketSignalWatch(labelText, marketSignalState(candles, emaPoints, marketRsiValue(candles, 14)));
 
       const latest = candles[candles.length - 1];
       marketText(statusId, labelText + " candles updated at " + new Date(latest.time).toLocaleTimeString());
@@ -2634,6 +2719,7 @@ def write_status_page(
         marketText(config.statusId, "KAS/USDT " + config.label + " candles unavailable");
         marketTrendBadge(config.trendId, {{ tone: "", text: "Trend pending", detail: "Market candles unavailable" }});
         marketRsiBadge(config.rsiId, {{ tone: "", text: "RSI pending", detail: "Market candles unavailable" }});
+        marketSignalWatch(config.label, {{ tone: "", text: "Unavailable" }});
       }}
     }}
 

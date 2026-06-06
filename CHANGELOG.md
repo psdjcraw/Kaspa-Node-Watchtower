@@ -14,6 +14,8 @@ All notable changes to Kaspa Node Watchtower are tracked here.
   position versus EMA and recent EMA slope.
 - KAS/USDT timeframe charts now show RSI 14 badges for quick overbought,
   neutral, or oversold context.
+- Market watch now includes a compact Signal Watch summary for EMA cross,
+  RSI extreme, and above/below EMA conditions across visible timeframes.
 
 ### Changed
 
