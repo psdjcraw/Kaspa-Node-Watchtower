@@ -79,6 +79,7 @@ make smoke
 make daily-report
 make diagnostics-archive
 make history-report
+make history-archive
 ```
 
 GitHub Actions smoke status:
@@ -197,13 +198,17 @@ SQLite history export:
 ```bash
 scripts/export_history_sqlite.py
 scripts/export_history_sqlite.py --summary --days 7
+scripts/export_history_sqlite.py --archive-dir state/history-archives
 make history-report
+make history-archive
 ```
 
 The export includes benchmark snapshots, upgrade checkpoints, and recovery
 attempts in `state/watchtower-history.sqlite`. The summary mode reports recent
 OK ratio, warning/critical counts, minimum peer and disk floors, DAA/block
 deltas, recovery attempts, and latest upgrade checkpoint.
+Archive mode writes a portable directory with the SQLite snapshot, source JSONL
+files, summary JSON, and `manifest.json` for off-host backup.
 
 Apply retention limits:
 

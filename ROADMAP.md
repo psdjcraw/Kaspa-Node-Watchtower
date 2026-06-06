@@ -54,7 +54,8 @@ the primary source of truth.
 - Add richer diagnostics summaries for issue reports and incident review.
   Diagnostics now start with a sanitized incident summary.
 - Explore external long-lived storage options beyond local SQLite.
-  Candidate options are documented in `docs/storage-options.md`.
+  Candidate options are documented in `docs/storage-options.md`, and portable
+  history archives are available through `make history-archive`.
 - Add optional report generation for daily or weekly operator summaries.
   Weekly report generation is available through `make weekly-report`.
 - Evaluate packaging options for easier deployment on common node hosts.

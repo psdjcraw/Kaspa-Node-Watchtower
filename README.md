@@ -45,7 +45,7 @@ which supports a more resilient decentralized network.
 
 ## Planned Features
 
-- Add more external long-term storage options beyond local SQLite
+- Add more external long-term storage options beyond portable local archives
 
 ## Current Context
 
@@ -150,6 +150,7 @@ make weekly-report
 make ensure-exporter
 make diagnostics-archive
 make history-report
+make history-archive
 ```
 
 Save a benchmark snapshot and compare recent snapshots:
@@ -173,10 +174,14 @@ Export history to SQLite:
 scripts/export_history_sqlite.py
 scripts/export_history_sqlite.py --summary --days 7
 make history-report
+make history-archive
 ```
 
 This imports benchmark snapshots, upgrade checkpoints, and recovery attempts,
 then can summarize the latest history window for operator review.
+`make history-archive` also writes a portable archive under
+`state/history-archives/` with the SQLite snapshot, source JSONL files, summary
+JSON, and a manifest for off-host backup or object storage upload.
 
 Apply retention limits to state files:
 

@@ -17,6 +17,8 @@ All notable changes to Kaspa Node Watchtower are tracked here.
 - `make weekly-report` and `run_weekly_report.sh` for 7-day and 30-day operator
   history review.
 - Long-lived storage and packaging option notes for v0.4 planning.
+- `make history-archive` and `scripts/export_history_sqlite.py --archive-dir`
+  for portable SQLite/JSONL history archives with summary JSON and manifest.
 
 ### Changed
 

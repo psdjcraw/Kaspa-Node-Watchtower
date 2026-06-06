@@ -74,6 +74,8 @@ if [ -f "config.json" ]; then
   scripts/export_history_sqlite.py >/dev/null
   test -s state/watchtower-history.sqlite
   scripts/export_history_sqlite.py --summary --days 7 >/dev/null
+  scripts/export_history_sqlite.py --archive-dir state/history-archives --archive-label smoke >/dev/null
+  test -s state/history-archives/smoke/manifest.json
   "$PYTHON_BIN" - <<'PY'
 import sqlite3
 
@@ -86,7 +88,7 @@ with sqlite3.connect("state/watchtower-history.sqlite") as connection:
     }
 assert "recovery_attempts" in tables
 PY
-  ok "SQLite history export"
+  ok "history export and archive"
 else
   ok "config.json absent; skipped live checks"
 fi

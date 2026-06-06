@@ -19,6 +19,7 @@ Keep using:
 make export-history
 make history-report
 make weekly-report
+make history-archive
 ```
 
 Risks:
@@ -72,6 +73,24 @@ Weak fit:
 - real-time alerting
 - ad hoc metric queries
 
+Current implementation:
+
+```bash
+make history-archive
+scripts/export_history_sqlite.py --archive-dir state/history-archives
+scripts/export_history_sqlite.py --archive-dir /Volumes/node-backups/kaspa-history --archive-label weekly-$(date +%Y-%m-%d)
+```
+
+Each archive directory contains:
+
+- `watchtower-history.sqlite`
+- source JSONL files when present
+- `history-summary-<days>d.json`
+- `manifest.json` with counts, source paths, generated time, and file names
+
+This keeps the default storage local-first while making the output easy to copy
+to NAS, object storage, or another off-host backup system.
+
 ## Candidate: External SQL
 
 Use PostgreSQL or another external SQL database when:
@@ -95,13 +114,13 @@ Weak fit:
 ## Recommended Path
 
 For the current deployment, keep local SQLite as the default and add optional
-archive export before adding a new database dependency.
+archive export before adding a new database dependency. `make history-archive`
+is the first supported archive path.
 
 Practical next steps:
 
 - keep `state/watchtower-history.sqlite` in host backups
 - archive `state/diagnostics/*.tar.gz` after incidents
-- consider a weekly archive job for `make weekly-report` output and SQLite
-  snapshots
+- run `make history-archive` weekly and copy the archive directory off-host
 - use Prometheus long retention or remote write if month-scale Grafana history
   becomes important

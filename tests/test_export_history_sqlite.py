@@ -1,4 +1,5 @@
 import importlib.util
+import json
 import sqlite3
 import tempfile
 import unittest
@@ -137,6 +138,63 @@ class ExportHistorySqliteTests(unittest.TestCase):
             self.assertEqual(summary["benchmark_snapshots"], 2)
             self.assertEqual(summary["daa_delta"], 60)
             self.assertEqual(summary["block_delta"], 60)
+
+    def test_export_writes_portable_archive(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            benchmarks = root / "benchmarks.jsonl"
+            upgrades = root / "upgrade-checkpoints.jsonl"
+            recovery = root / "recovery-history.jsonl"
+            db_path = root / "watchtower-history.sqlite"
+            archive_dir = root / "archives"
+            benchmarks.write_text(
+                json.dumps(
+                    {
+                        "checked_at": "2026-06-06T10:00:00+09:00",
+                        "node_name": "kaspa-mainnet-local",
+                        "status": "ok",
+                        "severity": "ok",
+                        "peer_count": 8,
+                        "virtual_daa_score": 160,
+                        "block_count": 260,
+                        "disk_free_gb": 299.5,
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            upgrades.write_text("", encoding="utf-8")
+            recovery.write_text("", encoding="utf-8")
+
+            args = type(
+                "Args",
+                (),
+                {
+                    "db": db_path,
+                    "benchmarks": benchmarks,
+                    "upgrades": upgrades,
+                    "recovery": recovery,
+                    "summary": False,
+                    "days": 7,
+                    "archive_dir": archive_dir,
+                    "archive_label": "test archive",
+                },
+            )()
+
+            exit_code = export_history_sqlite.export(args)
+
+            self.assertEqual(exit_code, 0)
+            target = archive_dir / "test-archive"
+            self.assertTrue((target / "watchtower-history.sqlite").exists())
+            self.assertTrue((target / "benchmarks.jsonl").exists())
+            self.assertTrue((target / "history-summary-7d.json").exists())
+            manifest = json.loads((target / "manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(manifest["archive_label"], "test-archive")
+            self.assertEqual(manifest["counts"]["benchmark_snapshots"], 1)
+            self.assertEqual(manifest["files"]["summary"], "history-summary-7d.json")
+            summary = json.loads((target / "history-summary-7d.json").read_text(encoding="utf-8"))
+            self.assertEqual(summary["benchmark_snapshots"], 1)
+            self.assertEqual(summary["latest_severity"], "ok")
 
 
 if __name__ == "__main__":

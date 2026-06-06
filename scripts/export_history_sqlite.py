@@ -6,6 +6,8 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import json
+import re
+import shutil
 import sqlite3
 from contextlib import closing
 from pathlib import Path
@@ -233,6 +235,16 @@ def format_gib(value: float | None) -> str:
     return f"{value:.2f} GiB"
 
 
+def safe_archive_label(label: str) -> str:
+    cleaned = re.sub(r"[^A-Za-z0-9_.-]+", "-", label.strip())
+    return cleaned.strip("-") or "history-archive"
+
+
+def default_archive_label() -> str:
+    generated_at = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    return f"history-{generated_at}"
+
+
 def latest_window(rows: list[sqlite3.Row], days: int) -> list[sqlite3.Row]:
     dated_rows = [
         (parsed, row)
@@ -384,6 +396,57 @@ def print_history_summary(summary: dict[str, Any]) -> None:
         print("latest_upgrade=none")
 
 
+def copy_if_exists(source: Path, target_dir: Path, target_name: str) -> str | None:
+    if not source.exists():
+        return None
+    target = target_dir / target_name
+    shutil.copy2(source, target)
+    return target.name
+
+
+def write_archive(
+    *,
+    archive_dir: Path,
+    archive_label: str | None,
+    db_path: Path,
+    benchmark_path: Path,
+    upgrade_path: Path,
+    recovery_path: Path,
+    counts: dict[str, int],
+    summary: dict[str, Any],
+) -> Path:
+    label = safe_archive_label(archive_label or default_archive_label())
+    target_dir = archive_dir / label
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    files = {
+        "database": copy_if_exists(db_path, target_dir, "watchtower-history.sqlite"),
+        "benchmarks": copy_if_exists(benchmark_path, target_dir, "benchmarks.jsonl"),
+        "upgrades": copy_if_exists(upgrade_path, target_dir, "upgrade-checkpoints.jsonl"),
+        "recovery": copy_if_exists(recovery_path, target_dir, "recovery-history.jsonl"),
+    }
+    summary_path = target_dir / f"history-summary-{summary['window_days']}d.json"
+    summary_path.write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    files["summary"] = summary_path.name
+
+    manifest = {
+        "generated_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+        "archive_label": label,
+        "window_days": summary["window_days"],
+        "counts": counts,
+        "files": files,
+        "sources": {
+            "database": str(db_path),
+            "benchmarks": str(benchmark_path),
+            "upgrades": str(upgrade_path),
+            "recovery": str(recovery_path),
+        },
+    }
+    manifest_path = target_dir / "manifest.json"
+    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return target_dir
+
+
 def export(args: argparse.Namespace) -> int:
     args.days = max(1, args.days)
     args.db.parent.mkdir(parents=True, exist_ok=True)
@@ -417,13 +480,37 @@ def export(args: argparse.Namespace) -> int:
         benchmark_count = table_count(connection, "benchmark_snapshots")
         upgrade_count = table_count(connection, "upgrade_checkpoints")
         recovery_count = table_count(connection, "recovery_attempts")
-        summary = history_summary(connection, args.days) if args.summary else None
+        summary = history_summary(connection, args.days) if args.summary or args.archive_dir else None
+
+    counts = {
+        "benchmark_snapshots": benchmark_count,
+        "upgrade_checkpoints": upgrade_count,
+        "recovery_attempts": recovery_count,
+        "benchmark_imported": benchmark_imported,
+        "upgrade_imported": upgrade_imported,
+        "recovery_imported": recovery_imported,
+    }
+    archive_path = None
+    if args.archive_dir:
+        assert summary is not None
+        archive_path = write_archive(
+            archive_dir=args.archive_dir,
+            archive_label=args.archive_label,
+            db_path=args.db,
+            benchmark_path=args.benchmarks,
+            upgrade_path=args.upgrades,
+            recovery_path=args.recovery,
+            counts=counts,
+            summary=summary,
+        )
 
     print(f"SQLite history written: {args.db}")
     print(f"benchmark_snapshots imported={benchmark_imported} total={benchmark_count}")
     print(f"upgrade_checkpoints imported={upgrade_imported} total={upgrade_count}")
     print(f"recovery_attempts imported={recovery_imported} total={recovery_count}")
-    if summary is not None:
+    if archive_path:
+        print(f"history_archive written: {archive_path}")
+    if args.summary and summary is not None:
         print()
         print_history_summary(summary)
     return 0
@@ -437,6 +524,12 @@ def main() -> int:
     parser.add_argument("--recovery", type=Path, default=Path("state/recovery-history.jsonl"))
     parser.add_argument("--summary", action="store_true", help="Print an operator summary from the SQLite history.")
     parser.add_argument("--days", type=int, default=7, help="History summary window in days.")
+    parser.add_argument(
+        "--archive-dir",
+        type=Path,
+        help="Write a portable history archive with SQLite, source JSONL files, summary JSON, and manifest.",
+    )
+    parser.add_argument("--archive-label", help="Directory name to use inside --archive-dir.")
     args = parser.parse_args()
     return export(args)
 
