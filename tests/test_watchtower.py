@@ -311,6 +311,66 @@ class WatchtowerUnitTests(unittest.TestCase):
             self.assertTrue(checks["block_progress"]["ok"])
             self.assertIn("skipped while unsynced", checks["block_progress"]["detail"])
 
+    def test_synced_node_warns_on_stale_processed_stats(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            log_path = tmp_path / "rusty-kaspa.log"
+            latest = dt.datetime.now().astimezone()
+            processed = latest - dt.timedelta(seconds=270)
+            log_path.write_text(
+                "\n".join(
+                    [
+                        (
+                            f"{processed.strftime('%Y-%m-%d %H:%M:%S.%f%z')[:-2]}:{processed.strftime('%z')[-2:]} "
+                            "[INFO ] Processed 10 blocks and "
+                            "10 headers in the last 10.00s (20 transactions; 10 UTXO-validated blocks)"
+                        ),
+                        f"{latest.strftime('%Y-%m-%d %H:%M:%S.%f%z')[:-2]}:{latest.strftime('%z')[-2:]} INFO health heartbeat",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            data_dir = tmp_path / "data"
+            data_dir.mkdir()
+
+            config = copy.deepcopy(watchtower.DEFAULT_CONFIG)
+            config.update(
+                {
+                    "node_name": "mainnet-synced",
+                    "process_match": "kaspad",
+                    "rpc_endpoint": "127.0.0.1:16110",
+                    "grpc_endpoint": "127.0.0.1:16110",
+                    "log_path": str(log_path),
+                    "data_dir": str(data_dir),
+                }
+            )
+            config["thresholds"]["min_relay_blocks_in_window"] = 0
+
+            with (
+                mock.patch.object(watchtower, "find_processes", return_value=["123 kaspad"]),
+                mock.patch.object(watchtower, "disk_usage", return_value={"exists": True, "free_gb": 100, "free_percent": 20}),
+                mock.patch.object(watchtower, "check_tcp_endpoint", return_value={"configured": True, "ok": True, "detail": "ok"}),
+                mock.patch.object(
+                    watchtower,
+                    "fetch_optional_grpc_metrics",
+                    return_value={
+                        "configured": True,
+                        "ok": True,
+                        "is_synced": True,
+                        "peer_count": 8,
+                        "active_peers": 8,
+                    },
+                ),
+                mock.patch.object(watchtower, "dir_size", return_value="1G"),
+            ):
+                report = watchtower.build_report(config)
+
+            checks = {check["name"]: check for check in report["checks"]}
+            self.assertEqual(report["severity"], "warn")
+            self.assertFalse(checks["processed_stats_freshness"]["ok"])
+            self.assertIn("latest processed stats are", checks["processed_stats_freshness"]["detail"])
+            self.assertGreaterEqual(report["progress"]["latest_processed_age_seconds"], 260.0)
+
     def test_unsynced_sync_progress_stall_warns(self):
         config = copy.deepcopy(watchtower.DEFAULT_CONFIG)
         checked_at = "2026-06-05T22:00:00+09:00"

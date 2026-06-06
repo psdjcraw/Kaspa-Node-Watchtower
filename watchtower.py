@@ -42,6 +42,7 @@ DEFAULT_CONFIG = {
     "thresholds": {
         "alert_repeat_minutes": 60,
         "stale_log_minutes": 15,
+        "stale_processed_stats_minutes": 3,
         "progress_window_minutes": 10,
         "min_relay_blocks_in_window": 1,
         "min_peer_count": 1,
@@ -474,6 +475,21 @@ def build_report(config: dict) -> dict[str, Any]:
                 progress["latest_processed_age_seconds"] = round(
                     max(0.0, (now - latest_processed.timestamp).total_seconds()),
                     1,
+                )
+            processed_stats_limit = float(thresholds.get("stale_processed_stats_minutes", 3)) * 60
+            processed_stats_age = progress.get("latest_processed_age_seconds")
+            require_processed_stats = bool(grpc_metrics.get("is_synced")) if grpc_metrics.get("ok") else False
+            if require_processed_stats:
+                checks.append(
+                    Check(
+                        "processed_stats_freshness",
+                        processed_stats_age is not None and processed_stats_age <= processed_stats_limit,
+                        (
+                            "no processed stats observed"
+                            if processed_stats_age is None
+                            else f"latest processed stats are {processed_stats_age:.1f}s old"
+                        ),
+                    )
                 )
             min_relay_blocks = int(thresholds.get("min_relay_blocks_in_window", 1))
             require_unsynced_progress = bool(
@@ -4108,6 +4124,7 @@ def config_validation_checks(config: dict) -> list[Check]:
     threshold_specs = [
         ("alert_repeat_minutes", lambda value: number_between_config(value, 1), "number >= 1"),
         ("stale_log_minutes", lambda value: number_between_config(value, 1), "number >= 1"),
+        ("stale_processed_stats_minutes", lambda value: number_between_config(value, 1), "number >= 1"),
         ("progress_window_minutes", lambda value: number_between_config(value, 1), "number >= 1"),
         ("min_relay_blocks_in_window", non_negative_int_config, "integer >= 0"),
         ("min_peer_count", non_negative_int_config, "integer >= 0"),
