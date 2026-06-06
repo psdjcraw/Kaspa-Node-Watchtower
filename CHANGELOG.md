@@ -20,6 +20,7 @@ All notable changes to Kaspa Node Watchtower are tracked here.
   price labels.
 - Status dashboard now visualizes recent `Processed N blocks ... in the last
   Ns` log entries as a blocks-per-second chart.
+- Status dashboard now stores and visualizes mempool size history.
 
 ### Changed
 

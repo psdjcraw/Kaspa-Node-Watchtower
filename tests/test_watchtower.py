@@ -54,6 +54,20 @@ class WatchtowerUnitTests(unittest.TestCase):
         self.assertEqual(stats[0].seconds, 10.0)
         self.assertEqual(stats[0].transactions, 1311)
 
+    def test_history_item_keeps_mempool_size(self):
+        item = watchtower.history_item(
+            {
+                "checked_at": "2026-06-06T18:10:00+09:00",
+                "status": "ok",
+                "severity": "ok",
+                "checks": [],
+                "grpc_metrics": {"mempool_size": 12},
+                "progress": {},
+            }
+        )
+
+        self.assertEqual(item["mempool_size"], 12)
+
     def test_benchmark_summary_computes_rates(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "benchmarks.jsonl"
@@ -588,8 +602,8 @@ class WatchtowerUnitTests(unittest.TestCase):
             state = {
                 "history": [
                     {"checked_at": "2026-06-06T09:58:00+09:00", "severity": "ok"},
-                    {"checked_at": "2026-06-06T09:59:00+09:00", "severity": "warn"},
-                    {"checked_at": "2026-06-06T10:00:00+09:00", "severity": "critical"},
+                    {"checked_at": "2026-06-06T09:59:00+09:00", "severity": "warn", "mempool_size": 2},
+                    {"checked_at": "2026-06-06T10:00:00+09:00", "severity": "critical", "mempool_size": 0},
                 ]
             }
             output = tmp_path / "status.html"
@@ -622,6 +636,7 @@ class WatchtowerUnitTests(unittest.TestCase):
             self.assertIn("Block Processing", html)
             self.assertIn("9.2/s", html)
             self.assertIn("processed-chart", html)
+            self.assertIn("Mempool Activity", html)
 
 
 if __name__ == "__main__":

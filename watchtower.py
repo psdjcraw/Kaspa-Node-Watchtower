@@ -698,6 +698,7 @@ def history_item(report: dict[str, Any]) -> dict[str, Any]:
         "virtual_daa_score": grpc_metrics.get("virtual_daa_score"),
         "block_count": grpc_metrics.get("block_count"),
         "header_count": grpc_metrics.get("header_count"),
+        "mempool_size": grpc_metrics.get("mempool_size"),
         "relay_blocks_in_window": progress.get("relay_blocks_in_window"),
     }
 
@@ -1140,6 +1141,10 @@ def write_status_page(
     relay_chart = sparkline_svg(history_items, "relay_blocks_in_window", "#147d64")
     daa_chart = sparkline_svg(history_items, "virtual_daa_score", "#3858e9")
     peer_chart = sparkline_svg(history_items, "peer_count", "#b26a00")
+    mempool_history = history_items + [{"mempool_size": grpc_metrics.get("mempool_size")}]
+    if sum(1 for item in mempool_history if numeric(item.get("mempool_size")) is not None) == 1:
+        mempool_history.append({"mempool_size": grpc_metrics.get("mempool_size")})
+    mempool_chart = sparkline_svg(mempool_history, "mempool_size", "#276b74")
     severity_chart = severity_timeline(history_items)
     latest_processed = progress.get("latest_processed") or {}
     processed_chart = processed_rate_chart(progress.get("processed_samples") or [])
@@ -1611,6 +1616,10 @@ def write_status_page(
       <section class="panel">
         <div class="chart-head"><h2>Peer Floor</h2><div class="chart-value">{format_optional_number(benchmark_summary.get('min_peer_count'))}</div></div>
         {peer_chart}
+      </section>
+      <section class="panel">
+        <div class="chart-head"><h2>Mempool Activity</h2><div class="chart-value">{compact_number(grpc_metrics.get('mempool_size'))}</div></div>
+        {mempool_chart}
       </section>
       <section class="panel">
         <div class="chart-head"><h2>Severity Timeline</h2><div class="chart-value">{html.escape(severity.upper())}</div></div>

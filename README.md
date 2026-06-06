@@ -42,6 +42,7 @@ which supports a more resilient decentralized network.
 - Benchmark trend section in the generated status dashboard
 - Blocks-per-second processing chart from recent `Processed N blocks ...`
   kaspad log entries
+- Mempool size history chart in the generated status dashboard
 - Live KAS/USDT market watch in the generated status dashboard, including
   Bybit spot price and a client-rendered 15-minute candle chart
 - Prometheus textfile metrics for local scraping or textfile collectors
