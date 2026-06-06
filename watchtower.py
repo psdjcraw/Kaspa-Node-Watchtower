@@ -3597,6 +3597,7 @@ def format_prometheus_metrics(
     node_labels = {"node": report["node_name"]}
     grpc_metrics = report.get("grpc_metrics") or {}
     progress = report.get("progress") or {}
+    latest_processed = progress.get("latest_processed") or {}
     sync_progress = report.get("sync_progress") or {}
     monitoring = report.get("monitoring") or {}
     disk = report.get("disk") or {}
@@ -3696,6 +3697,54 @@ def format_prometheus_metrics(
     )
     add_prometheus_metric(lines, "kaspa_watchtower_mempool_size", grpc_metrics.get("mempool_size"), node_labels)
     add_prometheus_metric(lines, "kaspa_watchtower_tip_count", grpc_metrics.get("tip_count"), node_labels)
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_latest_processed_blocks",
+        latest_processed.get("blocks"),
+        node_labels,
+    )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_latest_processed_headers",
+        latest_processed.get("headers"),
+        node_labels,
+    )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_latest_processed_transactions",
+        latest_processed.get("transactions"),
+        node_labels,
+    )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_latest_processed_seconds",
+        latest_processed.get("seconds"),
+        node_labels,
+    )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_latest_processed_blocks_per_second",
+        latest_processed.get("blocks_per_second"),
+        node_labels,
+    )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_latest_processed_headers_per_second",
+        latest_processed.get("headers_per_second"),
+        node_labels,
+    )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_latest_processed_transactions_per_second",
+        latest_processed.get("transactions_per_second"),
+        node_labels,
+    )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_latest_processed_timestamp_seconds",
+        iso_timestamp_seconds(latest_processed.get("timestamp")),
+        node_labels,
+    )
     add_prometheus_metric(
         lines,
         "kaspa_watchtower_virtual_parent_count",

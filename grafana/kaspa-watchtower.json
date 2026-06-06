@@ -1239,6 +1239,49 @@
       ],
       "title": "Recovery Action Mix",
       "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 2,
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 8,
+        "x": 0,
+        "y": 44
+      },
+      "id": 22,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "expr": "kaspa_watchtower_latest_processed_transactions_per_second{node=\"$node\"}",
+          "legendFormat": "tx/s",
+          "refId": "A"
+        }
+      ],
+      "title": "Transaction Throughput",
+      "type": "timeseries"
     }
   ],
   "refresh": "30s",

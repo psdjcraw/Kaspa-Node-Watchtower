@@ -18,6 +18,8 @@ All notable changes to Kaspa Node Watchtower are tracked here.
   RSI extreme, and above/below EMA conditions across visible timeframes.
 - Status dashboard now includes a live transaction-rate card and transaction
   throughput chart derived from recent processed-stats log entries.
+- Prometheus metrics and the bundled Grafana dashboard now expose latest
+  processed transaction throughput.
 
 ### Changed
 

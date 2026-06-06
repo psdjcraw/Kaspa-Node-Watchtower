@@ -48,6 +48,7 @@ which supports a more resilient decentralized network.
   kaspad log entries
 - Transactions-per-second card and throughput chart from recent
   `Processed N blocks ... (N transactions)` kaspad log entries
+- Prometheus/Grafana transaction-throughput metrics for processed tx/s
 - Mempool size history chart in the generated status dashboard
 - Estimated network hashrate card and trend chart in the generated status
   dashboard

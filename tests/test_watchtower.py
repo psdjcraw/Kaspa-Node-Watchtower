@@ -188,6 +188,16 @@ class WatchtowerUnitTests(unittest.TestCase):
                 "relay_blocks_in_window": 10,
                 "relay_events_in_window": 5,
                 "latest_relay_age_seconds": 1,
+                "latest_processed": {
+                    "timestamp": "2026-06-06T10:00:00+09:00",
+                    "blocks": 92,
+                    "headers": 92,
+                    "transactions": 1311,
+                    "seconds": 10.0,
+                    "blocks_per_second": 9.2,
+                    "headers_per_second": 9.2,
+                    "transactions_per_second": 131.1,
+                },
             },
             "sync_progress": {
                 "active": True,
@@ -233,6 +243,10 @@ class WatchtowerUnitTests(unittest.TestCase):
         metrics = watchtower.format_prometheus_metrics(report, benchmark_summary, recovery_summary)
 
         self.assertIn("kaspa_watchtower_mempool_size", metrics)
+        self.assertIn("kaspa_watchtower_latest_processed_transactions", metrics)
+        self.assertIn("kaspa_watchtower_latest_processed_transactions_per_second", metrics)
+        self.assertIn("kaspa_watchtower_latest_processed_timestamp_seconds", metrics)
+        self.assertIn("131.1", metrics)
         self.assertIn("kaspa_watchtower_tip_count", metrics)
         self.assertIn("kaspa_watchtower_process_fd_num", metrics)
         self.assertIn("kaspa_watchtower_network_hashes_per_second", metrics)
