@@ -551,7 +551,13 @@ class WatchtowerUnitTests(unittest.TestCase):
                     "mode": "manual",
                 },
             }
-            state = {"history": []}
+            state = {
+                "history": [
+                    {"checked_at": "2026-06-06T09:58:00+09:00", "severity": "ok"},
+                    {"checked_at": "2026-06-06T09:59:00+09:00", "severity": "warn"},
+                    {"checked_at": "2026-06-06T10:00:00+09:00", "severity": "critical"},
+                ]
+            }
             output = tmp_path / "status.html"
 
             watchtower.write_status_page(output, report, state, benchmark_path=tmp_path / "missing.jsonl")
@@ -561,6 +567,8 @@ class WatchtowerUnitTests(unittest.TestCase):
             self.assertIn("Review failed checks", html)
             self.assertIn('class="incident critical"', html)
             self.assertIn('class="v-card critical"', html)
+            self.assertIn("Severity Timeline", html)
+            self.assertIn("severity-segment critical", html)
 
 
 if __name__ == "__main__":

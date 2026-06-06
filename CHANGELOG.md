@@ -20,6 +20,8 @@ All notable changes to Kaspa Node Watchtower are tracked here.
 - Development version now reports `0.5.0-dev` after the v0.4.0 release.
 - Generated `status.html` now uses a status-first operator dashboard layout
   with incident verdict, dynamic health cards, and responsive compact panels.
+- Status dashboard trend area now includes a compact severity timeline for
+  recent state changes.
 
 ## 0.4.0 - 2026-06-06
 

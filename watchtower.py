@@ -849,6 +849,22 @@ def sparkline_svg(items: list[dict[str, Any]], key: str, color: str) -> str:
 </svg>"""
 
 
+def severity_timeline(items: list[dict[str, Any]]) -> str:
+    if not items:
+        return '<div class="empty-chart">No status history</div>'
+    recent = items[-48:]
+    segments = []
+    for item in recent:
+        severity = str(item.get("severity") or "unknown")
+        if severity not in {"ok", "warn", "critical"}:
+            severity = "unknown"
+        checked_at = html.escape(str(item.get("checked_at") or "unknown"))
+        segments.append(
+            f'<span class="severity-segment {html.escape(severity)}" title="{checked_at} {html.escape(severity)}"></span>'
+        )
+    return '<div class="severity-timeline" aria-label="Recent severity timeline">' + "".join(segments) + "</div>"
+
+
 def visual_card(label: str, value: Any, detail: str = "", tone: str = "neutral") -> str:
     return f"""<section class="v-card {html.escape(tone)}">
   <div class="v-label">{html.escape(str(label))}</div>
@@ -965,6 +981,7 @@ def write_status_page(
     relay_chart = sparkline_svg(history_items, "relay_blocks_in_window", "#147d64")
     daa_chart = sparkline_svg(history_items, "virtual_daa_score", "#3858e9")
     peer_chart = sparkline_svg(history_items, "peer_count", "#b26a00")
+    severity_chart = severity_timeline(history_items)
     check_pills = "\n".join(check_pill(check) for check in report["checks"])
     latest_relay_age = progress.get("latest_relay_age_seconds")
     latest_relay_text = "unknown" if latest_relay_age is None else f"{latest_relay_age}s"
@@ -1158,11 +1175,31 @@ def write_status_page(
     .v-value {{ font-size: 21px; font-weight: 800; line-height: 1.1; overflow-wrap: anywhere; }}
     .v-detail {{ color: var(--muted); font-size: 12px; margin-top: 5px; min-height: 16px; }}
     .layout {{ display: grid; grid-template-columns: 1.1fr 0.9fr; gap: 14px; margin-bottom: 14px; }}
-    .chart-grid {{ display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-bottom: 14px; }}
+    .chart-grid {{ display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 14px; }}
     .chart-head {{ display: flex; justify-content: space-between; gap: 10px; margin-bottom: 8px; min-width: 0; }}
     .chart-value {{ font-size: 18px; font-weight: 800; overflow-wrap: anywhere; text-align: right; }}
     .sparkline {{ width: 100%; height: 92px; display: block; }}
     .empty-chart {{ height: 92px; display: grid; place-items: center; color: var(--muted); font-size: 13px; background: #f8fafc; border-radius: 8px; }}
+    .severity-timeline {{
+      height: 92px;
+      display: grid;
+      grid-template-columns: repeat(48, minmax(2px, 1fr));
+      gap: 3px;
+      align-items: end;
+      padding: 10px;
+      background: #f8fafc;
+      border-radius: 8px;
+    }}
+    .severity-segment {{
+      display: block;
+      height: 100%;
+      min-height: 18px;
+      border-radius: 999px;
+      background: #c9d3dc;
+    }}
+    .severity-segment.ok {{ background: var(--ok); }}
+    .severity-segment.warn {{ background: var(--warn); }}
+    .severity-segment.critical {{ background: var(--critical); }}
     .check-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 8px; }}
     .check-pill {{
       display: flex;
@@ -1248,6 +1285,10 @@ def write_status_page(
       <section class="panel">
         <div class="chart-head"><h2>Peer Floor</h2><div class="chart-value">{format_optional_number(benchmark_summary.get('min_peer_count'))}</div></div>
         {peer_chart}
+      </section>
+      <section class="panel">
+        <div class="chart-head"><h2>Severity Timeline</h2><div class="chart-value">{html.escape(severity.upper())}</div></div>
+        {severity_chart}
       </section>
     </section>
     <section class="layout">
