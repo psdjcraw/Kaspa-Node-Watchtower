@@ -4,7 +4,9 @@ All notable changes to Kaspa Node Watchtower are tracked here.
 
 ## Unreleased
 
-No changes yet.
+### Changed
+
+- Homebrew formula now points to the v0.6.0 release tarball and checksum.
 
 ## 0.6.0 - 2026-06-07
 
