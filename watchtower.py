@@ -3300,6 +3300,7 @@ def sync_report(config: dict, *, limit: int) -> int:
 def benchmark_item(report: dict[str, Any]) -> dict[str, Any]:
     grpc_metrics = report.get("grpc_metrics") or {}
     progress = report.get("progress") or {}
+    latest_processed = progress.get("latest_processed") or {}
     disk = report.get("disk") or {}
     return {
         "checked_at": report["checked_at"],
@@ -3329,6 +3330,11 @@ def benchmark_item(report: dict[str, Any]) -> dict[str, Any]:
         "relay_events_in_window": progress.get("relay_events_in_window"),
         "progress_window_minutes": progress.get("window_minutes"),
         "latest_relay_age_seconds": progress.get("latest_relay_age_seconds"),
+        "latest_processed_age_seconds": progress.get("latest_processed_age_seconds"),
+        "latest_processed_transactions_per_second": latest_processed.get("transactions_per_second"),
+        "latest_processed_transactions": latest_processed.get("transactions"),
+        "latest_processed_blocks": latest_processed.get("blocks"),
+        "latest_processed_seconds": latest_processed.get("seconds"),
         "disk_free_gb": disk.get("free_gb"),
         "disk_free_percent": disk.get("free_percent"),
     }
@@ -3399,6 +3405,11 @@ def format_benchmark_snapshot(item: dict[str, Any], path: Path) -> str:
             f"{item.get('relay_blocks_in_window')} relay blocks / "
             f"{item.get('relay_events_in_window')} events in "
             f"{item.get('progress_window_minutes')}m"
+        ),
+        (
+            "processed="
+            f"tx_rate={item.get('latest_processed_transactions_per_second')} "
+            f"age={item.get('latest_processed_age_seconds')}s"
         ),
         f"disk_free={item.get('disk_free_gb')} GiB ({item.get('disk_free_percent')}%)",
     ]

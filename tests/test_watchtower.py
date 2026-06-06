@@ -87,6 +87,32 @@ class WatchtowerUnitTests(unittest.TestCase):
         self.assertEqual(item["latest_processed_transactions_per_second"], 131.1)
         self.assertEqual(item["latest_processed_transactions"], 1311)
 
+    def test_benchmark_item_keeps_processed_stats(self):
+        item = watchtower.benchmark_item(
+            {
+                "checked_at": "2026-06-06T18:10:00+09:00",
+                "node_name": "test-node",
+                "status": "ok",
+                "severity": "ok",
+                "checks": [],
+                "grpc_metrics": {},
+                "progress": {
+                    "latest_processed_age_seconds": 3.2,
+                    "latest_processed": {
+                        "transactions_per_second": 131.1,
+                        "transactions": 1311,
+                        "blocks": 92,
+                        "seconds": 10.0,
+                    },
+                },
+                "disk": {},
+            }
+        )
+
+        self.assertEqual(item["latest_processed_age_seconds"], 3.2)
+        self.assertEqual(item["latest_processed_transactions_per_second"], 131.1)
+        self.assertEqual(item["latest_processed_transactions"], 1311)
+
     def test_benchmark_summary_computes_rates(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "benchmarks.jsonl"
