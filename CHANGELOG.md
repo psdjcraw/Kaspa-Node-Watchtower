@@ -2,7 +2,7 @@
 
 All notable changes to Kaspa Node Watchtower are tracked here.
 
-## Unreleased
+## 0.5.0 - 2026-06-06
 
 ### Added
 
@@ -29,14 +29,17 @@ All notable changes to Kaspa Node Watchtower are tracked here.
   cross chart.
 - Chart X-axis labels now include both date and time where axis labels are
   rendered.
+- Market data fetches now use timeout/retry handling with browser cache fallback.
 
 ### Changed
 
-- Development version now reports `0.5.0-dev` after the v0.4.0 release.
+- Version now reports `0.5.0` for the v0.5.0 release.
 - Generated `status.html` now uses a status-first operator dashboard layout
   with incident verdict, dynamic health cards, and responsive compact panels.
 - Market watch cards now keep a consistent visual height across timeframes.
 - Market cross chart now uses red for KAS/USDT and blue for BTC/USDT.
+- Market cross chart status now shows the latest normalized KAS/BTC daily
+  change values.
 - Status dashboard trend area now includes a compact severity timeline for
   recent state changes.
 - Status dashboard now includes a triage queue that surfaces failed checks with

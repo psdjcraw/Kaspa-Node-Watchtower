@@ -46,8 +46,8 @@ which supports a more resilient decentralized network.
   kaspad log entries
 - Mempool size history chart in the generated status dashboard
 - Live KAS/USDT market watch in the generated status dashboard, including
-  Bybit spot price and client-rendered 15-minute, 4-hour, and daily candle
-  charts
+  Bybit spot price, 15-minute/4-hour/daily/weekly/monthly candle charts, and a
+  normalized daily KAS/USDT vs BTC/USDT cross chart with browser cache fallback
 - Prometheus textfile metrics for local scraping or textfile collectors
 - Long-lived SQLite history export and operator summary reporting
 
@@ -75,6 +75,7 @@ Current target environment:
 - [Sample status reports](docs/sample-status-reports.md)
 - [Long-lived storage options](docs/storage-options.md)
 - [Packaging options](docs/packaging-options.md)
+- [v0.5.0 release notes](docs/release-notes-v0.5.0.md)
 - [v0.4.0 release notes](docs/release-notes-v0.4.0.md)
 - [v0.2.0 release notes](docs/release-notes-v0.2.0.md)
 - [Roadmap](ROADMAP.md)

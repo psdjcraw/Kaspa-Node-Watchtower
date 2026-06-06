@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 
-VERSION = "0.5.0-dev"
+VERSION = "0.5.0"
 
 DEFAULT_CONFIG = {
     "config_version": 1,
@@ -1968,6 +1968,18 @@ def write_status_page(
       }}) + "%";
     }}
 
+    function formatMarketSignedPercent(value) {{
+      const parsed = marketNumber(value);
+      if (parsed === null) {{
+        return "unknown";
+      }}
+      const prefix = parsed >= 0 ? "+" : "";
+      return prefix + parsed.toLocaleString(undefined, {{
+        minimumFractionDigits: 1,
+        maximumFractionDigits: 1,
+      }}) + "%";
+    }}
+
     function formatMarketVolume(value) {{
       const parsed = marketNumber(value);
       if (parsed === null) {{
@@ -1982,16 +1994,65 @@ def write_status_page(
       return parsed.toLocaleString(undefined, {{ maximumFractionDigits: 2 }}) + " KAS";
     }}
 
+    function marketCacheKey(url) {{
+      return "kaspa-watchtower-market:" + url;
+    }}
+
+    function readMarketCache(url) {{
+      try {{
+        const cached = window.localStorage.getItem(marketCacheKey(url));
+        if (!cached) {{
+          return null;
+        }}
+        const payload = JSON.parse(cached);
+        return payload && payload.data ? payload : null;
+      }} catch (error) {{
+        return null;
+      }}
+    }}
+
+    function writeMarketCache(url, payload) {{
+      try {{
+        window.localStorage.setItem(marketCacheKey(url), JSON.stringify({{
+          cachedAt: Date.now(),
+          data: payload,
+        }}));
+      }} catch (error) {{
+        // Ignore cache quota and privacy-mode failures; live fetch remains the source of truth.
+      }}
+    }}
+
     async function fetchMarketJson(url) {{
-      const response = await fetch(url, {{ cache: "no-store" }});
-      if (!response.ok) {{
-        throw new Error("HTTP " + response.status);
+      let lastError = null;
+      for (let attempt = 0; attempt < 2; attempt += 1) {{
+        const controller = new AbortController();
+        const timeout = window.setTimeout(() => controller.abort(), 8000);
+        try {{
+          const response = await fetch(url, {{ cache: "no-store", signal: controller.signal }});
+          if (!response.ok) {{
+            throw new Error("HTTP " + response.status);
+          }}
+          const payload = await response.json();
+          if (payload.retCode !== 0) {{
+            throw new Error(payload.retMsg || "market API error");
+          }}
+          window.clearTimeout(timeout);
+          writeMarketCache(url, payload);
+          return payload;
+        }} catch (error) {{
+          lastError = error;
+          window.clearTimeout(timeout);
+        }}
       }}
-      const payload = await response.json();
-      if (payload.retCode !== 0) {{
-        throw new Error(payload.retMsg || "market API error");
+      const cached = readMarketCache(url);
+      if (cached) {{
+        return {{
+          ...cached.data,
+          cachedAt: cached.cachedAt,
+          fromCache: true,
+        }};
       }}
-      return payload;
+      throw lastError || new Error("market API unavailable");
     }}
 
     function marketCandlesFromRows(rows) {{
@@ -2237,7 +2298,10 @@ def write_status_page(
       }});
 
       const latest = normalized[0].points[normalized[0].points.length - 1];
-      marketText(statusId, "1D cross updated at " + new Date(latest.time).toLocaleTimeString());
+      const summary = normalized
+        .map((item) => item.label.replace("/USDT", "") + " " + formatMarketSignedPercent(item.points[item.points.length - 1].value - 100))
+        .join(" / ");
+      marketText(statusId, summary + " at " + new Date(latest.time).toLocaleTimeString());
     }}
 
     async function refreshMarketChart(config) {{
@@ -2271,7 +2335,8 @@ def write_status_page(
         marketText("market-high", formatMarketPrice(ticker.highPrice24h));
         marketText("market-low", formatMarketPrice(ticker.lowPrice24h));
         marketText("market-volume", formatMarketVolume(ticker.volume24h));
-        marketText("market-updated", new Date(Number(tickerPayload.time || Date.now())).toLocaleTimeString());
+        const updatedPrefix = tickerPayload.fromCache ? "cached " : "";
+        marketText("market-updated", updatedPrefix + new Date(Number(tickerPayload.cachedAt || tickerPayload.time || Date.now())).toLocaleTimeString());
         const change = document.getElementById("market-change");
         if (change) {{
           const changeValue = marketNumber(ticker.price24hPcnt);
