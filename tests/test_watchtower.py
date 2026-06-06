@@ -263,6 +263,19 @@ class WatchtowerUnitTests(unittest.TestCase):
         self.assertIn("kaspa_watchtower_benchmark_min_peer_count", metrics)
         self.assertIn("kaspa_watchtower_benchmark_min_disk_free_gb", metrics)
 
+    def test_grafana_dashboard_includes_processed_freshness_panel(self):
+        dashboard = json.loads(Path("grafana/kaspa-watchtower.json").read_text(encoding="utf-8"))
+        panels = {panel.get("title"): panel for panel in dashboard.get("panels", [])}
+
+        self.assertIn("Processed Stats Freshness", panels)
+        targets = panels["Processed Stats Freshness"].get("targets") or []
+        self.assertTrue(
+            any(
+                target.get("expr") == 'kaspa_watchtower_latest_processed_age_seconds{node="$node"}'
+                for target in targets
+            )
+        )
+
     def test_unsynced_bootstrap_skips_sync_and_relay_progress_requirements(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)

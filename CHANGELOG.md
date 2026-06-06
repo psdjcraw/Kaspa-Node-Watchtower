@@ -24,6 +24,7 @@ All notable changes to Kaspa Node Watchtower are tracked here.
   with an alert rule for stale processed transaction stats.
 - Synced nodes now warn locally when processed block/transaction stats are
   stale or missing.
+- Bundled Grafana dashboard now includes a processed-stats freshness panel.
 
 ### Changed
 
