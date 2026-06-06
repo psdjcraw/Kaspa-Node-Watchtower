@@ -42,6 +42,9 @@ All notable changes to Kaspa Node Watchtower are tracked here.
   cross chart.
 - KAS/USDT timeframe charts now include EMA overlays: 9EMA on 15-minute,
   20EMA on 4-hour and daily, and 50EMA on weekly and monthly.
+- KAS/USDT timeframe charts now request operator-focused ranges: 24 hours for
+  15-minute, one week for 4-hour, one month for daily, one year for weekly, and
+  full available history for monthly.
 - Chart X-axis labels now include both date and time where axis labels are
   rendered.
 - Market data fetches now use timeout/retry handling with browser cache fallback.

@@ -1914,37 +1914,50 @@ def write_status_page(
         {{
           label: "15m",
           emaPeriod: 9,
+          limit: 120,
+          intervalMs: 15 * 60 * 1000,
+          lookbackMs: 24 * 60 * 60 * 1000,
           chartId: "market-chart",
           statusId: "market-status",
-          url: "https://api.bybit.com/v5/market/kline?category=spot&symbol=KASUSDT&interval=15&limit=32",
+          url: "https://api.bybit.com/v5/market/kline?category=spot&symbol=KASUSDT&interval=15",
         }},
         {{
           label: "4h",
           emaPeriod: 20,
+          limit: 48,
+          intervalMs: 4 * 60 * 60 * 1000,
+          lookbackMs: 7 * 24 * 60 * 60 * 1000,
           chartId: "market-chart-4h",
           statusId: "market-status-4h",
-          url: "https://api.bybit.com/v5/market/kline?category=spot&symbol=KASUSDT&interval=240&limit=32",
+          url: "https://api.bybit.com/v5/market/kline?category=spot&symbol=KASUSDT&interval=240",
         }},
         {{
           label: "1D",
           emaPeriod: 20,
+          limit: 40,
+          intervalMs: 24 * 60 * 60 * 1000,
+          lookbackMonths: 1,
           chartId: "market-chart-1d",
           statusId: "market-status-1d",
-          url: "https://api.bybit.com/v5/market/kline?category=spot&symbol=KASUSDT&interval=D&limit=32",
+          url: "https://api.bybit.com/v5/market/kline?category=spot&symbol=KASUSDT&interval=D",
         }},
         {{
           label: "1W",
           emaPeriod: 50,
+          limit: 60,
+          intervalMs: 7 * 24 * 60 * 60 * 1000,
+          lookbackMs: 365 * 24 * 60 * 60 * 1000,
           chartId: "market-chart-1w",
           statusId: "market-status-1w",
-          url: "https://api.bybit.com/v5/market/kline?category=spot&symbol=KASUSDT&interval=W&limit=32",
+          url: "https://api.bybit.com/v5/market/kline?category=spot&symbol=KASUSDT&interval=W",
         }},
         {{
           label: "1M",
           emaPeriod: 50,
+          limit: 1000,
           chartId: "market-chart-1m",
           statusId: "market-status-1m",
-          url: "https://api.bybit.com/v5/market/kline?category=spot&symbol=KASUSDT&interval=M&limit=32",
+          url: "https://api.bybit.com/v5/market/kline?category=spot&symbol=KASUSDT&interval=M",
         }},
       ],
       cross: {{
@@ -2027,6 +2040,44 @@ def write_status_page(
 
     function marketCacheKey(url) {{
       return "kaspa-watchtower-market:" + url;
+    }}
+
+    function marketRangeEndMs(config) {{
+      const intervalMs = Number(config.intervalMs || 0);
+      const now = Date.now();
+      if (!Number.isFinite(intervalMs) || intervalMs <= 0) {{
+        return now;
+      }}
+      return Math.floor(now / intervalMs) * intervalMs;
+    }}
+
+    function marketRangeStartMs(endMs, config) {{
+      const lookbackMonths = Number(config.lookbackMonths || 0);
+      if (Number.isFinite(lookbackMonths) && lookbackMonths > 0) {{
+        const start = new Date(endMs);
+        start.setMonth(start.getMonth() - lookbackMonths);
+        return start.getTime();
+      }}
+      const lookbackMs = Number(config.lookbackMs || 0);
+      if (Number.isFinite(lookbackMs) && lookbackMs > 0) {{
+        return endMs - lookbackMs;
+      }}
+      return null;
+    }}
+
+    function marketKlineUrl(config) {{
+      const url = new URL(config.url);
+      const limit = Number(config.limit || 0);
+      if (Number.isFinite(limit) && limit > 0) {{
+        url.searchParams.set("limit", String(limit));
+      }}
+      const endMs = marketRangeEndMs(config);
+      const startMs = marketRangeStartMs(endMs, config);
+      if (startMs !== null) {{
+        url.searchParams.set("start", String(startMs));
+        url.searchParams.set("end", String(endMs));
+      }}
+      return url.toString();
     }}
 
     function readMarketCache(url) {{
@@ -2382,7 +2433,7 @@ def write_status_page(
 
     async function refreshMarketChart(config) {{
       try {{
-        const payload = await fetchMarketJson(config.url);
+        const payload = await fetchMarketJson(marketKlineUrl(config));
         drawMarketCandles(((payload.result || {{}}).list || []), config.chartId, config.statusId, config.label, config.emaPeriod);
       }} catch (error) {{
         marketText(config.statusId, "KAS/USDT " + config.label + " candles unavailable");
