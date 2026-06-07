@@ -408,14 +408,16 @@ Daily report:
 ```
 
 The daily report prints an operator verdict, the current node summary,
-processed transaction freshness, mainnet sync progress, benchmark trend, recent
-SQLite history summary, integration status, GitHub Actions status, recovery
-attempts, and dashboard locations.
+processed transaction freshness, mainnet sync progress, benchmark trend,
+optional KAS/USDT spot/futures market context, recent SQLite history summary,
+integration status, GitHub Actions status, recovery attempts, and dashboard
+locations.
 Integration and GitHub status failures are reported inline instead of stopping
 the rest of the report. Unlike alert and smoke wrappers, it intentionally emits
 output while healthy.
 The weekly report focuses on diagnostics summary, 7-day and 30-day SQLite
-history windows, benchmark trend, recovery attempts, and upgrade checkpoints.
+history windows, benchmark trend, optional KAS/USDT market context, recovery
+attempts, and upgrade checkpoints.
 `make weekly-archive` pairs the report with a history archive for off-host
 backup.
 

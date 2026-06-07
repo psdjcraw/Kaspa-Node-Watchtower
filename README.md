@@ -70,7 +70,9 @@ which supports a more resilient decentralized network.
   market-data refreshes are throttled per panel to avoid unnecessary public API
   calls for long-window data, with a source-status panel for live, cached, or
   unavailable public API groups in a stable operator-facing order with short
-  failure details
+  failure details; daily and weekly reports also include an optional Bybit
+  KAS/USDT spot/futures market snapshot for price, basis, funding, and open
+  interest context
 - Prometheus textfile metrics for local scraping or textfile collectors
 - Long-lived SQLite history export and operator summary reporting
 
@@ -130,6 +132,7 @@ For a concise operator summary:
 ```bash
 .venv/bin/python watchtower.py -c config.json --summary
 .venv/bin/python watchtower.py -c config.json --sync-report
+.venv/bin/python watchtower.py --market-summary
 make diagnostics-summary
 ```
 
@@ -368,10 +371,12 @@ make weekly-archive
 ```
 
 The daily report includes an operator verdict, node health, processed
-transaction freshness, mainnet sync progress, benchmark stability, recent
-SQLite history summary, integration status, and smoke/CodeQL workflow status.
+transaction freshness, mainnet sync progress, benchmark stability, optional
+KAS/USDT market context, recent SQLite history summary, integration status,
+and smoke/CodeQL workflow status.
 The weekly report focuses on diagnostics summary, 7-day and 30-day SQLite
-history, benchmark trend, recovery attempts, and upgrade checkpoints.
+history, benchmark trend, optional KAS/USDT market context, recovery attempts,
+and upgrade checkpoints.
 `make weekly-archive` pairs that report with a portable history archive.
 
 See [Documentation](#documentation) for setup, integrations, operations,

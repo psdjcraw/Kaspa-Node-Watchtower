@@ -13,6 +13,8 @@ import shutil
 import socket
 import subprocess
 import time
+import urllib.error
+import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
@@ -925,6 +927,150 @@ def compact_number(value: Any) -> str:
     if magnitude >= 1_000:
         return f"{parsed / 1_000:.1f}K"
     return str(int(parsed)) if parsed.is_integer() else f"{parsed:.2f}"
+
+
+def fetch_json_url(url: str, timeout: float = 6.0) -> Any:
+    request = urllib.request.Request(url, headers={"User-Agent": f"kaspa-node-watchtower/{VERSION}"})
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        data = response.read()
+    return json.loads(data.decode("utf-8"))
+
+
+def market_api_list(payload: dict[str, Any], source: str) -> list[Any]:
+    if not isinstance(payload, dict):
+        raise ValueError(f"{source} returned non-object payload")
+    ret_code = payload.get("retCode")
+    if ret_code not in (None, 0, "0"):
+        raise ValueError(str(payload.get("retMsg") or f"{source} API error"))
+    rows = ((payload.get("result") or {}).get("list") or [])
+    if not isinstance(rows, list) or not rows:
+        raise ValueError(f"{source} returned no rows")
+    return rows
+
+
+def format_market_price(value: Any) -> str:
+    parsed = numeric(value)
+    if parsed is None:
+        return "unknown"
+    if abs(parsed) >= 1:
+        return f"${parsed:,.2f}"
+    return f"${parsed:.5f}"
+
+
+def format_market_percent(value: Any) -> str:
+    parsed = numeric(value)
+    if parsed is None:
+        return "unknown"
+    return f"{parsed * 100:+.2f}%"
+
+
+def format_market_percent_points(value: Any) -> str:
+    parsed = numeric(value)
+    if parsed is None:
+        return "unknown"
+    return f"{parsed:+.2f}%"
+
+
+def format_market_volume(value: Any, suffix: str = "KAS") -> str:
+    text = compact_number(value)
+    return "unknown" if text == "unknown" else f"{text} {suffix}"
+
+
+def format_market_usdt(value: Any) -> str:
+    text = compact_number(value)
+    return "unknown" if text == "unknown" else f"${text}"
+
+
+def format_market_time_ms(value: Any) -> str:
+    parsed = numeric(value)
+    if parsed is None:
+        return "unknown"
+    try:
+        return dt.datetime.fromtimestamp(parsed / 1000, tz=dt.timezone.utc).isoformat()
+    except (OverflowError, OSError, ValueError):
+        return "unknown"
+
+
+def fetch_market_snapshot(timeout: float = 6.0) -> dict[str, Any]:
+    spot_url = "https://api.bybit.com/v5/market/tickers?category=spot&symbol=KASUSDT"
+    futures_url = "https://api.bybit.com/v5/market/tickers?category=linear&symbol=KASUSDT"
+    try:
+        spot = market_api_list(fetch_json_url(spot_url, timeout=timeout), "Bybit spot")[0]
+        futures = market_api_list(fetch_json_url(futures_url, timeout=timeout), "Bybit linear")[0]
+    except (OSError, urllib.error.URLError, ValueError, json.JSONDecodeError) as error:
+        return {"ok": False, "source": "Bybit KAS/USDT", "error": str(error)[:180]}
+
+    mark_price = numeric(futures.get("markPrice") or futures.get("lastPrice"))
+    index_price = numeric(futures.get("indexPrice"))
+    basis_pct = None
+    if mark_price is not None and index_price not in (None, 0):
+        basis_pct = ((mark_price - index_price) / index_price) * 100
+    funding_rate = numeric(futures.get("fundingRate"))
+    funding_interval = numeric(futures.get("fundingIntervalHour")) or 8
+    funding_apr = None if funding_rate is None else funding_rate * (24 / funding_interval) * 365 * 100
+    return {
+        "ok": True,
+        "source": "Bybit KAS/USDT",
+        "spot": {
+            "last_price": spot.get("lastPrice"),
+            "change_24h": spot.get("price24hPcnt"),
+            "volume_24h": spot.get("volume24h"),
+            "high_24h": spot.get("highPrice24h"),
+            "low_24h": spot.get("lowPrice24h"),
+        },
+        "futures": {
+            "mark_price": futures.get("markPrice") or futures.get("lastPrice"),
+            "index_price": futures.get("indexPrice"),
+            "basis_pct": basis_pct,
+            "funding_rate": futures.get("fundingRate"),
+            "funding_apr_pct": funding_apr,
+            "next_funding_time": futures.get("nextFundingTime"),
+            "open_interest": futures.get("openInterest"),
+            "open_interest_value": futures.get("openInterestValue"),
+            "volume_24h": futures.get("volume24h"),
+        },
+    }
+
+
+def format_market_snapshot(snapshot: dict[str, Any]) -> str:
+    if not snapshot.get("ok"):
+        detail = snapshot.get("error") or "unknown"
+        return "\n".join(
+            [
+                f"Kaspa market snapshot: {snapshot.get('source', 'public market APIs')}",
+                f"market_snapshot=unavailable error={detail}",
+            ]
+        )
+    spot = snapshot.get("spot") or {}
+    futures = snapshot.get("futures") or {}
+    return "\n".join(
+        [
+            f"Kaspa market snapshot: {snapshot.get('source', 'Bybit KAS/USDT')}",
+            (
+                "spot="
+                f"price={format_market_price(spot.get('last_price'))} "
+                f"24h={format_market_percent(spot.get('change_24h'))} "
+                f"high={format_market_price(spot.get('high_24h'))} "
+                f"low={format_market_price(spot.get('low_24h'))} "
+                f"volume={format_market_volume(spot.get('volume_24h'))}"
+            ),
+            (
+                "futures="
+                f"mark={format_market_price(futures.get('mark_price'))} "
+                f"index={format_market_price(futures.get('index_price'))} "
+                f"basis={format_market_percent_points(futures.get('basis_pct'))} "
+                f"funding={format_market_percent(futures.get('funding_rate'))} "
+                f"funding_apr={format_market_percent_points(futures.get('funding_apr_pct'))}"
+            ),
+            (
+                "futures_positioning="
+                f"open_interest={format_market_volume(futures.get('open_interest'))} "
+                f"oi_value={format_market_usdt(futures.get('open_interest_value'))} "
+                f"volume_24h={format_market_volume(futures.get('volume_24h'))} "
+                f"next_funding={format_market_time_ms(futures.get('next_funding_time'))}"
+            ),
+        ]
+    )
 
 
 def sparkline_svg(items: list[dict[str, Any]], key: str, color: str) -> str:
@@ -4753,6 +4899,11 @@ def benchmark_report(config: dict, *, limit: int) -> int:
     return 0 if summary["latest_status"] == "ok" else 1
 
 
+def market_summary(timeout: float = 6.0) -> int:
+    print(format_market_snapshot(fetch_market_snapshot(timeout=timeout)))
+    return 0
+
+
 def prometheus_label_value(value: Any) -> str:
     return str(value).replace("\\", "\\\\").replace("\n", "\\n").replace('"', '\\"')
 
@@ -5559,6 +5710,8 @@ def main() -> int:
     parser.add_argument("--benchmark-snapshot", action="store_true", help="Append a benchmark snapshot to the JSONL benchmark log.")
     parser.add_argument("--benchmark-report", action="store_true", help="Print a benchmark report from saved snapshots.")
     parser.add_argument("--benchmark-limit", type=int, default=100, help="Number of recent benchmark snapshots to include.")
+    parser.add_argument("--market-summary", action="store_true", help="Print an optional public KAS/USDT market snapshot.")
+    parser.add_argument("--market-timeout", type=float, default=6.0, help="Public market API timeout in seconds.")
     parser.add_argument("--prometheus", action="store_true", help="Write Prometheus textfile metrics.")
     parser.add_argument("--validate-config", action="store_true", help="Validate config paths, endpoints, and commands.")
     parser.add_argument("--prune-state", action="store_true", help="Apply configured retention limits to local state files.")
@@ -5586,6 +5739,8 @@ def main() -> int:
         return benchmark_snapshot(config)
     if args.benchmark_report:
         return benchmark_report(config, limit=args.benchmark_limit)
+    if args.market_summary:
+        return market_summary(timeout=args.market_timeout)
     if args.prometheus:
         return prometheus(config)
     if args.validate_config:

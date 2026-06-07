@@ -743,6 +743,87 @@ class WatchtowerUnitTests(unittest.TestCase):
         self.assertIn("## Sanitized Summary", text)
         self.assertIn("sanitized: true", text)
 
+    def test_market_snapshot_formats_spot_and_futures_context(self):
+        snapshot = {
+            "ok": True,
+            "source": "Bybit KAS/USDT",
+            "spot": {
+                "last_price": "0.031234",
+                "change_24h": "0.0123",
+                "high_24h": "0.033",
+                "low_24h": "0.030",
+                "volume_24h": "98765432",
+            },
+            "futures": {
+                "mark_price": "0.0313",
+                "index_price": "0.0312",
+                "basis_pct": 0.3205128205,
+                "funding_rate": "0.00005",
+                "funding_apr_pct": 5.475,
+                "next_funding_time": "1780828800000",
+                "open_interest": "230000000",
+                "open_interest_value": "7200000",
+                "volume_24h": "51000000",
+            },
+        }
+
+        text = watchtower.format_market_snapshot(snapshot)
+
+        self.assertIn("Kaspa market snapshot: Bybit KAS/USDT", text)
+        self.assertIn("spot=price=$0.03123 24h=+1.23%", text)
+        self.assertIn("volume=98.77M KAS", text)
+        self.assertIn("basis=+0.32%", text)
+        self.assertIn("funding=+0.01%", text)
+        self.assertIn("funding_apr=+5.47%", text)
+        self.assertIn("open_interest=230.00M KAS", text)
+        self.assertIn("oi_value=$7.20M", text)
+
+    def test_fetch_market_snapshot_computes_basis_and_apr(self):
+        spot_payload = {
+            "retCode": 0,
+            "result": {
+                "list": [
+                    {
+                        "lastPrice": "0.030",
+                        "price24hPcnt": "-0.02",
+                        "highPrice24h": "0.032",
+                        "lowPrice24h": "0.029",
+                        "volume24h": "1000000",
+                    }
+                ]
+            },
+        }
+        futures_payload = {
+            "retCode": 0,
+            "result": {
+                "list": [
+                    {
+                        "markPrice": "0.0303",
+                        "indexPrice": "0.0300",
+                        "fundingRate": "0.0001",
+                        "fundingIntervalHour": "8",
+                        "nextFundingTime": "1780828800000",
+                        "openInterest": "2000000",
+                        "openInterestValue": "60600",
+                        "volume24h": "3000000",
+                    }
+                ]
+            },
+        }
+        with mock.patch("watchtower.fetch_json_url", side_effect=[spot_payload, futures_payload]):
+            snapshot = watchtower.fetch_market_snapshot(timeout=1)
+
+        self.assertTrue(snapshot["ok"])
+        self.assertAlmostEqual(snapshot["futures"]["basis_pct"], 1.0)
+        self.assertAlmostEqual(snapshot["futures"]["funding_apr_pct"], 10.95)
+
+    def test_fetch_market_snapshot_returns_unavailable_on_api_failure(self):
+        with mock.patch("watchtower.fetch_json_url", side_effect=ValueError("rate limited")):
+            snapshot = watchtower.fetch_market_snapshot(timeout=1)
+
+        self.assertFalse(snapshot["ok"])
+        self.assertIn("rate limited", snapshot["error"])
+
     def test_status_page_uses_incident_first_dashboard_layout(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)

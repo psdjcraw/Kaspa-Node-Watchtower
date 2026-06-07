@@ -33,6 +33,9 @@ All notable changes to Kaspa Node Watchtower are tracked here.
   before the first browser refresh completes.
 - Market Data Sources failure rows now include short browser-side error details
   such as HTTP, API, or timeout messages.
+- Daily and weekly operator reports now include an optional Bybit KAS/USDT
+  market snapshot with spot price, 24-hour volume, futures basis, funding, and
+  open-interest context.
 
 ## 0.6.0 - 2026-06-07
 
