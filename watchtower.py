@@ -2058,9 +2058,32 @@ def write_status_page(
       align-items: flex-start;
       margin-bottom: 16px;
     }}
+    .hero-actions {{
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }}
     h1 {{ font-size: 24px; margin: 0 0 6px; line-height: 1.2; }}
     h2 {{ font-size: 16px; margin: 0 0 12px; }}
     .subtle {{ color: var(--muted); font-size: 13px; max-width: 100%; overflow-wrap: anywhere; word-break: break-word; }}
+    .header-link {{
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 31px;
+      padding: 7px 11px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      color: var(--accent);
+      font-size: 13px;
+      font-weight: 800;
+      text-decoration: none;
+      white-space: nowrap;
+    }}
+    .header-link:hover {{ background: var(--accent-soft); }}
     .badge {{
       display: inline-flex;
       min-width: 92px;
@@ -2580,6 +2603,7 @@ def write_status_page(
     @media (max-width: 760px) {{
       main {{ padding: 14px; }}
       .hero-top, .hero-strip, .layout, .chart-grid, .market-watch, .market-timeframe-grid, .liquidation-grid, .context-grid {{ display: block; }}
+      .hero-actions {{ justify-content: flex-start; margin-top: 12px; }}
       .incident, .incident-facts {{ display: block; }}
       .incident-facts div {{ margin-top: 8px; }}
       .chart-head {{ display: block; }}
@@ -2607,7 +2631,10 @@ def write_status_page(
           <h1>Kaspa Node Watchtower</h1>
           <div class="subtle">{html.escape(report['node_name'])} · checked at <code>{html.escape(report['checked_at'])}</code> · auto-refresh 60s</div>
         </div>
-        <div class="badge {html.escape(report['severity'])}">{html.escape(report['severity'])}</div>
+        <div class="hero-actions">
+          <a class="header-link" href="stream.html">Stream</a>
+          <div class="badge {html.escape(report['severity'])}">{html.escape(report['severity'])}</div>
+        </div>
       </div>
       <div class="hero-strip">
         <div class="bar-block">

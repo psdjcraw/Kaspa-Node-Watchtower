@@ -1025,6 +1025,8 @@ class WatchtowerUnitTests(unittest.TestCase):
 
             html = output.read_text(encoding="utf-8")
             self.assertIn("Operator verdict", html)
+            self.assertIn('class="header-link" href="stream.html"', html)
+            self.assertIn(">Stream</a>", html)
             self.assertIn("Review failed checks", html)
             self.assertIn('class="incident critical"', html)
             self.assertIn('class="v-card critical"', html)
