@@ -1,6 +1,8 @@
 import json
 import copy
 import datetime as dt
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -823,6 +825,76 @@ class WatchtowerUnitTests(unittest.TestCase):
 
         self.assertFalse(snapshot["ok"])
         self.assertIn("rate limited", snapshot["error"])
+
+    def test_market_snapshot_item_round_trips_to_sqlite_summary(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            benchmarks = tmp_path / "benchmarks.jsonl"
+            markets = tmp_path / "market-snapshots.jsonl"
+            db = tmp_path / "history.sqlite"
+            watchtower.save_jsonl(
+                benchmarks,
+                [
+                    {
+                        "checked_at": "2026-06-07T10:00:00+09:00",
+                        "node_name": "test-node",
+                        "status": "ok",
+                        "severity": "ok",
+                        "peer_count": 8,
+                        "virtual_daa_score": 100,
+                        "block_count": 200,
+                        "disk_free_gb": 300,
+                    }
+                ],
+            )
+            watchtower.save_jsonl(
+                markets,
+                [
+                    {
+                        "checked_at": "2026-06-07T10:01:00+09:00",
+                        "source": "Bybit KAS/USDT",
+                        "ok": True,
+                        "spot_last_price": 0.0305,
+                        "spot_change_24h": 0.012,
+                        "spot_volume_24h": 42000000,
+                        "futures_basis_pct": -0.13,
+                        "futures_funding_rate": 0.0001,
+                        "futures_funding_apr_pct": 10.95,
+                        "futures_open_interest": 230000000,
+                        "futures_open_interest_value": 7010000,
+                        "futures_volume_24h": 78000000,
+                    }
+                ],
+            )
+
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    "scripts/export_history_sqlite.py",
+                    "--db",
+                    str(db),
+                    "--benchmarks",
+                    str(benchmarks),
+                    "--market",
+                    str(markets),
+                    "--upgrades",
+                    str(tmp_path / "missing-upgrades.jsonl"),
+                    "--recovery",
+                    str(tmp_path / "missing-recovery.jsonl"),
+                    "--summary",
+                    "--days",
+                    "7",
+                ],
+                check=False,
+                text=True,
+                capture_output=True,
+            )
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn("market_snapshots imported=1 total=1", completed.stdout)
+        self.assertIn("market_snapshots=1 successful=1", completed.stdout)
+        self.assertIn("market_latest=2026-06-07T10:01:00+09:00 source=Bybit KAS/USDT spot=$0.03050", completed.stdout)
+        self.assertIn("market_futures=basis=-0.13%", completed.stdout)
 
     def test_status_page_uses_incident_first_dashboard_layout(self):
         with tempfile.TemporaryDirectory() as tmp:

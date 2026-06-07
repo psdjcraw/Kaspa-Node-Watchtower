@@ -22,7 +22,7 @@ section "Benchmark Trend"
 "$PYTHON_BIN" watchtower.py -c config.json --benchmark-report --benchmark-limit 336
 
 section "Market Snapshot"
-"$PYTHON_BIN" watchtower.py --market-summary --market-timeout 5
+"$PYTHON_BIN" watchtower.py -c config.json --market-snapshot --market-timeout 5
 
 section "History Summary 7d"
 scripts/export_history_sqlite.py --summary --days 7 | sed -n '/^window_days=/,$p'

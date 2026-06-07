@@ -79,7 +79,7 @@ section "Benchmark Trend"
 "$PYTHON_BIN" watchtower.py -c config.json --benchmark-report
 
 section "Market Snapshot"
-"$PYTHON_BIN" watchtower.py --market-summary --market-timeout 5
+"$PYTHON_BIN" watchtower.py -c config.json --market-snapshot --market-timeout 5
 
 section "Recovery History"
 "$PYTHON_BIN" - <<'PY'

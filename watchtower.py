@@ -35,6 +35,7 @@ DEFAULT_CONFIG = {
     "status_page_path": "state/status.html",
     "canvas_status_page_path": "",
     "benchmark_path": "state/benchmarks.jsonl",
+    "market_snapshot_path": "state/market-snapshots.jsonl",
     "prometheus_metrics_path": "state/watchtower.prom",
     "recovery_history_path": "state/recovery-history.jsonl",
     "retention": {
@@ -1028,6 +1029,58 @@ def fetch_market_snapshot(timeout: float = 6.0) -> dict[str, Any]:
             "open_interest": futures.get("openInterest"),
             "open_interest_value": futures.get("openInterestValue"),
             "volume_24h": futures.get("volume24h"),
+        },
+    }
+
+
+def market_snapshot_item(snapshot: dict[str, Any]) -> dict[str, Any]:
+    spot = snapshot.get("spot") or {}
+    futures = snapshot.get("futures") or {}
+    return {
+        "checked_at": dt.datetime.now().astimezone().isoformat(),
+        "source": snapshot.get("source", "Bybit KAS/USDT"),
+        "ok": bool(snapshot.get("ok")),
+        "error": snapshot.get("error"),
+        "spot_last_price": numeric(spot.get("last_price")),
+        "spot_change_24h": numeric(spot.get("change_24h")),
+        "spot_high_24h": numeric(spot.get("high_24h")),
+        "spot_low_24h": numeric(spot.get("low_24h")),
+        "spot_volume_24h": numeric(spot.get("volume_24h")),
+        "futures_mark_price": numeric(futures.get("mark_price")),
+        "futures_index_price": numeric(futures.get("index_price")),
+        "futures_basis_pct": numeric(futures.get("basis_pct")),
+        "futures_funding_rate": numeric(futures.get("funding_rate")),
+        "futures_funding_apr_pct": numeric(futures.get("funding_apr_pct")),
+        "futures_next_funding_time": futures.get("next_funding_time"),
+        "futures_open_interest": numeric(futures.get("open_interest")),
+        "futures_open_interest_value": numeric(futures.get("open_interest_value")),
+        "futures_volume_24h": numeric(futures.get("volume_24h")),
+    }
+
+
+def snapshot_from_market_item(item: dict[str, Any]) -> dict[str, Any]:
+    if not item.get("ok"):
+        return {"ok": False, "source": item.get("source", "Bybit KAS/USDT"), "error": item.get("error")}
+    return {
+        "ok": True,
+        "source": item.get("source", "Bybit KAS/USDT"),
+        "spot": {
+            "last_price": item.get("spot_last_price"),
+            "change_24h": item.get("spot_change_24h"),
+            "high_24h": item.get("spot_high_24h"),
+            "low_24h": item.get("spot_low_24h"),
+            "volume_24h": item.get("spot_volume_24h"),
+        },
+        "futures": {
+            "mark_price": item.get("futures_mark_price"),
+            "index_price": item.get("futures_index_price"),
+            "basis_pct": item.get("futures_basis_pct"),
+            "funding_rate": item.get("futures_funding_rate"),
+            "funding_apr_pct": item.get("futures_funding_apr_pct"),
+            "next_funding_time": item.get("futures_next_funding_time"),
+            "open_interest": item.get("futures_open_interest"),
+            "open_interest_value": item.get("futures_open_interest_value"),
+            "volume_24h": item.get("futures_volume_24h"),
         },
     }
 
@@ -4904,6 +4957,16 @@ def market_summary(timeout: float = 6.0) -> int:
     return 0
 
 
+def market_snapshot(config: dict, timeout: float = 6.0) -> int:
+    path = Path(config.get("market_snapshot_path") or DEFAULT_CONFIG["market_snapshot_path"])
+    snapshot = fetch_market_snapshot(timeout=timeout)
+    item = market_snapshot_item(snapshot)
+    append_jsonl(path, item)
+    print(f"Market snapshot saved: {path}")
+    print(format_market_snapshot(snapshot_from_market_item(item)))
+    return 0
+
+
 def prometheus_label_value(value: Any) -> str:
     return str(value).replace("\\", "\\\\").replace("\n", "\\n").replace('"', '\\"')
 
@@ -5711,6 +5774,7 @@ def main() -> int:
     parser.add_argument("--benchmark-report", action="store_true", help="Print a benchmark report from saved snapshots.")
     parser.add_argument("--benchmark-limit", type=int, default=100, help="Number of recent benchmark snapshots to include.")
     parser.add_argument("--market-summary", action="store_true", help="Print an optional public KAS/USDT market snapshot.")
+    parser.add_argument("--market-snapshot", action="store_true", help="Append a public KAS/USDT market snapshot to JSONL history.")
     parser.add_argument("--market-timeout", type=float, default=6.0, help="Public market API timeout in seconds.")
     parser.add_argument("--prometheus", action="store_true", help="Write Prometheus textfile metrics.")
     parser.add_argument("--validate-config", action="store_true", help="Validate config paths, endpoints, and commands.")
@@ -5741,6 +5805,8 @@ def main() -> int:
         return benchmark_report(config, limit=args.benchmark_limit)
     if args.market_summary:
         return market_summary(timeout=args.market_timeout)
+    if args.market_snapshot:
+        return market_snapshot(config, timeout=args.market_timeout)
     if args.prometheus:
         return prometheus(config)
     if args.validate_config:

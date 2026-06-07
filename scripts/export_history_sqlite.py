@@ -84,6 +84,28 @@ RECOVERY_COLUMNS = [
     "data_json",
 ]
 
+MARKET_COLUMNS = [
+    "checked_at",
+    "source",
+    "ok",
+    "error",
+    "spot_last_price",
+    "spot_change_24h",
+    "spot_high_24h",
+    "spot_low_24h",
+    "spot_volume_24h",
+    "futures_mark_price",
+    "futures_index_price",
+    "futures_basis_pct",
+    "futures_funding_rate",
+    "futures_funding_apr_pct",
+    "futures_next_funding_time",
+    "futures_open_interest",
+    "futures_open_interest_value",
+    "futures_volume_24h",
+    "data_json",
+]
+
 
 def load_jsonl(path: Path) -> list[dict[str, Any]]:
     if not path.exists():
@@ -102,7 +124,7 @@ def value(item: dict[str, Any], key: str) -> Any:
         return json.dumps(item, sort_keys=True)
     if key in {"failed_checks_before", "failed_checks_after", "restart_command"}:
         return json.dumps(item.get(key) or [], sort_keys=True)
-    if key in {"force", "dry_run"}:
+    if key in {"force", "dry_run", "ok"}:
         return 1 if item.get(key) else 0
     return item.get(key)
 
@@ -177,6 +199,28 @@ def create_schema(connection: sqlite3.Connection) -> None:
           failed_checks_after text,
           exit_code integer,
           restart_command text,
+          data_json text not null
+        );
+
+        create table if not exists market_snapshots (
+          checked_at text primary key,
+          source text,
+          ok integer,
+          error text,
+          spot_last_price real,
+          spot_change_24h real,
+          spot_high_24h real,
+          spot_low_24h real,
+          spot_volume_24h real,
+          futures_mark_price real,
+          futures_index_price real,
+          futures_basis_pct real,
+          futures_funding_rate real,
+          futures_funding_apr_pct real,
+          futures_next_funding_time text,
+          futures_open_interest real,
+          futures_open_interest_value real,
+          futures_volume_24h real,
           data_json text not null
         );
         """
@@ -276,6 +320,53 @@ def format_per_second(value: float | None) -> str:
     return f"{format_optional_number(value)}/s"
 
 
+def compact_number(value: Any) -> str:
+    parsed = numeric(value)
+    if parsed is None:
+        return "unknown"
+    magnitude = abs(parsed)
+    if magnitude >= 1_000_000_000:
+        return f"{parsed / 1_000_000_000:.2f}B"
+    if magnitude >= 1_000_000:
+        return f"{parsed / 1_000_000:.2f}M"
+    if magnitude >= 1_000:
+        return f"{parsed / 1_000:.1f}K"
+    return str(int(parsed)) if parsed.is_integer() else f"{parsed:.2f}"
+
+
+def format_market_price(value: Any) -> str:
+    parsed = numeric(value)
+    if parsed is None:
+        return "unknown"
+    if abs(parsed) >= 1:
+        return f"${parsed:,.2f}"
+    return f"${parsed:.5f}"
+
+
+def format_market_fraction_percent(value: Any) -> str:
+    parsed = numeric(value)
+    if parsed is None:
+        return "unknown"
+    return f"{parsed * 100:+.2f}%"
+
+
+def format_market_percent(value: Any) -> str:
+    parsed = numeric(value)
+    if parsed is None:
+        return "unknown"
+    return f"{parsed:+.2f}%"
+
+
+def format_market_volume(value: Any, suffix: str = "KAS") -> str:
+    text = compact_number(value)
+    return "unknown" if text == "unknown" else f"{text} {suffix}"
+
+
+def format_market_usdt(value: Any) -> str:
+    text = compact_number(value)
+    return "unknown" if text == "unknown" else f"${text}"
+
+
 def safe_archive_label(label: str) -> str:
     cleaned = re.sub(r"[^A-Za-z0-9_.-]+", "-", label.strip())
     return cleaned.strip("-") or "history-archive"
@@ -334,6 +425,31 @@ def history_summary(connection: sqlite3.Connection, days: int) -> dict[str, Any]
         value
         for row in benchmark_window
         if (value := numeric(row["latest_processed_age_seconds"])) is not None
+    ]
+    market_rows = list(
+        connection.execute(
+            """
+            select checked_at, source, ok, error, spot_last_price, spot_change_24h,
+                   spot_volume_24h, futures_basis_pct, futures_funding_rate,
+                   futures_funding_apr_pct, futures_open_interest,
+                   futures_open_interest_value, futures_volume_24h
+            from market_snapshots
+            order by checked_at
+            """
+        )
+    )
+    market_window = latest_window(market_rows, days)
+    successful_market = [row for row in market_window if row["ok"]]
+    latest_market = successful_market[-1] if successful_market else None
+    market_basis = [
+        value
+        for row in successful_market
+        if (value := numeric(row["futures_basis_pct"])) is not None
+    ]
+    market_funding = [
+        value
+        for row in successful_market
+        if (value := numeric(row["futures_funding_rate"])) is not None
     ]
 
     recovery_rows = list(
@@ -404,6 +520,27 @@ def history_summary(connection: sqlite3.Connection, days: int) -> dict[str, Any]
         if not processed_rates
         else sum(processed_rates) / len(processed_rates),
         "max_processed_age_seconds": max(processed_ages) if processed_ages else None,
+        "market_snapshots": len(market_window),
+        "market_successful_snapshots": len(successful_market),
+        "latest_market_checked_at": latest_market["checked_at"] if latest_market else "none",
+        "latest_market_source": latest_market["source"] if latest_market else "unknown",
+        "latest_spot_price": None if latest_market is None else numeric(latest_market["spot_last_price"]),
+        "latest_spot_change_24h": None if latest_market is None else numeric(latest_market["spot_change_24h"]),
+        "latest_spot_volume_24h": None if latest_market is None else numeric(latest_market["spot_volume_24h"]),
+        "latest_futures_basis_pct": None if latest_market is None else numeric(latest_market["futures_basis_pct"]),
+        "avg_futures_basis_pct": None if not market_basis else sum(market_basis) / len(market_basis),
+        "latest_futures_funding_rate": None if latest_market is None else numeric(latest_market["futures_funding_rate"]),
+        "avg_futures_funding_rate": None if not market_funding else sum(market_funding) / len(market_funding),
+        "latest_futures_funding_apr_pct": None
+        if latest_market is None
+        else numeric(latest_market["futures_funding_apr_pct"]),
+        "latest_futures_open_interest": None
+        if latest_market is None
+        else numeric(latest_market["futures_open_interest"]),
+        "latest_futures_open_interest_value": None
+        if latest_market is None
+        else numeric(latest_market["futures_open_interest_value"]),
+        "latest_futures_volume_24h": None if latest_market is None else numeric(latest_market["futures_volume_24h"]),
         "recovery_attempts": len(recovery_window),
         "recovery_executed": sum(1 for row in recovery_window if not row["dry_run"]),
         "recovery_dry_runs": sum(1 for row in recovery_window if row["dry_run"]),
@@ -487,6 +624,29 @@ def print_history_summary(summary: dict[str, Any]) -> None:
     print(f"processed_latest_tx_rate={format_per_second(summary['latest_processed_tx_rate'])}")
     print(f"processed_avg_tx_rate={format_per_second(summary['avg_processed_tx_rate'])}")
     print(f"processed_max_age_seconds={format_optional_number(summary['max_processed_age_seconds'])}")
+    print(f"market_snapshots={summary['market_snapshots']} successful={summary['market_successful_snapshots']}")
+    print(
+        "market_latest="
+        f"{summary['latest_market_checked_at']} "
+        f"source={summary['latest_market_source']} "
+        f"spot={format_market_price(summary['latest_spot_price'])} "
+        f"24h={format_market_fraction_percent(summary['latest_spot_change_24h'])} "
+        f"volume={format_market_volume(summary['latest_spot_volume_24h'])}"
+    )
+    print(
+        "market_futures="
+        f"basis={format_market_percent(summary['latest_futures_basis_pct'])} "
+        f"basis_avg={format_market_percent(summary['avg_futures_basis_pct'])} "
+        f"funding={format_market_fraction_percent(summary['latest_futures_funding_rate'])} "
+        f"funding_avg={format_market_fraction_percent(summary['avg_futures_funding_rate'])} "
+        f"funding_apr={format_market_percent(summary['latest_futures_funding_apr_pct'])}"
+    )
+    print(
+        "market_futures_positioning="
+        f"open_interest={format_market_volume(summary['latest_futures_open_interest'])} "
+        f"oi_value={format_market_usdt(summary['latest_futures_open_interest_value'])} "
+        f"volume_24h={format_market_volume(summary['latest_futures_volume_24h'])}"
+    )
     print(
         "recovery_attempts="
         f"{summary['recovery_attempts']} "
@@ -556,6 +716,7 @@ def write_archive(
     archive_label: str | None,
     db_path: Path,
     benchmark_path: Path,
+    market_path: Path,
     upgrade_path: Path,
     recovery_path: Path,
     counts: dict[str, int],
@@ -568,6 +729,7 @@ def write_archive(
     files = {
         "database": copy_if_exists(db_path, target_dir, "watchtower-history.sqlite"),
         "benchmarks": copy_if_exists(benchmark_path, target_dir, "benchmarks.jsonl"),
+        "market": copy_if_exists(market_path, target_dir, "market-snapshots.jsonl"),
         "upgrades": copy_if_exists(upgrade_path, target_dir, "upgrade-checkpoints.jsonl"),
         "recovery": copy_if_exists(recovery_path, target_dir, "recovery-history.jsonl"),
     }
@@ -584,6 +746,7 @@ def write_archive(
         "sources": {
             "database": str(db_path),
             "benchmarks": str(benchmark_path),
+            "market": str(market_path),
             "upgrades": str(upgrade_path),
             "recovery": str(recovery_path),
         },
@@ -597,6 +760,8 @@ def export(args: argparse.Namespace) -> int:
     args.days = max(1, args.days)
     args.db.parent.mkdir(parents=True, exist_ok=True)
     benchmark_items = load_jsonl(args.benchmarks)
+    market_path = getattr(args, "market", Path("state/market-snapshots.jsonl"))
+    market_items = load_jsonl(market_path)
     upgrade_items = load_jsonl(args.upgrades)
     recovery_items = load_jsonl(args.recovery)
     with closing(sqlite3.connect(args.db)) as connection:
@@ -607,6 +772,13 @@ def export(args: argparse.Namespace) -> int:
             BENCHMARK_COLUMNS,
             "checked_at",
             benchmark_items,
+        )
+        market_imported = upsert_items(
+            connection,
+            "market_snapshots",
+            MARKET_COLUMNS,
+            "checked_at",
+            market_items,
         )
         upgrade_imported = upsert_items(
             connection,
@@ -624,6 +796,7 @@ def export(args: argparse.Namespace) -> int:
         )
         connection.commit()
         benchmark_count = table_count(connection, "benchmark_snapshots")
+        market_count = table_count(connection, "market_snapshots")
         upgrade_count = table_count(connection, "upgrade_checkpoints")
         recovery_count = table_count(connection, "recovery_attempts")
         summary = history_summary(connection, args.days) if args.summary or args.archive_dir else None
@@ -631,9 +804,11 @@ def export(args: argparse.Namespace) -> int:
 
     counts = {
         "benchmark_snapshots": benchmark_count,
+        "market_snapshots": market_count,
         "upgrade_checkpoints": upgrade_count,
         "recovery_attempts": recovery_count,
         "benchmark_imported": benchmark_imported,
+        "market_imported": market_imported,
         "upgrade_imported": upgrade_imported,
         "recovery_imported": recovery_imported,
     }
@@ -645,6 +820,7 @@ def export(args: argparse.Namespace) -> int:
             archive_label=args.archive_label,
             db_path=args.db,
             benchmark_path=args.benchmarks,
+            market_path=market_path,
             upgrade_path=args.upgrades,
             recovery_path=args.recovery,
             counts=counts,
@@ -653,6 +829,7 @@ def export(args: argparse.Namespace) -> int:
 
     print(f"SQLite history written: {args.db}")
     print(f"benchmark_snapshots imported={benchmark_imported} total={benchmark_count}")
+    print(f"market_snapshots imported={market_imported} total={market_count}")
     print(f"upgrade_checkpoints imported={upgrade_imported} total={upgrade_count}")
     print(f"recovery_attempts imported={recovery_imported} total={recovery_count}")
     if archive_path:
@@ -670,6 +847,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Export watchtower history JSONL into SQLite.")
     parser.add_argument("--db", type=Path, default=Path("state/watchtower-history.sqlite"))
     parser.add_argument("--benchmarks", type=Path, default=Path("state/benchmarks.jsonl"))
+    parser.add_argument("--market", type=Path, default=Path("state/market-snapshots.jsonl"))
     parser.add_argument("--upgrades", type=Path, default=Path("state/upgrade-checkpoints.jsonl"))
     parser.add_argument("--recovery", type=Path, default=Path("state/recovery-history.jsonl"))
     parser.add_argument("--summary", action="store_true", help="Print an operator summary from the SQLite history.")

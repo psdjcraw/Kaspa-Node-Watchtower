@@ -36,6 +36,8 @@ All notable changes to Kaspa Node Watchtower are tracked here.
 - Daily and weekly operator reports now include an optional Bybit KAS/USDT
   market snapshot with spot price, 24-hour volume, futures basis, funding, and
   open-interest context.
+- Market snapshots can now be persisted to `state/market-snapshots.jsonl` and
+  imported into SQLite history summaries for latest spot/futures context.
 
 ## 0.6.0 - 2026-06-07
 

@@ -220,11 +220,12 @@ make history-archive
 make weekly-archive
 ```
 
-The export includes benchmark snapshots, upgrade checkpoints, and recovery
-attempts in `state/watchtower-history.sqlite`. The summary mode reports recent
-OK ratio, warning/critical counts, minimum peer and disk floors, DAA/block
-deltas, processed transaction rate, processed-stats age, recovery attempts, and
-latest upgrade checkpoint.
+The export includes benchmark snapshots, market snapshots, upgrade checkpoints,
+and recovery attempts in `state/watchtower-history.sqlite`. The summary mode
+reports recent OK ratio, warning/critical counts, minimum peer and disk floors,
+DAA/block deltas, processed transaction rate, processed-stats age, latest
+KAS/USDT spot/futures market context, recovery attempts, and latest upgrade
+checkpoint.
 Archive mode writes a portable directory with the SQLite snapshot, source JSONL
 files, summary JSON, and `manifest.json` for off-host backup.
 `make weekly-archive` prints the weekly operator report and writes a dated

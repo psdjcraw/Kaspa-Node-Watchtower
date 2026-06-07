@@ -222,16 +222,17 @@ make history-archive
 make weekly-archive
 ```
 
-This imports benchmark snapshots, upgrade checkpoints, and recovery attempts,
-then can summarize the latest history window for operator review, including
-processed transaction rate and processed-stats freshness trends.
+This imports benchmark snapshots, market snapshots, upgrade checkpoints, and
+recovery attempts, then can summarize the latest history window for operator
+review, including processed transaction rate, processed-stats freshness, and
+latest KAS/USDT spot/futures market context.
 `make history-archive` also writes a portable archive under
 `state/history-archives/` with the SQLite snapshot, source JSONL files, summary
 JSON, and a manifest for off-host backup or object storage upload.
 `make weekly-archive` prints the weekly report and writes a dated history
 archive in the same pass.
-`make history-multi-node` compares per-node status, severity, peer floors,
-disk floors, and DAA/block deltas from the SQLite history.
+`make history-multi-node` compares per-node status, severity, peer floors, disk
+floors, and DAA/block deltas from the SQLite history.
 
 Copy or upload an archive:
 
