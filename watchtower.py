@@ -1853,6 +1853,21 @@ def write_status_page(
       height: 3px;
       border-radius: 999px;
     }}
+    .liquidation-grid {{
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+      margin-bottom: 14px;
+    }}
+    .liquidation-grid > .panel {{
+      min-height: 332px;
+      display: flex;
+      flex-direction: column;
+    }}
+    .liquidation-grid .market-chart {{
+      flex: 1 1 auto;
+      min-height: 244px;
+    }}
     .market-status {{
       color: var(--muted);
       font-size: 12px;
@@ -2019,7 +2034,7 @@ def write_status_page(
     main > .panel + .panel {{ margin-top: 14px; }}
     @media (max-width: 760px) {{
       main {{ padding: 14px; }}
-      .hero-top, .hero-strip, .layout, .chart-grid, .market-watch, .market-timeframe-grid, .context-grid {{ display: block; }}
+      .hero-top, .hero-strip, .layout, .chart-grid, .market-watch, .market-timeframe-grid, .liquidation-grid, .context-grid {{ display: block; }}
       .incident, .incident-facts {{ display: block; }}
       .incident-facts div {{ margin-top: 8px; }}
       .chart-head {{ display: block; }}
@@ -2158,6 +2173,56 @@ def write_status_page(
       </div>
       <div id="market-volume-legend" class="market-legend"></div>
       <svg id="market-volume-chart" class="market-chart" viewBox="0 0 720 244" role="img" aria-label="Daily KAS trading volume by exchange and total"></svg>
+    </section>
+    <section class="liquidation-grid">
+      <section class="panel">
+        <div class="market-chart-head">
+          <h2>KAS/USDT Futures Liquidation Map 12H</h2>
+          <div id="liquidation-status-12h" class="market-status">Loading liquidation map</div>
+        </div>
+        <div class="market-legend">
+          <span style="color: #b42318"><i></i>Long liq</span>
+          <span style="color: #2563eb"><i></i>Short liq</span>
+          <span style="color: #111827"><i></i>Mark path</span>
+        </div>
+        <svg id="liquidation-chart-12h" class="market-chart" viewBox="0 0 720 244" role="img" aria-label="Estimated 12 hour KAS/USDT futures liquidation heatmap"></svg>
+      </section>
+      <section class="panel">
+        <div class="market-chart-head">
+          <h2>KAS/USDT Futures Liquidation Map 24H</h2>
+          <div id="liquidation-status-24h" class="market-status">Loading liquidation map</div>
+        </div>
+        <div class="market-legend">
+          <span style="color: #b42318"><i></i>Long liq</span>
+          <span style="color: #2563eb"><i></i>Short liq</span>
+          <span style="color: #111827"><i></i>Mark path</span>
+        </div>
+        <svg id="liquidation-chart-24h" class="market-chart" viewBox="0 0 720 244" role="img" aria-label="Estimated 24 hour KAS/USDT futures liquidation heatmap"></svg>
+      </section>
+      <section class="panel">
+        <div class="market-chart-head">
+          <h2>KAS/USDT Futures Liquidation Map 1W</h2>
+          <div id="liquidation-status-1w" class="market-status">Loading liquidation map</div>
+        </div>
+        <div class="market-legend">
+          <span style="color: #b42318"><i></i>Long liq</span>
+          <span style="color: #2563eb"><i></i>Short liq</span>
+          <span style="color: #111827"><i></i>Mark path</span>
+        </div>
+        <svg id="liquidation-chart-1w" class="market-chart" viewBox="0 0 720 244" role="img" aria-label="Estimated one week KAS/USDT futures liquidation heatmap"></svg>
+      </section>
+      <section class="panel">
+        <div class="market-chart-head">
+          <h2>KAS/USDT Futures Liquidation Map 1M</h2>
+          <div id="liquidation-status-1m" class="market-status">Loading liquidation map</div>
+        </div>
+        <div class="market-legend">
+          <span style="color: #b42318"><i></i>Long liq</span>
+          <span style="color: #2563eb"><i></i>Short liq</span>
+          <span style="color: #111827"><i></i>Mark path</span>
+        </div>
+        <svg id="liquidation-chart-1m" class="market-chart" viewBox="0 0 720 244" role="img" aria-label="Estimated one month KAS/USDT futures liquidation heatmap"></svg>
+      </section>
     </section>
     <section class="chart-grid">
       <section class="panel">
@@ -2408,6 +2473,36 @@ def write_status_page(
           }},
         ],
       }},
+      liquidations: [
+        {{
+          label: "12H",
+          chartId: "liquidation-chart-12h",
+          statusId: "liquidation-status-12h",
+          klineUrl: "https://api.bybit.com/v5/market/kline?category=linear&symbol=KASUSDT&interval=15&limit=48",
+          openInterestUrl: "https://api.bybit.com/v5/market/open-interest?category=linear&symbol=KASUSDT&intervalTime=15min&limit=48",
+        }},
+        {{
+          label: "24H",
+          chartId: "liquidation-chart-24h",
+          statusId: "liquidation-status-24h",
+          klineUrl: "https://api.bybit.com/v5/market/kline?category=linear&symbol=KASUSDT&interval=30&limit=48",
+          openInterestUrl: "https://api.bybit.com/v5/market/open-interest?category=linear&symbol=KASUSDT&intervalTime=30min&limit=48",
+        }},
+        {{
+          label: "1W",
+          chartId: "liquidation-chart-1w",
+          statusId: "liquidation-status-1w",
+          klineUrl: "https://api.bybit.com/v5/market/kline?category=linear&symbol=KASUSDT&interval=240&limit=42",
+          openInterestUrl: "https://api.bybit.com/v5/market/open-interest?category=linear&symbol=KASUSDT&intervalTime=4h&limit=42",
+        }},
+        {{
+          label: "1M",
+          chartId: "liquidation-chart-1m",
+          statusId: "liquidation-status-1m",
+          klineUrl: "https://api.bybit.com/v5/market/kline?category=linear&symbol=KASUSDT&interval=D&limit=32",
+          openInterestUrl: "https://api.bybit.com/v5/market/open-interest?category=linear&symbol=KASUSDT&intervalTime=1d&limit=32",
+        }},
+      ],
     }};
     const marketSignals = new Map();
 
@@ -3250,6 +3345,203 @@ def write_status_page(
       );
     }}
 
+    function marketLinearCandlesFromRows(rows) {{
+      return rows
+        .map((row) => ({{
+          time: marketNumber(row[0]),
+          open: marketNumber(row[1]),
+          high: marketNumber(row[2]),
+          low: marketNumber(row[3]),
+          close: marketNumber(row[4]),
+          volume: marketNumber(row[5]) || 0,
+          turnover: marketNumber(row[6]) || 0,
+        }}))
+        .filter((row) => row.time !== null && row.open !== null && row.high !== null && row.low !== null && row.close !== null)
+        .reverse();
+    }}
+
+    function marketOpenInterestRows(payload) {{
+      return ((((payload || {{}}).result || {{}}).list || []))
+        .map((row) => ({{
+          time: marketNumber(row.timestamp),
+          openInterest: marketNumber(row.openInterest),
+        }}))
+        .filter((row) => row.time !== null && row.openInterest !== null)
+        .sort((left, right) => left.time - right.time);
+    }}
+
+    function nearestOpenInterest(rows, time) {{
+      if (!rows.length) {{
+        return null;
+      }}
+      let nearest = rows[0];
+      let distance = Math.abs(rows[0].time - time);
+      rows.forEach((row) => {{
+        const rowDistance = Math.abs(row.time - time);
+        if (rowDistance < distance) {{
+          nearest = row;
+          distance = rowDistance;
+        }}
+      }});
+      return nearest.openInterest;
+    }}
+
+    function buildLiquidationCells(candles, openInterestRows, priceLow, priceHigh, bins) {{
+      const leverages = [
+        {{ value: 10, weight: 1.2 }},
+        {{ value: 25, weight: 1.0 }},
+        {{ value: 50, weight: 0.85 }},
+      ];
+      const span = priceHigh - priceLow || 1;
+      const cells = candles.map(() => Array.from({{ length: bins }}, () => ({{ long: 0, short: 0 }})));
+      let maxIntensity = 0;
+      let previousOi = null;
+      candles.forEach((candle, index) => {{
+        const oi = nearestOpenInterest(openInterestRows, candle.time);
+        const oiDelta = oi !== null && previousOi !== null ? Math.abs(oi - previousOi) * candle.close : 0;
+        if (oi !== null) {{
+          previousOi = oi;
+        }}
+        const base = Math.log10(Math.max(1, candle.turnover + oiDelta + candle.volume * candle.close));
+        leverages.forEach((leverage) => {{
+          const longPrice = candle.close * (1 - 1 / leverage.value);
+          const shortPrice = candle.close * (1 + 1 / leverage.value);
+          [
+            {{ price: longPrice, side: "long" }},
+            {{ price: shortPrice, side: "short" }},
+          ].forEach((point) => {{
+            const rawBin = Math.round(((point.price - priceLow) / span) * (bins - 1));
+            if (rawBin < 0 || rawBin >= bins) {{
+              return;
+            }}
+            [-1, 0, 1].forEach((offset) => {{
+              const bin = rawBin + offset;
+              if (bin < 0 || bin >= bins) {{
+                return;
+              }}
+              const decay = offset === 0 ? 1 : 0.42;
+              const value = base * leverage.weight * decay;
+              cells[index][bin][point.side] += value;
+              maxIntensity = Math.max(maxIntensity, cells[index][bin].long + cells[index][bin].short);
+            }});
+          }});
+        }});
+      }});
+      return {{ cells, maxIntensity: maxIntensity || 1 }};
+    }}
+
+    function drawLiquidationMap(klinePayload, openInterestPayload, config) {{
+      const svg = document.getElementById(config.chartId);
+      if (!svg) {{
+        return;
+      }}
+      svg.replaceChildren();
+      const candles = marketLinearCandlesFromRows((((klinePayload || {{}}).result || {{}}).list || []));
+      const oiRows = marketOpenInterestRows(openInterestPayload);
+      if (candles.length < 2) {{
+        marketText(config.statusId, "Not enough futures data");
+        return;
+      }}
+      const liquidationPrices = candles.flatMap((candle) => [candle.close * 0.98, candle.close * 0.96, candle.close * 0.9, candle.close * 1.02, candle.close * 1.04, candle.close * 1.1]);
+      const lows = candles.map((row) => row.low).concat(liquidationPrices);
+      const highs = candles.map((row) => row.high).concat(liquidationPrices);
+      const rawLow = Math.min(...lows);
+      const rawHigh = Math.max(...highs);
+      const rawSpan = rawHigh - rawLow || 1;
+      const priceLow = Math.max(0, rawLow - rawSpan * 0.04);
+      const priceHigh = rawHigh + rawSpan * 0.04;
+      const bins = 30;
+      const heatmap = buildLiquidationCells(candles, oiRows, priceLow, priceHigh, bins);
+      const width = 720;
+      const height = 244;
+      const leftPad = 34;
+      const rightPad = 74;
+      const topPad = 18;
+      const bottomPad = 34;
+      const chartWidth = width - leftPad - rightPad;
+      const chartHeight = height - topPad - bottomPad;
+      const step = chartWidth / candles.length;
+      const binHeight = chartHeight / bins;
+      const ns = "http://www.w3.org/2000/svg";
+      const y = (price) => topPad + chartHeight - ((price - priceLow) / (priceHigh - priceLow || 1)) * chartHeight;
+
+      [0, 0.25, 0.5, 0.75, 1].forEach((ratio) => {{
+        const lineY = topPad + chartHeight * ratio;
+        const line = document.createElementNS(ns, "line");
+        line.setAttribute("x1", String(leftPad));
+        line.setAttribute("x2", String(width - rightPad));
+        line.setAttribute("y1", String(lineY));
+        line.setAttribute("y2", String(lineY));
+        line.setAttribute("stroke", "#d9e1e8");
+        line.setAttribute("stroke-width", "1");
+        svg.appendChild(line);
+
+        const price = priceHigh - (priceHigh - priceLow) * ratio;
+        const label = document.createElementNS(ns, "text");
+        label.textContent = "$" + price.toFixed(5);
+        label.setAttribute("x", String(width - rightPad + 10));
+        label.setAttribute("y", String(lineY + 4));
+        label.setAttribute("fill", "#66727f");
+        label.setAttribute("font-size", "11");
+        label.setAttribute("font-weight", "700");
+        label.setAttribute("class", "market-axis-label");
+        svg.appendChild(label);
+      }});
+
+      [0, Math.floor((candles.length - 1) / 2), candles.length - 1].forEach((index) => {{
+        const candle = candles[index];
+        const label = document.createElementNS(ns, "text");
+        label.textContent = marketAxisTimeLabel(candle.time, config.label === "1M" ? "day" : undefined);
+        label.setAttribute("x", String(leftPad + step * index + step / 2));
+        label.setAttribute("y", String(height - 9));
+        label.setAttribute("text-anchor", index === 0 ? "start" : index === candles.length - 1 ? "end" : "middle");
+        label.setAttribute("fill", "#66727f");
+        label.setAttribute("font-size", "10");
+        label.setAttribute("font-weight", "700");
+        label.setAttribute("class", "market-axis-label");
+        svg.appendChild(label);
+      }});
+
+      heatmap.cells.forEach((column, columnIndex) => {{
+        column.forEach((cell, bin) => {{
+          const intensity = cell.long + cell.short;
+          if (intensity <= 0) {{
+            return;
+          }}
+          const longDominant = cell.long >= cell.short;
+          const opacity = Math.max(0.12, Math.min(0.88, intensity / heatmap.maxIntensity));
+          const rect = document.createElementNS(ns, "rect");
+          rect.setAttribute("x", String(leftPad + step * columnIndex));
+          rect.setAttribute("y", String(topPad + chartHeight - (bin + 1) * binHeight));
+          rect.setAttribute("width", String(Math.max(1, step + 0.5)));
+          rect.setAttribute("height", String(Math.max(1, binHeight + 0.5)));
+          rect.setAttribute("fill", longDominant ? "#b42318" : "#2563eb");
+          rect.setAttribute("opacity", String(opacity));
+          svg.appendChild(rect);
+        }});
+      }});
+
+      const markPath = document.createElementNS(ns, "path");
+      markPath.setAttribute(
+        "d",
+        candles
+          .map((candle, index) => {{
+            const x = leftPad + step * index + step / 2;
+            return (index === 0 ? "M" : "L") + x.toFixed(1) + " " + y(candle.close).toFixed(1);
+          }})
+          .join(" ")
+      );
+      markPath.setAttribute("fill", "none");
+      markPath.setAttribute("stroke", "#111827");
+      markPath.setAttribute("stroke-width", "2.5");
+      markPath.setAttribute("stroke-linecap", "round");
+      markPath.setAttribute("stroke-linejoin", "round");
+      svg.appendChild(markPath);
+
+      const latest = candles[candles.length - 1];
+      marketText(config.statusId, "Estimated from Bybit linear OI/candles; latest " + formatMarketPrice(latest.close));
+    }}
+
     async function refreshMarketChart(config) {{
       try {{
         const payload = await fetchMarketJson(marketKlineUrl(config));
@@ -3296,6 +3588,18 @@ def write_status_page(
       drawMarketVolumeChart(sourceRows, marketConfig.volume);
     }}
 
+    async function refreshLiquidationMap(config) {{
+      try {{
+        const payloads = await Promise.all([
+          fetchMarketJson(config.klineUrl),
+          fetchMarketJson(config.openInterestUrl),
+        ]);
+        drawLiquidationMap(payloads[0], payloads[1], config);
+      }} catch (error) {{
+        marketText(config.statusId, "KAS/USDT futures liquidation map unavailable");
+      }}
+    }}
+
     async function refreshMarketWatch() {{
       try {{
         const tickerPayload = await fetchMarketJson(marketConfig.tickerUrl);
@@ -3321,6 +3625,7 @@ def write_status_page(
         ...marketConfig.klines.map(refreshMarketChart),
         refreshMarketCrossChart(),
         refreshMarketVolumeChart(),
+        ...marketConfig.liquidations.map(refreshLiquidationMap),
       ]);
     }}
 

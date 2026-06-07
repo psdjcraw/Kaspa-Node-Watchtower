@@ -63,7 +63,8 @@ which supports a more resilient decentralized network.
   RSI 14 badges, a compact Signal Watch summary, and operator-focused time
   ranges from intraday through full monthly history; the market section also
   shows daily KAS exchange-volume bars for Gate, MEXC, KuCoin, Bybit, Bitget,
-  Kraken, HTX, and Total
+  Kraken, HTX, and Total, plus estimated Bybit KAS/USDT futures liquidation
+  heatmaps for 12-hour, 24-hour, 1-week, and 1-month ranges
 - Prometheus textfile metrics for local scraping or textfile collectors
 - Long-lived SQLite history export and operator summary reporting
 

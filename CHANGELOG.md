@@ -14,6 +14,9 @@ All notable changes to Kaspa Node Watchtower are tracked here.
   buckets aligned with the transaction throughput chart.
 - Generated `status.html` now includes a daily KAS exchange-volume bar chart
   for Gate, MEXC, KuCoin, Bybit, Bitget, Kraken, HTX, and Total.
+- Generated `status.html` now includes estimated KAS/USDT futures liquidation
+  heatmaps for 12-hour, 24-hour, 1-week, and 1-month ranges using Bybit linear
+  perp candles and open interest.
 
 ## 0.6.0 - 2026-06-07
 
