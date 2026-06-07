@@ -72,7 +72,8 @@ which supports a more resilient decentralized network.
   unavailable public API groups in a stable operator-facing order with short
   failure details; daily and weekly reports also include an optional Bybit
   KAS/USDT spot/futures market snapshot for price, basis, funding, and open
-  interest context
+  interest context, with persisted snapshot metrics available in Prometheus and
+  the bundled Grafana dashboard
 - Prometheus textfile metrics for local scraping or textfile collectors
 - Long-lived SQLite history export and operator summary reporting
 

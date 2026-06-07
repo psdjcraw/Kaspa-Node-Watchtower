@@ -44,6 +44,9 @@ All notable changes to Kaspa Node Watchtower are tracked here.
   open-interest context.
 - Market snapshots can now be persisted to `state/market-snapshots.jsonl` and
   imported into SQLite history summaries for latest spot/futures context.
+- Prometheus textfile metrics and the bundled Grafana dashboard now expose
+  latest persisted KAS/USDT spot price, futures basis, and futures open
+  interest from market snapshots.
 
 ## 0.6.0 - 2026-06-07
 

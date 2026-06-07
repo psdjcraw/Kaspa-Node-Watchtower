@@ -4347,7 +4347,8 @@ def alert(config: dict) -> int:
     if canvas_status_page:
         write_status_page(Path(canvas_status_page), report, state, benchmark_path, recovery_records)
     recovery_summary = build_recovery_summary(recovery_history_path(config))
-    write_prometheus_metrics(metrics_path, report, benchmark_summary, recovery_summary)
+    market_metrics = build_market_metrics(Path(config.get("market_snapshot_path") or DEFAULT_CONFIG["market_snapshot_path"]))
+    write_prometheus_metrics(metrics_path, report, benchmark_summary, recovery_summary, market_metrics)
 
     if should_emit:
         print(format_alert(report, previous_status, previous_severity, event=event))
@@ -5025,10 +5026,29 @@ def build_recovery_summary(path: Path) -> dict[str, Any]:
     }
 
 
+def build_market_metrics(path: Path) -> dict[str, Any]:
+    try:
+        records = load_jsonl(path)
+    except (OSError, json.JSONDecodeError):
+        records = []
+    successful = [item for item in records if item.get("ok")]
+    latest = records[-1] if records else {}
+    latest_successful = successful[-1] if successful else {}
+    return {
+        "snapshots": len(records),
+        "successful_snapshots": len(successful),
+        "last_ok": latest.get("ok"),
+        "last_checked_at": latest.get("checked_at"),
+        "source": latest_successful.get("source") or latest.get("source") or "unknown",
+        "latest_successful": latest_successful,
+    }
+
+
 def format_prometheus_metrics(
     report: dict[str, Any],
     benchmark_summary: dict[str, Any],
     recovery_summary: dict[str, Any] | None = None,
+    market_metrics: dict[str, Any] | None = None,
 ) -> str:
     node_labels = {"node": report["node_name"]}
     grpc_metrics = report.get("grpc_metrics") or {}
@@ -5038,6 +5058,9 @@ def format_prometheus_metrics(
     monitoring = report.get("monitoring") or {}
     disk = report.get("disk") or {}
     recovery_summary = recovery_summary or {}
+    market_metrics = market_metrics or {}
+    latest_market = market_metrics.get("latest_successful") or {}
+    market_labels = {**node_labels, "source": market_metrics.get("source", "unknown")}
     severity_values = {"ok": 0, "warn": 1, "critical": 2}
     lines = [
         "# TYPE kaspa_watchtower_status_ok gauge",
@@ -5364,6 +5387,84 @@ def format_prometheus_metrics(
         recovery_summary.get("last_exit_code"),
         node_labels,
     )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_market_snapshots_total",
+        market_metrics.get("snapshots"),
+        market_labels,
+    )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_market_successful_snapshots_total",
+        market_metrics.get("successful_snapshots"),
+        market_labels,
+    )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_market_snapshot_ok",
+        market_metrics.get("last_ok"),
+        market_labels,
+    )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_market_snapshot_timestamp_seconds",
+        iso_timestamp_seconds(market_metrics.get("last_checked_at")),
+        market_labels,
+    )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_market_spot_price_usdt",
+        latest_market.get("spot_last_price"),
+        market_labels,
+    )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_market_spot_change_24h_ratio",
+        latest_market.get("spot_change_24h"),
+        market_labels,
+    )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_market_spot_volume_24h_kas",
+        latest_market.get("spot_volume_24h"),
+        market_labels,
+    )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_market_futures_basis_percent",
+        latest_market.get("futures_basis_pct"),
+        market_labels,
+    )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_market_futures_funding_rate",
+        latest_market.get("futures_funding_rate"),
+        market_labels,
+    )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_market_futures_funding_apr_percent",
+        latest_market.get("futures_funding_apr_pct"),
+        market_labels,
+    )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_market_futures_open_interest_kas",
+        latest_market.get("futures_open_interest"),
+        market_labels,
+    )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_market_futures_open_interest_value_usdt",
+        latest_market.get("futures_open_interest_value"),
+        market_labels,
+    )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_market_futures_volume_24h_kas",
+        latest_market.get("futures_volume_24h"),
+        market_labels,
+    )
     return "\n".join(lines) + "\n"
 
 
@@ -5372,10 +5473,11 @@ def write_prometheus_metrics(
     report: dict[str, Any],
     benchmark_summary: dict[str, Any],
     recovery_summary: dict[str, Any] | None = None,
+    market_metrics: dict[str, Any] | None = None,
 ) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
-        format_prometheus_metrics(report, benchmark_summary, recovery_summary),
+        format_prometheus_metrics(report, benchmark_summary, recovery_summary, market_metrics),
         encoding="utf-8",
     )
 
@@ -5386,7 +5488,8 @@ def prometheus(config: dict) -> int:
     metrics_path = Path(config.get("prometheus_metrics_path") or DEFAULT_CONFIG["prometheus_metrics_path"])
     benchmark_summary = build_benchmark_summary(benchmark_path, limit=48)
     recovery_summary = build_recovery_summary(recovery_history_path(config))
-    write_prometheus_metrics(metrics_path, report, benchmark_summary, recovery_summary)
+    market_metrics = build_market_metrics(Path(config.get("market_snapshot_path") or DEFAULT_CONFIG["market_snapshot_path"]))
+    write_prometheus_metrics(metrics_path, report, benchmark_summary, recovery_summary, market_metrics)
     print(f"Prometheus metrics written: {metrics_path}")
     return 0 if report["status"] == "ok" else 1
 

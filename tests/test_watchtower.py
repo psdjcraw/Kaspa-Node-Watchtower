@@ -287,8 +287,26 @@ class WatchtowerUnitTests(unittest.TestCase):
             "min_peer_count": 8,
             "min_disk_free_gb": 99.5,
         }
+        market_metrics = {
+            "snapshots": 2,
+            "successful_snapshots": 1,
+            "last_ok": True,
+            "last_checked_at": "2026-06-05T10:02:00+09:00",
+            "source": "Bybit KAS/USDT",
+            "latest_successful": {
+                "spot_last_price": 0.0305,
+                "spot_change_24h": 0.012,
+                "spot_volume_24h": 42000000,
+                "futures_basis_pct": -0.13,
+                "futures_funding_rate": 0.0001,
+                "futures_funding_apr_pct": 10.95,
+                "futures_open_interest": 230000000,
+                "futures_open_interest_value": 7010000,
+                "futures_volume_24h": 78000000,
+            },
+        }
 
-        metrics = watchtower.format_prometheus_metrics(report, benchmark_summary, recovery_summary)
+        metrics = watchtower.format_prometheus_metrics(report, benchmark_summary, recovery_summary, market_metrics)
 
         self.assertIn("kaspa_watchtower_mempool_size", metrics)
         self.assertIn("kaspa_watchtower_latest_processed_transactions", metrics)
@@ -309,6 +327,10 @@ class WatchtowerUnitTests(unittest.TestCase):
         self.assertIn("kaspa_watchtower_benchmark_ok_ratio", metrics)
         self.assertIn("kaspa_watchtower_benchmark_min_peer_count", metrics)
         self.assertIn("kaspa_watchtower_benchmark_min_disk_free_gb", metrics)
+        self.assertIn('kaspa_watchtower_market_spot_price_usdt{node="test-node",source="Bybit KAS/USDT"} 0.0305', metrics)
+        self.assertIn("kaspa_watchtower_market_futures_basis_percent", metrics)
+        self.assertIn("kaspa_watchtower_market_futures_open_interest_kas", metrics)
+        self.assertIn("2.3e+08", metrics)
 
     def test_grafana_dashboard_includes_processed_freshness_panel(self):
         dashboard = json.loads(Path("grafana/kaspa-watchtower.json").read_text(encoding="utf-8"))
@@ -333,6 +355,33 @@ class WatchtowerUnitTests(unittest.TestCase):
             any(
                 target.get("expr") == 'kaspa_watchtower_mempool_size{node="$node"}'
                 for target in targets
+            )
+        )
+
+    def test_grafana_dashboard_includes_market_panels(self):
+        dashboard = json.loads(Path("grafana/kaspa-watchtower.json").read_text(encoding="utf-8"))
+        panels = {panel.get("title"): panel for panel in dashboard.get("panels", [])}
+
+        self.assertIn("KAS/USDT Spot Price", panels)
+        spot_targets = panels["KAS/USDT Spot Price"].get("targets") or []
+        self.assertTrue(
+            any(
+                target.get("expr") == 'kaspa_watchtower_market_spot_price_usdt{node="$node"}'
+                for target in spot_targets
+            )
+        )
+        self.assertIn("KAS Futures Positioning", panels)
+        futures_targets = panels["KAS Futures Positioning"].get("targets") or []
+        self.assertTrue(
+            any(
+                target.get("expr") == 'kaspa_watchtower_market_futures_open_interest_kas{node="$node"}'
+                for target in futures_targets
+            )
+        )
+        self.assertTrue(
+            any(
+                target.get("expr") == 'kaspa_watchtower_market_futures_basis_percent{node="$node"}'
+                for target in futures_targets
             )
         )
 

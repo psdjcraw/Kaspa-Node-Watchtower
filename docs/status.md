@@ -13,6 +13,7 @@
 - Grafana sync panels: mainnet sync monitor, sync rates, sync deltas, and bootstrap progress rates
 - Grafana relay panels: relay window progress and latest relay freshness
 - Grafana mempool panel: mempool size timeseries from Prometheus
+- Grafana market panels: persisted KAS/USDT spot price and futures positioning from market snapshots
 - GitHub Actions smoke workflow: `https://github.com/psdjcraw/Kaspa-Node-Watchtower/actions/workflows/smoke.yml`
 - GitHub Actions CodeQL workflow: `https://github.com/psdjcraw/Kaspa-Node-Watchtower/actions/workflows/codeql.yml`
 - Canvas status page: `/Users/psdjc/.openclaw/canvas/kaspa-watchtower/status.html`

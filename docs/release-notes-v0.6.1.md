@@ -22,6 +22,9 @@ workflow used for node health.
   snapshot and persist it to `state/market-snapshots.jsonl`.
 - SQLite history export imports market snapshots and includes latest
   spot/futures context in `--summary` output.
+- Prometheus textfile metrics and the bundled Grafana dashboard expose latest
+  persisted market snapshot values for KAS/USDT spot price, futures basis, and
+  futures open interest.
 - Mempool activity in `status.html` is promoted to a full 10-second bar chart
   aligned with the transaction-throughput chart.
 - Bundled Grafana dashboard includes a mempool size panel.

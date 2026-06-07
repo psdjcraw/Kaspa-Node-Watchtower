@@ -1384,6 +1384,97 @@
       ],
       "title": "Mempool Size",
       "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 5,
+          "unit": "currencyUSD"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 12,
+        "x": 0,
+        "y": 49
+      },
+      "id": 25,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "expr": "kaspa_watchtower_market_spot_price_usdt{node=\"$node\"}",
+          "legendFormat": "{{source}} spot",
+          "refId": "A"
+        }
+      ],
+      "title": "KAS/USDT Spot Price",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 2,
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 12,
+        "x": 12,
+        "y": 49
+      },
+      "id": 26,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "expr": "kaspa_watchtower_market_futures_open_interest_kas{node=\"$node\"}",
+          "legendFormat": "{{source}} OI KAS",
+          "refId": "A"
+        },
+        {
+          "expr": "kaspa_watchtower_market_futures_basis_percent{node=\"$node\"}",
+          "legendFormat": "{{source}} basis %",
+          "refId": "B"
+        }
+      ],
+      "title": "KAS Futures Positioning",
+      "type": "timeseries"
     }
   ],
   "refresh": "30s",
