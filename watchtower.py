@@ -1853,6 +1853,12 @@ def write_status_page(
       height: 3px;
       border-radius: 999px;
     }}
+    .futures-panel {{
+      margin-bottom: 14px;
+    }}
+    .futures-panel .market-meta {{
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+    }}
     .liquidation-grid {{
       display: grid;
       grid-template-columns: 1fr 1fr;
@@ -2046,6 +2052,7 @@ def write_status_page(
       .badge {{ margin-top: 10px; }}
       .v-card, .panel {{ margin-bottom: 12px; }}
       .market-meta {{ grid-template-columns: 1fr; }}
+      .futures-panel .market-meta {{ grid-template-columns: 1fr; }}
       .panel {{ overflow-x: auto; }}
       .bar-block, .context-item {{ margin-bottom: 10px; }}
     }}
@@ -2173,6 +2180,23 @@ def write_status_page(
       </div>
       <div id="market-volume-legend" class="market-legend"></div>
       <svg id="market-volume-chart" class="market-chart" viewBox="0 0 720 244" role="img" aria-label="Daily KAS trading volume by exchange and total"></svg>
+    </section>
+    <section class="panel futures-panel">
+      <div class="market-chart-head">
+        <div class="market-title-row">
+          <h2>KAS/USDT Futures Positioning</h2>
+          <span class="market-source">Bybit linear perp</span>
+        </div>
+        <div id="futures-status" class="market-status">Loading futures positioning</div>
+      </div>
+      <div class="market-meta">
+        <div class="context-item"><div class="context-label">Mark</div><div id="futures-mark" class="context-value">unknown</div></div>
+        <div class="context-item"><div class="context-label">Funding</div><div id="futures-funding" class="context-value">unknown</div></div>
+        <div class="context-item"><div class="context-label">Next funding</div><div id="futures-next-funding" class="context-value">unknown</div></div>
+        <div class="context-item"><div class="context-label">Open interest</div><div id="futures-open-interest" class="context-value">unknown</div></div>
+        <div class="context-item"><div class="context-label">OI value</div><div id="futures-open-interest-value" class="context-value">unknown</div></div>
+        <div class="context-item"><div class="context-label">24h futures volume</div><div id="futures-volume" class="context-value">unknown</div></div>
+      </div>
     </section>
     <section class="liquidation-grid">
       <section class="panel">
@@ -2343,6 +2367,7 @@ def write_status_page(
   <script>
     const marketConfig = {{
       tickerUrl: "https://api.bybit.com/v5/market/tickers?category=spot&symbol=KASUSDT",
+      futuresTickerUrl: "https://api.bybit.com/v5/market/tickers?category=linear&symbol=KASUSDT",
       klines: [
         {{
           label: "15m",
@@ -2564,6 +2589,33 @@ def write_status_page(
         return (parsed / 1000).toLocaleString(undefined, {{ maximumFractionDigits: 1 }}) + "K KAS";
       }}
       return parsed.toLocaleString(undefined, {{ maximumFractionDigits: 2 }}) + " KAS";
+    }}
+
+    function formatMarketUsdt(value) {{
+      const parsed = marketNumber(value);
+      if (parsed === null) {{
+        return "unknown";
+      }}
+      if (parsed >= 1000000) {{
+        return "$" + (parsed / 1000000).toLocaleString(undefined, {{ maximumFractionDigits: 2 }}) + "M";
+      }}
+      if (parsed >= 1000) {{
+        return "$" + (parsed / 1000).toLocaleString(undefined, {{ maximumFractionDigits: 1 }}) + "K";
+      }}
+      return "$" + parsed.toLocaleString(undefined, {{ maximumFractionDigits: 2 }});
+    }}
+
+    function formatMarketTime(value) {{
+      const parsed = marketNumber(value);
+      if (parsed === null) {{
+        return "unknown";
+      }}
+      return new Date(parsed).toLocaleString([], {{
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+      }});
     }}
 
     function marketCacheKey(url) {{
@@ -3600,6 +3652,23 @@ def write_status_page(
       }}
     }}
 
+    async function refreshFuturesPositioning() {{
+      try {{
+        const payload = await fetchMarketJson(marketConfig.futuresTickerUrl);
+        const ticker = ((payload.result || {{}}).list || [])[0] || {{}};
+        marketText("futures-mark", formatMarketPrice(ticker.markPrice || ticker.lastPrice));
+        marketText("futures-funding", formatMarketPercent(ticker.fundingRate));
+        marketText("futures-next-funding", formatMarketTime(ticker.nextFundingTime));
+        marketText("futures-open-interest", formatMarketVolume(ticker.openInterest));
+        marketText("futures-open-interest-value", formatMarketUsdt(ticker.openInterestValue));
+        marketText("futures-volume", formatMarketVolume(ticker.volume24h));
+        const updatedPrefix = payload.fromCache ? "cached " : "";
+        marketText("futures-status", updatedPrefix + "linear perp updated at " + new Date(Number(payload.cachedAt || payload.time || Date.now())).toLocaleTimeString());
+      }} catch (error) {{
+        marketText("futures-status", "KAS/USDT futures positioning unavailable");
+      }}
+    }}
+
     async function refreshMarketWatch() {{
       try {{
         const tickerPayload = await fetchMarketJson(marketConfig.tickerUrl);
@@ -3625,6 +3694,7 @@ def write_status_page(
         ...marketConfig.klines.map(refreshMarketChart),
         refreshMarketCrossChart(),
         refreshMarketVolumeChart(),
+        refreshFuturesPositioning(),
         ...marketConfig.liquidations.map(refreshLiquidationMap),
       ]);
     }}

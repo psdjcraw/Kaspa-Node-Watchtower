@@ -17,6 +17,9 @@ All notable changes to Kaspa Node Watchtower are tracked here.
 - Generated `status.html` now includes estimated KAS/USDT futures liquidation
   heatmaps for 12-hour, 24-hour, 1-week, and 1-month ranges using Bybit linear
   perp candles and open interest.
+- Generated `status.html` now includes a Bybit KAS/USDT linear perp
+  positioning panel with mark price, funding, next funding time, open interest,
+  OI value, and 24-hour futures volume.
 
 ## 0.6.0 - 2026-06-07
 
