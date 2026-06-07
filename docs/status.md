@@ -65,6 +65,9 @@
 - Market-data browser fetches: short-window panels refresh more often, while
   long-window candles, volume, funding, and liquidation-map panels are
   throttled to reduce public API load
+- Market Data Sources panel: browser-side source health for spot ticker,
+  timeframe candles, cross chart, exchange volume, futures positioning/trend,
+  and liquidation-map groups
 - Benchmark JSONL: `state/benchmarks.jsonl`
 - Upgrade checkpoints: `state/upgrade-checkpoints.jsonl`
 - SQLite history: `state/watchtower-history.sqlite`
