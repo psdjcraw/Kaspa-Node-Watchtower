@@ -52,7 +52,8 @@ which supports a more resilient decentralized network.
 - Processed-stats freshness tracking and Prometheus alerting for stale
   transaction throughput data, including local dashboard warning checks,
   Tx Rate card warning state, and a Grafana freshness panel
-- Mempool size history chart in the generated status dashboard
+- Mempool size history chart in the generated status dashboard and bundled
+  Grafana dashboard
 - Estimated network hashrate card and trend chart in the generated status
   dashboard
 - Live KAS/USDT market watch in the generated status dashboard, including

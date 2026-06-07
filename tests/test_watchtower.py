@@ -321,6 +321,19 @@ class WatchtowerUnitTests(unittest.TestCase):
             )
         )
 
+    def test_grafana_dashboard_includes_mempool_panel(self):
+        dashboard = json.loads(Path("grafana/kaspa-watchtower.json").read_text(encoding="utf-8"))
+        panels = {panel.get("title"): panel for panel in dashboard.get("panels", [])}
+
+        self.assertIn("Mempool Size", panels)
+        targets = panels["Mempool Size"].get("targets") or []
+        self.assertTrue(
+            any(
+                target.get("expr") == 'kaspa_watchtower_mempool_size{node="$node"}'
+                for target in targets
+            )
+        )
+
     def test_unsynced_bootstrap_skips_sync_and_relay_progress_requirements(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)

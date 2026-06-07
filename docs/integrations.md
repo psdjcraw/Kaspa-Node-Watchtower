@@ -64,8 +64,8 @@ grafana/kaspa-watchtower.json
 ```
 
 The dashboard includes node health, DAG/relay progress, relay freshness,
-benchmark rates, recovery history, recovery action mix, and mainnet bootstrap
-sync progress panels.
+mempool size, benchmark rates, recovery history, recovery action mix, and
+mainnet bootstrap sync progress panels.
 
 Benchmark stability metrics are also exported for longer-window panels and
 alerts:
