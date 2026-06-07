@@ -22,6 +22,8 @@ All notable changes to Kaspa Node Watchtower are tracked here.
   OI value, and 24-hour futures volume.
 - Generated `status.html` now includes a 7-day Bybit KAS/USDT futures trend
   panel that plots open interest with funding-rate bars.
+- The futures positioning panel now includes index price, mark/index basis,
+  and annualized funding-rate context.
 
 ## 0.6.0 - 2026-06-07
 

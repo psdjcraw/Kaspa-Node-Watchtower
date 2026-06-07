@@ -57,8 +57,9 @@
 - Futures liquidation maps: estimated 12-hour, 24-hour, 1-week, and 1-month
   KAS/USDT pressure zones derived from Bybit linear perp candles and open
   interest; these are not exchange-reported liquidation fills
-- Futures positioning panel: Bybit KAS/USDT linear perp mark price, funding,
-  next funding time, open interest, OI value, and 24-hour futures volume
+- Futures positioning panel: Bybit KAS/USDT linear perp mark/index price,
+  basis, funding, annualized funding, next funding time, open interest, OI
+  value, and 24-hour futures volume
 - Futures trend panel: 7-day Bybit KAS/USDT open interest line with
   funding-rate bars from public linear perp endpoints
 - Benchmark JSONL: `state/benchmarks.jsonl`

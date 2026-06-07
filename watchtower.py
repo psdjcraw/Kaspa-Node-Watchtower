@@ -1857,7 +1857,7 @@ def write_status_page(
       margin-bottom: 14px;
     }}
     .futures-panel .market-meta {{
-      grid-template-columns: repeat(6, minmax(0, 1fr));
+      grid-template-columns: repeat(9, minmax(0, 1fr));
     }}
     .futures-trend-panel {{
       min-height: 340px;
@@ -2201,11 +2201,14 @@ def write_status_page(
       </div>
       <div class="market-meta">
         <div class="context-item"><div class="context-label">Mark</div><div id="futures-mark" class="context-value">unknown</div></div>
+        <div class="context-item"><div class="context-label">Index</div><div id="futures-index" class="context-value">unknown</div></div>
+        <div class="context-item"><div class="context-label">Basis</div><div id="futures-basis" class="context-value">unknown</div></div>
         <div class="context-item"><div class="context-label">Funding</div><div id="futures-funding" class="context-value">unknown</div></div>
+        <div class="context-item"><div class="context-label">Funding APR</div><div id="futures-funding-apr" class="context-value">unknown</div></div>
         <div class="context-item"><div class="context-label">Next funding</div><div id="futures-next-funding" class="context-value">unknown</div></div>
         <div class="context-item"><div class="context-label">Open interest</div><div id="futures-open-interest" class="context-value">unknown</div></div>
         <div class="context-item"><div class="context-label">OI value</div><div id="futures-open-interest-value" class="context-value">unknown</div></div>
-        <div class="context-item"><div class="context-label">24h futures volume</div><div id="futures-volume" class="context-value">unknown</div></div>
+        <div class="context-item"><div class="context-label">24h vol</div><div id="futures-volume" class="context-value">unknown</div></div>
       </div>
     </section>
     <section class="panel futures-trend-panel">
@@ -3820,8 +3823,17 @@ def write_status_page(
       try {{
         const payload = await fetchMarketJson(marketConfig.futuresTickerUrl);
         const ticker = ((payload.result || {{}}).list || [])[0] || {{}};
-        marketText("futures-mark", formatMarketPrice(ticker.markPrice || ticker.lastPrice));
+        const markPrice = marketNumber(ticker.markPrice || ticker.lastPrice);
+        const indexPrice = marketNumber(ticker.indexPrice);
+        const fundingRate = marketNumber(ticker.fundingRate);
+        const fundingInterval = marketNumber(ticker.fundingIntervalHour) || 4;
+        const basisPct = markPrice !== null && indexPrice ? ((markPrice - indexPrice) / indexPrice) * 100 : null;
+        const fundingApr = fundingRate !== null ? fundingRate * (24 / fundingInterval) * 365 * 100 : null;
+        marketText("futures-mark", formatMarketPrice(markPrice));
+        marketText("futures-index", formatMarketPrice(indexPrice));
+        marketText("futures-basis", basisPct === null ? "unknown" : formatMarketSignedPercent(basisPct));
         marketText("futures-funding", formatFundingPercent(ticker.fundingRate));
+        marketText("futures-funding-apr", fundingApr === null ? "unknown" : formatMarketSignedPercent(fundingApr));
         marketText("futures-next-funding", formatMarketTime(ticker.nextFundingTime));
         marketText("futures-open-interest", formatMarketVolume(ticker.openInterest));
         marketText("futures-open-interest-value", formatMarketUsdt(ticker.openInterestValue));

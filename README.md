@@ -65,8 +65,8 @@ which supports a more resilient decentralized network.
   shows daily KAS exchange-volume bars for Gate, MEXC, KuCoin, Bybit, Bitget,
   Kraken, HTX, and Total, plus estimated Bybit KAS/USDT futures liquidation
   heatmaps for 12-hour, 24-hour, 1-week, and 1-month ranges and a linear perp
-  positioning panel for funding and open interest context; a 7-day futures
-  trend panel plots open interest with funding-rate bars
+  positioning panel for funding, basis, and open interest context; a 7-day
+  futures trend panel plots open interest with funding-rate bars
 - Prometheus textfile metrics for local scraping or textfile collectors
 - Long-lived SQLite history export and operator summary reporting
 
