@@ -24,6 +24,9 @@ All notable changes to Kaspa Node Watchtower are tracked here.
   panel that plots open interest with funding-rate bars.
 - The futures positioning panel now includes index price, mark/index basis,
   and annualized funding-rate context.
+- Browser market-data refreshes are now throttled per panel so long-window
+  candles, exchange volume, funding, and liquidation maps do not all refetch
+  every 30 seconds.
 
 ## 0.6.0 - 2026-06-07
 

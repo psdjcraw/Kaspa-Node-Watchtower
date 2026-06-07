@@ -66,7 +66,9 @@ which supports a more resilient decentralized network.
   Kraken, HTX, and Total, plus estimated Bybit KAS/USDT futures liquidation
   heatmaps for 12-hour, 24-hour, 1-week, and 1-month ranges and a linear perp
   positioning panel for funding, basis, and open interest context; a 7-day
-  futures trend panel plots open interest with funding-rate bars
+  futures trend panel plots open interest with funding-rate bars; browser
+  market-data refreshes are throttled per panel to avoid unnecessary public API
+  calls for long-window data
 - Prometheus textfile metrics for local scraping or textfile collectors
 - Long-lived SQLite history export and operator summary reporting
 

@@ -62,6 +62,9 @@
   value, and 24-hour futures volume
 - Futures trend panel: 7-day Bybit KAS/USDT open interest line with
   funding-rate bars from public linear perp endpoints
+- Market-data browser fetches: short-window panels refresh more often, while
+  long-window candles, volume, funding, and liquidation-map panels are
+  throttled to reduce public API load
 - Benchmark JSONL: `state/benchmarks.jsonl`
 - Upgrade checkpoints: `state/upgrade-checkpoints.jsonl`
 - SQLite history: `state/watchtower-history.sqlite`

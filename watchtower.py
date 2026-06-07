@@ -2404,6 +2404,7 @@ def write_status_page(
           statusId: "market-status",
           trendId: "market-trend-15m",
           rsiId: "market-rsi-15m",
+          refreshMs: 60 * 1000,
           url: "https://api.bybit.com/v5/market/kline?category=spot&symbol=KASUSDT&interval=15",
         }},
         {{
@@ -2416,6 +2417,7 @@ def write_status_page(
           statusId: "market-status-4h",
           trendId: "market-trend-4h",
           rsiId: "market-rsi-4h",
+          refreshMs: 5 * 60 * 1000,
           url: "https://api.bybit.com/v5/market/kline?category=spot&symbol=KASUSDT&interval=240",
         }},
         {{
@@ -2429,6 +2431,7 @@ def write_status_page(
           statusId: "market-status-1d",
           trendId: "market-trend-1d",
           rsiId: "market-rsi-1d",
+          refreshMs: 10 * 60 * 1000,
           url: "https://api.bybit.com/v5/market/kline?category=spot&symbol=KASUSDT&interval=D",
         }},
         {{
@@ -2442,6 +2445,7 @@ def write_status_page(
           statusId: "market-status-1w",
           trendId: "market-trend-1w",
           rsiId: "market-rsi-1w",
+          refreshMs: 30 * 60 * 1000,
           url: "https://api.bybit.com/v5/market/kline?category=spot&symbol=KASUSDT&interval=W",
         }},
         {{
@@ -2453,6 +2457,7 @@ def write_status_page(
           statusId: "market-status-1m",
           trendId: "market-trend-1m",
           rsiId: "market-rsi-1m",
+          refreshMs: 60 * 60 * 1000,
           url: "https://api.bybit.com/v5/market/kline?category=spot&symbol=KASUSDT&interval=M",
         }},
       ],
@@ -2460,6 +2465,7 @@ def write_status_page(
         chartId: "market-cross-chart",
         statusId: "market-cross-status",
         axisMode: "day",
+        refreshMs: 10 * 60 * 1000,
         series: [
           {{
             label: "KAS/USDT",
@@ -2478,6 +2484,7 @@ def write_status_page(
         statusId: "market-volume-status",
         legendId: "market-volume-legend",
         limit: 32,
+        refreshMs: 10 * 60 * 1000,
         sources: [
           {{
             label: "Gate",
@@ -2528,6 +2535,7 @@ def write_status_page(
           label: "12H",
           chartId: "liquidation-chart-12h",
           statusId: "liquidation-status-12h",
+          refreshMs: 60 * 1000,
           klineUrl: "https://api.bybit.com/v5/market/kline?category=linear&symbol=KASUSDT&interval=15&limit=48",
           openInterestUrl: "https://api.bybit.com/v5/market/open-interest?category=linear&symbol=KASUSDT&intervalTime=15min&limit=48",
         }},
@@ -2535,6 +2543,7 @@ def write_status_page(
           label: "24H",
           chartId: "liquidation-chart-24h",
           statusId: "liquidation-status-24h",
+          refreshMs: 60 * 1000,
           klineUrl: "https://api.bybit.com/v5/market/kline?category=linear&symbol=KASUSDT&interval=30&limit=48",
           openInterestUrl: "https://api.bybit.com/v5/market/open-interest?category=linear&symbol=KASUSDT&intervalTime=30min&limit=48",
         }},
@@ -2542,6 +2551,7 @@ def write_status_page(
           label: "1W",
           chartId: "liquidation-chart-1w",
           statusId: "liquidation-status-1w",
+          refreshMs: 5 * 60 * 1000,
           klineUrl: "https://api.bybit.com/v5/market/kline?category=linear&symbol=KASUSDT&interval=240&limit=42",
           openInterestUrl: "https://api.bybit.com/v5/market/open-interest?category=linear&symbol=KASUSDT&intervalTime=4h&limit=42",
         }},
@@ -2549,6 +2559,7 @@ def write_status_page(
           label: "1M",
           chartId: "liquidation-chart-1m",
           statusId: "liquidation-status-1m",
+          refreshMs: 10 * 60 * 1000,
           klineUrl: "https://api.bybit.com/v5/market/kline?category=linear&symbol=KASUSDT&interval=D&limit=32",
           openInterestUrl: "https://api.bybit.com/v5/market/open-interest?category=linear&symbol=KASUSDT&intervalTime=1d&limit=32",
         }},
@@ -2556,11 +2567,27 @@ def write_status_page(
       futuresTrend: {{
         chartId: "futures-trend-chart",
         statusId: "futures-trend-status",
+        refreshMs: 5 * 60 * 1000,
         openInterestUrl: "https://api.bybit.com/v5/market/open-interest?category=linear&symbol=KASUSDT&intervalTime=4h&limit=42",
         fundingUrl: "https://api.bybit.com/v5/market/funding/history?category=linear&symbol=KASUSDT&limit=42",
       }},
     }};
     const marketSignals = new Map();
+    const marketRefreshTimes = new Map();
+
+    function marketShouldRefresh(key, refreshMs) {{
+      const interval = Number(refreshMs || 0);
+      if (!Number.isFinite(interval) || interval <= 0) {{
+        return true;
+      }}
+      const now = Date.now();
+      const previous = marketRefreshTimes.get(key) || 0;
+      if (now - previous < interval) {{
+        return false;
+      }}
+      marketRefreshTimes.set(key, now);
+      return true;
+    }}
 
     function marketText(id, value) {{
       const element = document.getElementById(id);
@@ -3762,6 +3789,9 @@ def write_status_page(
     }}
 
     async function refreshMarketChart(config) {{
+      if (!marketShouldRefresh("kline:" + config.label, config.refreshMs)) {{
+        return;
+      }}
       try {{
         const payload = await fetchMarketJson(marketKlineUrl(config));
         drawMarketCandles(((payload.result || {{}}).list || []), config.chartId, config.statusId, config.trendId, config.rsiId, config.label, config.emaPeriod, config.axisMode);
@@ -3774,6 +3804,9 @@ def write_status_page(
     }}
 
     async function refreshMarketCrossChart() {{
+      if (!marketShouldRefresh("cross", marketConfig.cross.refreshMs)) {{
+        return;
+      }}
       try {{
         const payloads = await Promise.all(marketConfig.cross.series.map((item) => fetchMarketJson(item.url)));
         const seriesRows = payloads.map((payload, index) => ({{
@@ -3788,6 +3821,9 @@ def write_status_page(
     }}
 
     async function refreshMarketVolumeChart() {{
+      if (!marketShouldRefresh("volume", marketConfig.volume.refreshMs)) {{
+        return;
+      }}
       const sourceRows = await Promise.all(marketConfig.volume.sources.map(async (source) => {{
         try {{
           const payload = await fetchMarketJson(source.url);
@@ -3808,6 +3844,9 @@ def write_status_page(
     }}
 
     async function refreshLiquidationMap(config) {{
+      if (!marketShouldRefresh("liquidation:" + config.label, config.refreshMs)) {{
+        return;
+      }}
       try {{
         const payloads = await Promise.all([
           fetchMarketJson(config.klineUrl),
@@ -3820,6 +3859,9 @@ def write_status_page(
     }}
 
     async function refreshFuturesPositioning() {{
+      if (!marketShouldRefresh("futures-positioning", 30 * 1000)) {{
+        return;
+      }}
       try {{
         const payload = await fetchMarketJson(marketConfig.futuresTickerUrl);
         const ticker = ((payload.result || {{}}).list || [])[0] || {{}};
@@ -3846,6 +3888,9 @@ def write_status_page(
     }}
 
     async function refreshFuturesTrend() {{
+      if (!marketShouldRefresh("futures-trend", marketConfig.futuresTrend.refreshMs)) {{
+        return;
+      }}
       try {{
         const payloads = await Promise.all([
           fetchMarketJson(marketConfig.futuresTrend.openInterestUrl),
