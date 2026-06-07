@@ -15,6 +15,8 @@ All notable changes to Kaspa Node Watchtower are tracked here.
   Market, and Futures scenes.
 - Generated `status.html` now links to `stream.html` from the top-right header
   controls.
+- Generated `stream.html` now uses smaller broadcast typography and denser
+  metric cards so each scene can show more operator context.
 
 ## 0.6.1 - 2026-06-07
 

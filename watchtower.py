@@ -1627,6 +1627,7 @@ def write_stream_page(
     market_checked = latest_market.get("checked_at") or market_metrics.get("last_checked_at") or "snapshot pending"
     failed = failed_check_names(report)
     failure_text = ", ".join(failed) if failed else "None"
+    last_alert_at = state.get("last_alert_at") or "None"
     sync_text = "synced" if grpc_metrics.get("is_synced") is True else str(grpc_metrics.get("is_synced", "unknown"))
     severity = str(report.get("severity", "unknown"))
     checked_at = str(report.get("checked_at") or "unknown")
@@ -1642,6 +1643,8 @@ def write_stream_page(
             stream_metric("Peers", grpc_metrics.get("peer_count", "unknown"), f"active {grpc_metrics.get('active_peers', 'unknown')}", tone_for_check(report, "peer_count")),
             stream_metric("Tx Rate", transaction_rate_text, latest_processed_age_text, tone_for_check(report, "processed_stats_freshness")),
             stream_metric("Mempool", compact_number(grpc_metrics.get("mempool_size")), "10-second buckets", "neutral"),
+            stream_metric("Hashrate", format_hashrate(grpc_metrics.get("network_hashes_per_second")), f"window {grpc_metrics.get('network_hashrate_window_size', 'unknown')}", "neutral"),
+            stream_metric("Disk Free", format_gib(disk.get("free_gb")), f"{disk.get('free_percent', 'unknown')}% free", tone_for_check(report, "disk_free")),
         ]
     )
     network_metrics = "\n".join(
@@ -1657,22 +1660,31 @@ def write_stream_page(
             stream_metric("Transactions", transaction_rate_text, f"{latest_processed.get('transactions', 'unknown')} tx / {latest_processed.get('seconds', 'unknown')}s", tone_for_check(report, "processed_stats_freshness")),
             stream_metric("Blocks", processed_rate_text, f"{latest_processed.get('blocks', 'unknown')} blocks / {latest_processed.get('seconds', 'unknown')}s", tone_for_check(report, "processed_stats_freshness")),
             stream_metric("Freshness", latest_processed_age_text, "processed-stats age", tone_for_check(report, "processed_stats_freshness")),
+            stream_metric("Relay Window", progress.get("relay_blocks_in_window", 0), f"{progress.get('relay_events_in_window', 0)} events / {progress.get('window_minutes', 'unknown')}m", tone_for_check(report, "block_progress")),
         ]
     )
     market_metrics_html = "\n".join(
         [
             stream_metric("Spot", format_market_price(spot.get("last_price")), f"24h {format_market_percent(spot.get('change_24h'))}", "neutral"),
             stream_metric("Spot Volume", format_market_volume(spot.get("volume_24h")), f"source {market_metrics.get('source', 'unknown')}", "neutral"),
+            stream_metric("24h High", format_market_price(spot.get("high_24h")), "spot range", "neutral"),
+            stream_metric("24h Low", format_market_price(spot.get("low_24h")), "spot range", "neutral"),
             stream_metric("Mark", format_market_price(futures.get("mark_price")), f"index {format_market_price(futures.get('index_price'))}", "neutral"),
             stream_metric("Basis", format_market_percent_points(futures.get("basis_pct")), "mark vs index", "neutral"),
+            stream_metric("Funding", format_market_percent(futures.get("funding_rate")), f"APR {format_market_percent_points(futures.get('funding_apr_pct'))}", "neutral"),
+            stream_metric("Market Snapshots", market_metrics.get("successful_snapshots", 0), f"{market_metrics.get('snapshots', 0)} total", "neutral"),
         ]
     )
     futures_metrics_html = "\n".join(
         [
+            stream_metric("Mark", format_market_price(futures.get("mark_price")), f"index {format_market_price(futures.get('index_price'))}", "neutral"),
+            stream_metric("Basis", format_market_percent_points(futures.get("basis_pct")), "mark vs index", "neutral"),
             stream_metric("Funding", format_market_percent(futures.get("funding_rate")), f"APR {format_market_percent_points(futures.get('funding_apr_pct'))}", "neutral"),
             stream_metric("Open Interest", format_market_volume(futures.get("open_interest")), format_market_usdt(futures.get("open_interest_value")), "neutral"),
             stream_metric("Futures Volume", format_market_volume(futures.get("volume_24h")), "24h Bybit linear", "neutral"),
             stream_metric("Next Funding", format_market_time_ms(futures.get("next_funding_time")), "UTC", "neutral"),
+            stream_metric("Benchmark OK", format_ratio(benchmark_summary.get("ok_ratio")), f"{benchmark_summary.get('snapshots')} snapshots", "neutral"),
+            stream_metric("Recovery", recovery.get("action", "unknown"), recovery.get("mode", "manual"), "neutral"),
         ]
     )
 
@@ -1689,41 +1701,41 @@ def write_stream_page(
     body {{ color: #e5edf6; }}
     .stream-stage {{ position: fixed; left: 50%; top: 50%; width: 1920px; height: 1080px; transform-origin: center; background: #07111f; overflow: hidden; }}
     .stream-stage::before {{ content: ""; position: absolute; inset: 0; background: radial-gradient(circle at 18% 18%, rgba(20, 125, 100, 0.24), transparent 36%), linear-gradient(135deg, rgba(15, 23, 42, 0.94), rgba(4, 10, 19, 0.98)); }}
-    .stream-scene {{ position: absolute; inset: 0; display: none; padding: 70px 86px 58px; grid-template-rows: auto 1fr auto; gap: 30px; }}
+    .stream-scene {{ position: absolute; inset: 0; display: none; padding: 46px 62px 44px; grid-template-rows: auto 1fr auto; gap: 22px; }}
     .stream-scene.active {{ display: grid; }}
-    .scene-head {{ position: relative; display: flex; justify-content: space-between; align-items: flex-start; gap: 40px; z-index: 1; }}
-    .scene-kicker {{ color: #8bd8c2; font-size: 26px; font-weight: 800; letter-spacing: 0; text-transform: uppercase; }}
-    h1 {{ margin: 8px 0 0; font-size: 74px; line-height: 0.98; letter-spacing: 0; }}
-    .scene-meta {{ text-align: right; color: #a6b7c8; font-size: 25px; font-weight: 700; line-height: 1.45; }}
-    .scene-body {{ position: relative; z-index: 1; display: grid; gap: 28px; min-height: 0; }}
+    .scene-head {{ position: relative; display: flex; justify-content: space-between; align-items: flex-start; gap: 32px; z-index: 1; }}
+    .scene-kicker {{ color: #8bd8c2; font-size: 20px; font-weight: 800; letter-spacing: 0; text-transform: uppercase; }}
+    h1 {{ margin: 6px 0 0; font-size: 56px; line-height: 0.98; letter-spacing: 0; }}
+    .scene-meta {{ text-align: right; color: #a6b7c8; font-size: 20px; font-weight: 700; line-height: 1.38; }}
+    .scene-body {{ position: relative; z-index: 1; display: grid; gap: 20px; min-height: 0; }}
     .grid-2 {{ grid-template-columns: 1fr 1fr; align-items: stretch; }}
     .grid-main {{ grid-template-columns: 0.9fr 1.1fr; align-items: stretch; }}
-    .metrics-grid {{ display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 22px; }}
+    .metrics-grid {{ display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }}
     .metrics-grid.compact {{ grid-template-columns: repeat(4, minmax(0, 1fr)); }}
-    .stream-metric {{ min-height: 178px; padding: 26px 28px; border: 1px solid rgba(148, 163, 184, 0.22); background: rgba(15, 23, 42, 0.78); border-radius: 8px; box-shadow: inset 0 1px 0 rgba(255,255,255,0.05); }}
+    .stream-metric {{ min-height: 134px; padding: 18px 20px; border: 1px solid rgba(148, 163, 184, 0.22); background: rgba(15, 23, 42, 0.78); border-radius: 8px; box-shadow: inset 0 1px 0 rgba(255,255,255,0.05); }}
     .stream-metric.ok {{ border-color: rgba(52, 211, 153, 0.48); }}
     .stream-metric.warn {{ border-color: rgba(251, 191, 36, 0.60); }}
     .stream-metric.critical {{ border-color: rgba(248, 113, 113, 0.70); }}
-    .metric-label {{ color: #90a4b8; font-size: 24px; font-weight: 800; text-transform: uppercase; }}
-    .metric-value {{ margin-top: 14px; color: #f8fafc; font-size: 58px; line-height: 0.95; font-weight: 900; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
-    .metric-detail {{ margin-top: 18px; color: #a6b7c8; font-size: 24px; font-weight: 700; line-height: 1.25; }}
-    .chart-panel {{ padding: 30px; border: 1px solid rgba(148, 163, 184, 0.22); border-radius: 8px; background: rgba(8, 17, 31, 0.78); min-height: 0; }}
-    .chart-title {{ margin-bottom: 20px; color: #d6e2ef; font-size: 28px; font-weight: 900; }}
-    .processed-chart, .sparkline {{ width: 100%; height: 320px; display: block; background: rgba(2, 6, 23, 0.55); border-radius: 8px; }}
-    .sparkline {{ height: 210px; }}
-    .empty-chart {{ display: grid; place-items: center; min-height: 210px; color: #93a4b8; border: 1px dashed rgba(148, 163, 184, 0.32); border-radius: 8px; font-size: 26px; font-weight: 800; }}
-    .severity-timeline {{ height: 72px; display: flex; gap: 6px; align-items: stretch; }}
+    .metric-label {{ color: #90a4b8; font-size: 18px; font-weight: 800; text-transform: uppercase; }}
+    .metric-value {{ margin-top: 10px; color: #f8fafc; font-size: 40px; line-height: 0.98; font-weight: 900; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
+    .metric-detail {{ margin-top: 12px; color: #a6b7c8; font-size: 18px; font-weight: 700; line-height: 1.25; }}
+    .chart-panel {{ padding: 22px; border: 1px solid rgba(148, 163, 184, 0.22); border-radius: 8px; background: rgba(8, 17, 31, 0.78); min-height: 0; }}
+    .chart-title {{ margin-bottom: 14px; color: #d6e2ef; font-size: 22px; font-weight: 900; }}
+    .processed-chart, .sparkline {{ width: 100%; height: 270px; display: block; background: rgba(2, 6, 23, 0.55); border-radius: 8px; }}
+    .sparkline {{ height: 178px; }}
+    .empty-chart {{ display: grid; place-items: center; min-height: 178px; color: #93a4b8; border: 1px dashed rgba(148, 163, 184, 0.32); border-radius: 8px; font-size: 22px; font-weight: 800; }}
+    .severity-timeline {{ height: 62px; display: flex; gap: 6px; align-items: stretch; }}
     .severity-segment {{ flex: 1; border-radius: 3px; background: #64748b; }}
     .severity-segment.ok {{ background: #34d399; }}
     .severity-segment.warn {{ background: #fbbf24; }}
     .severity-segment.critical {{ background: #f87171; }}
-    .hero-value {{ align-self: center; padding: 56px; border-radius: 8px; border: 1px solid rgba(110, 231, 183, 0.42); background: rgba(6, 78, 59, 0.24); }}
-    .hero-value .label {{ color: #9fe8d4; font-size: 30px; font-weight: 900; text-transform: uppercase; }}
-    .hero-value .value {{ margin-top: 18px; color: #f8fafc; font-size: 128px; line-height: 0.9; font-weight: 950; }}
-    .hero-value .detail {{ margin-top: 24px; color: #b7c8d8; font-size: 31px; font-weight: 700; }}
-    .scene-foot {{ position: relative; z-index: 1; display: flex; align-items: center; justify-content: space-between; color: #91a4b8; font-size: 22px; font-weight: 800; }}
+    .hero-value {{ align-self: center; padding: 36px; border-radius: 8px; border: 1px solid rgba(110, 231, 183, 0.42); background: rgba(6, 78, 59, 0.24); }}
+    .hero-value .label {{ color: #9fe8d4; font-size: 23px; font-weight: 900; text-transform: uppercase; }}
+    .hero-value .value {{ margin-top: 14px; color: #f8fafc; font-size: 88px; line-height: 0.9; font-weight: 950; }}
+    .hero-value .detail {{ margin-top: 18px; color: #b7c8d8; font-size: 23px; font-weight: 700; }}
+    .scene-foot {{ position: relative; z-index: 1; display: flex; align-items: center; justify-content: space-between; color: #91a4b8; font-size: 18px; font-weight: 800; }}
     .scene-dots {{ display: flex; gap: 10px; }}
-    .scene-dot {{ width: 48px; height: 7px; border-radius: 999px; background: rgba(148, 163, 184, 0.35); }}
+    .scene-dot {{ width: 42px; height: 6px; border-radius: 999px; background: rgba(148, 163, 184, 0.35); }}
     .scene-dot.active {{ background: #6ee7b7; }}
     .progress {{ position: absolute; left: 0; right: 0; bottom: 0; height: 8px; background: rgba(148, 163, 184, 0.18); }}
     .progress > span {{ display: block; width: 0%; height: 100%; background: #6ee7b7; }}
@@ -1758,7 +1770,7 @@ def write_stream_page(
     </section>
     <section class="stream-scene" data-scene="futures">
       <header class="scene-head"><div><div class="scene-kicker">Futures</div><h1>Futures Positioning</h1></div><div class="scene-meta">KAS/USDT linear<br>{html.escape(str(market_checked))}</div></header>
-      <div class="scene-body"><div class="metrics-grid compact">{futures_metrics_html}</div><div class="chart-panel"><div class="chart-title">Operator Context</div><div class="metrics-grid compact">{stream_metric("Benchmark OK", format_ratio(benchmark_summary.get("ok_ratio")), f"{benchmark_summary.get('snapshots')} snapshots", "neutral")}{stream_metric("Recovery", recovery.get("action", "unknown"), recovery.get("mode", "manual"), "neutral")}{stream_metric("Status", report.get("status", "unknown"), severity.upper(), severity if severity in {"ok", "warn", "critical"} else "neutral")}{stream_metric("Checked", checked_at[-14:], "local watchtower run", "neutral")}</div></div></div>
+      <div class="scene-body"><div class="metrics-grid compact">{futures_metrics_html}</div><div class="chart-panel"><div class="chart-title">Operator Context</div><div class="metrics-grid compact">{stream_metric("Status", report.get("status", "unknown"), severity.upper(), severity if severity in {"ok", "warn", "critical"} else "neutral")}{stream_metric("Failed Checks", len(failed), failure_text, severity if severity in {"warn", "critical"} else "neutral")}{stream_metric("Benchmark Window", benchmark_summary.get("window", "unknown"), f"{benchmark_summary.get('snapshots')} snapshots", "neutral")}{stream_metric("Last Alert", str(last_alert_at)[-14:], "state memory", "neutral")}</div></div></div>
       <footer class="scene-foot"><span>Liquidation maps remain available in status.html for manual drill-down</span><span data-scene-label></span></footer>
     </section>
     <div class="progress"><span id="stream-progress"></span></div>
