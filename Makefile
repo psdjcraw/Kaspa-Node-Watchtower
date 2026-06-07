@@ -3,7 +3,7 @@ CONFIG ?= config.json
 ARCHIVE_SOURCE ?= state/history-archives
 ARCHIVE_TARGET ?=
 
-.PHONY: help bootstrap proto-check version status summary sync-report diagnostics-summary incident-report json alert smoke ci integrations simulate-exporter-failure ensure-exporter diagnostics diagnostics-archive daily-report weekly-report weekly-archive benchmark benchmark-report prometheus export-history history-report history-multi-node history-archive upload-archive package prune validate recover-dry-run recover force-recover-dry-run
+.PHONY: help bootstrap proto-check version status stream summary sync-report diagnostics-summary incident-report json alert smoke ci integrations simulate-exporter-failure ensure-exporter diagnostics diagnostics-archive daily-report weekly-report weekly-archive benchmark benchmark-report prometheus export-history history-report history-multi-node history-archive upload-archive package prune validate recover-dry-run recover force-recover-dry-run
 
 help:
 	@printf 'Kaspa Node Watchtower operator commands\n'
@@ -12,6 +12,7 @@ help:
 	@printf '  make proto-check         Verify generated protobuf files are current\n'
 	@printf '  make version             Print watchtower version\n'
 	@printf '  make status              Run the cron-style health check\n'
+	@printf '  make stream              Generate the 1080p OBS/YouTube stream page\n'
 	@printf '  make summary             Print a one-shot health summary\n'
 	@printf '  make sync-report         Print focused mainnet sync progress\n'
 	@printf '  make diagnostics-summary Print sanitized incident summary\n'
@@ -52,6 +53,9 @@ version:
 
 status:
 	@./run_watchtower.sh
+
+stream:
+	@$(PYTHON) watchtower.py -c $(CONFIG) --stream-page
 
 summary:
 	@$(PYTHON) watchtower.py -c $(CONFIG) --summary

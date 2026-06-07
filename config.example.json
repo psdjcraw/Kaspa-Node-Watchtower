@@ -10,6 +10,8 @@
   "state_path": "state/watchtower-state.json",
   "status_page_path": "state/status.html",
   "canvas_status_page_path": "/Users/psdjc/.openclaw/canvas/kaspa-watchtower/status.html",
+  "stream_page_path": "state/stream.html",
+  "canvas_stream_page_path": "/Users/psdjc/.openclaw/canvas/kaspa-watchtower/stream.html",
   "benchmark_path": "state/benchmarks.jsonl",
   "market_snapshot_path": "state/market-snapshots.jsonl",
   "prometheus_metrics_path": "state/watchtower.prom",

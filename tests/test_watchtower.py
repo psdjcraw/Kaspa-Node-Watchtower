@@ -1235,6 +1235,142 @@ class WatchtowerUnitTests(unittest.TestCase):
             self.assertIn("Relay Intake", html)
             self.assertIn("16 relay blocks", html)
 
+    def test_stream_page_uses_1080p_rotating_scene_layout(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            report = {
+                "node_name": "stream-node",
+                "checked_at": "2026-06-07T17:00:00+09:00",
+                "status": "ok",
+                "severity": "ok",
+                "checks": [
+                    {"name": "sync_status", "ok": True, "detail": "synced"},
+                    {"name": "peer_count", "ok": True, "detail": "8 peers"},
+                    {"name": "block_progress", "ok": True, "detail": "relay ok"},
+                    {"name": "processed_stats_freshness", "ok": True, "detail": "fresh"},
+                    {"name": "disk_free", "ok": True, "detail": "ok"},
+                ],
+                "grpc_metrics": {
+                    "network_id": "mainnet",
+                    "is_synced": True,
+                    "peer_count": 8,
+                    "active_peers": 8,
+                    "virtual_daa_score": 123456,
+                    "tip_count": 3,
+                    "mempool_size": 42,
+                    "network_hashes_per_second": 1_250_000_000_000_000,
+                    "network_hashrate_window_size": 1000,
+                    "pruning_point_hash": "abcdef1234567890",
+                },
+                "progress": {
+                    "relay_blocks_in_window": 11,
+                    "relay_events_in_window": 10,
+                    "window_minutes": 10,
+                    "latest_processed_age_seconds": 2.0,
+                    "relay_samples": [
+                        {"timestamp": "2026-06-07T16:59:50+09:00", "blocks": 9},
+                        {"timestamp": "2026-06-07T17:00:00+09:00", "blocks": 11},
+                    ],
+                    "latest_processed": {
+                        "timestamp": "2026-06-07T17:00:00+09:00",
+                        "blocks": 92,
+                        "seconds": 10.0,
+                        "transactions": 2161,
+                        "blocks_per_second": 9.2,
+                        "transactions_per_second": 216.1,
+                    },
+                    "processed_samples": [
+                        {
+                            "timestamp": "2026-06-07T16:59:50+09:00",
+                            "blocks_per_second": 8.8,
+                            "transactions_per_second": 200.1,
+                        },
+                        {
+                            "timestamp": "2026-06-07T17:00:00+09:00",
+                            "blocks_per_second": 9.2,
+                            "transactions_per_second": 216.1,
+                        },
+                    ],
+                },
+                "sync_progress": {"daa_delta": 120},
+                "disk": {"exists": True, "free_gb": 50, "free_percent": 25},
+                "recovery": {"action": "none", "mode": "manual"},
+            }
+            state = {
+                "history": [
+                    {
+                        "checked_at": "2026-06-07T16:59:40+09:00",
+                        "severity": "ok",
+                        "mempool_size": 22,
+                        "peer_count": 7,
+                        "virtual_daa_score": 123440,
+                    },
+                    {
+                        "checked_at": "2026-06-07T16:59:50+09:00",
+                        "severity": "ok",
+                        "mempool_size": 35,
+                        "peer_count": 8,
+                        "virtual_daa_score": 123450,
+                    },
+                ]
+            }
+            market_path = tmp_path / "market.jsonl"
+            watchtower.save_jsonl(
+                market_path,
+                [
+                    {
+                        "checked_at": "2026-06-07T16:58:00+09:00",
+                        "source": "Bybit KAS/USDT",
+                        "ok": True,
+                        "spot_last_price": 0.0305,
+                        "spot_change_24h": 0.012,
+                        "spot_volume_24h": 12345678,
+                        "futures_mark_price": 0.0304,
+                        "futures_index_price": 0.0305,
+                        "futures_basis_pct": -0.13,
+                        "futures_funding_rate": 0.0001,
+                        "futures_funding_apr_pct": 10.95,
+                        "futures_next_funding_time": 1780800000000,
+                        "futures_open_interest": 1234567,
+                        "futures_open_interest_value": 37654,
+                        "futures_volume_24h": 23456789,
+                    }
+                ],
+            )
+            output = tmp_path / "stream.html"
+
+            watchtower.write_stream_page(
+                output,
+                report,
+                state,
+                benchmark_path=tmp_path / "missing-benchmarks.jsonl",
+                market_snapshot_path=market_path,
+            )
+
+            html = output.read_text(encoding="utf-8")
+            self.assertIn("Kaspa Watchtower Stream", html)
+            self.assertIn('class="stream-stage"', html)
+            self.assertIn('data-stream-width="1920"', html)
+            self.assertIn('data-stream-height="1080"', html)
+            self.assertIn('data-default-interval-ms="5000"', html)
+            self.assertIn("Overall Status", html)
+            self.assertIn("Network Health", html)
+            self.assertIn("Transaction Throughput", html)
+            self.assertIn("Mempool Activity", html)
+            self.assertIn("KAS/USDT Market", html)
+            self.assertIn("Futures Positioning", html)
+            self.assertIn("216.1/s", html)
+            self.assertIn("Mempool Size By 10s Bucket", html)
+            self.assertIn("10-second bars", html)
+            self.assertIn("$0.03050", html)
+            self.assertIn("Open Interest", html)
+            self.assertIn("streamIntervalMs", html)
+            self.assertIn("setInterval", html)
+            self.assertIn('params.get("interval")', html)
+            self.assertIn('params.get("scene")', html)
+            self.assertIn("ArrowRight", html)
+            self.assertIn("scaleStage", html)
+
 
 if __name__ == "__main__":
     unittest.main()

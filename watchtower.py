@@ -34,6 +34,8 @@ DEFAULT_CONFIG = {
     "state_path": "state/watchtower-state.json",
     "status_page_path": "state/status.html",
     "canvas_status_page_path": "",
+    "stream_page_path": "state/stream.html",
+    "canvas_stream_page_path": "",
     "benchmark_path": "state/benchmarks.jsonl",
     "market_snapshot_path": "state/market-snapshots.jsonl",
     "prometheus_metrics_path": "state/watchtower.prom",
@@ -1562,6 +1564,272 @@ def tone_for_check(report: dict[str, Any], name: str) -> str:
     if check_passed(report, name):
         return "ok"
     return "critical" if name in CRITICAL_CHECKS else "warn"
+
+
+def stream_metric(label: str, value: Any, detail: str = "", tone: str = "neutral") -> str:
+    return f"""<article class="stream-metric {html.escape(tone)}">
+  <div class="metric-label">{html.escape(str(label))}</div>
+  <div class="metric-value">{html.escape(str(value))}</div>
+  <div class="metric-detail">{html.escape(str(detail))}</div>
+</article>"""
+
+
+def write_stream_page(
+    path: Path,
+    report: dict[str, Any],
+    state: dict[str, Any],
+    benchmark_path: Path | None = None,
+    market_snapshot_path: Path | None = None,
+) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    grpc_metrics = report.get("grpc_metrics") or {}
+    progress = report.get("progress") or {}
+    sync_progress = report.get("sync_progress") or {}
+    disk = report.get("disk") or {}
+    history_items = state.get("history", [])[-80:]
+    latest_processed = progress.get("latest_processed") or {}
+    latest_processed_age = progress.get("latest_processed_age_seconds")
+    latest_processed_age_text = "unknown" if latest_processed_age is None else f"{latest_processed_age}s old"
+    transaction_rate = latest_processed.get("transactions_per_second")
+    transaction_rate_text = "unknown" if transaction_rate is None else f"{float(transaction_rate):.1f}/s"
+    processed_rate = latest_processed.get("blocks_per_second")
+    processed_rate_text = "unknown" if processed_rate is None else f"{float(processed_rate):.1f}/s"
+    mempool_history = history_items + [
+        {
+            "checked_at": report.get("checked_at"),
+            "mempool_size": grpc_metrics.get("mempool_size"),
+        }
+    ]
+    mempool_chart = mempool_10s_chart(mempool_history)
+    transaction_chart = transaction_rate_chart(progress.get("processed_samples") or [])
+    processed_chart = processed_rate_chart(progress.get("processed_samples") or [])
+    relay_chart = relay_intake_chart(progress.get("relay_samples") or [])
+    peer_chart = sparkline_svg(
+        history_items + [{"peer_count": grpc_metrics.get("peer_count")}],
+        "peer_count",
+        "#6ee7b7",
+    )
+    daa_chart = sparkline_svg(
+        history_items + [{"virtual_daa_score": grpc_metrics.get("virtual_daa_score")}],
+        "virtual_daa_score",
+        "#93c5fd",
+    )
+    severity_chart = severity_timeline(history_items)
+    benchmark_summary = build_benchmark_summary(
+        benchmark_path or Path(DEFAULT_CONFIG["benchmark_path"]),
+        limit=48,
+    )
+    market_metrics = build_market_metrics(market_snapshot_path or Path(DEFAULT_CONFIG["market_snapshot_path"]))
+    latest_market = market_metrics.get("latest_successful") or {}
+    market_snapshot = snapshot_from_market_item(latest_market) if latest_market else {}
+    spot = market_snapshot.get("spot") or {}
+    futures = market_snapshot.get("futures") or {}
+    market_checked = latest_market.get("checked_at") or market_metrics.get("last_checked_at") or "snapshot pending"
+    failed = failed_check_names(report)
+    failure_text = ", ".join(failed) if failed else "None"
+    sync_text = "synced" if grpc_metrics.get("is_synced") is True else str(grpc_metrics.get("is_synced", "unknown"))
+    severity = str(report.get("severity", "unknown"))
+    checked_at = str(report.get("checked_at") or "unknown")
+    node_name = str(report.get("node_name") or "kaspa-node")
+    network_id = str(grpc_metrics.get("network_id") or "unknown")
+    recovery = report.get("recovery") or {}
+
+    overview_metrics = "\n".join(
+        [
+            stream_metric("Severity", severity.upper(), failure_text, severity if severity in {"ok", "warn", "critical"} else "neutral"),
+            stream_metric("Network", network_id, f"node {node_name}", "neutral"),
+            stream_metric("Sync", sync_text, f"DAA {compact_number(grpc_metrics.get('virtual_daa_score'))}", tone_for_check(report, "sync_status")),
+            stream_metric("Peers", grpc_metrics.get("peer_count", "unknown"), f"active {grpc_metrics.get('active_peers', 'unknown')}", tone_for_check(report, "peer_count")),
+            stream_metric("Tx Rate", transaction_rate_text, latest_processed_age_text, tone_for_check(report, "processed_stats_freshness")),
+            stream_metric("Mempool", compact_number(grpc_metrics.get("mempool_size")), "10-second buckets", "neutral"),
+        ]
+    )
+    network_metrics = "\n".join(
+        [
+            stream_metric("Hashrate", format_hashrate(grpc_metrics.get("network_hashes_per_second")), f"window {grpc_metrics.get('network_hashrate_window_size', 'unknown')}", "neutral"),
+            stream_metric("Relay", progress.get("relay_blocks_in_window", 0), f"{progress.get('relay_events_in_window', 0)} events / {progress.get('window_minutes', 'unknown')}m", tone_for_check(report, "block_progress")),
+            stream_metric("Tips", grpc_metrics.get("tip_count", "unknown"), f"pruning {short_hash(grpc_metrics.get('pruning_point_hash'))}", "neutral"),
+            stream_metric("Disk", format_gib(disk.get("free_gb")), f"{disk.get('free_percent', 'unknown')}% free", tone_for_check(report, "disk_free")),
+        ]
+    )
+    throughput_metrics = "\n".join(
+        [
+            stream_metric("Transactions", transaction_rate_text, f"{latest_processed.get('transactions', 'unknown')} tx / {latest_processed.get('seconds', 'unknown')}s", tone_for_check(report, "processed_stats_freshness")),
+            stream_metric("Blocks", processed_rate_text, f"{latest_processed.get('blocks', 'unknown')} blocks / {latest_processed.get('seconds', 'unknown')}s", tone_for_check(report, "processed_stats_freshness")),
+            stream_metric("Freshness", latest_processed_age_text, "processed-stats age", tone_for_check(report, "processed_stats_freshness")),
+        ]
+    )
+    market_metrics_html = "\n".join(
+        [
+            stream_metric("Spot", format_market_price(spot.get("last_price")), f"24h {format_market_percent(spot.get('change_24h'))}", "neutral"),
+            stream_metric("Spot Volume", format_market_volume(spot.get("volume_24h")), f"source {market_metrics.get('source', 'unknown')}", "neutral"),
+            stream_metric("Mark", format_market_price(futures.get("mark_price")), f"index {format_market_price(futures.get('index_price'))}", "neutral"),
+            stream_metric("Basis", format_market_percent_points(futures.get("basis_pct")), "mark vs index", "neutral"),
+        ]
+    )
+    futures_metrics_html = "\n".join(
+        [
+            stream_metric("Funding", format_market_percent(futures.get("funding_rate")), f"APR {format_market_percent_points(futures.get('funding_apr_pct'))}", "neutral"),
+            stream_metric("Open Interest", format_market_volume(futures.get("open_interest")), format_market_usdt(futures.get("open_interest_value")), "neutral"),
+            stream_metric("Futures Volume", format_market_volume(futures.get("volume_24h")), "24h Bybit linear", "neutral"),
+            stream_metric("Next Funding", format_market_time_ms(futures.get("next_funding_time")), "UTC", "neutral"),
+        ]
+    )
+
+    page = f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Kaspa Watchtower Stream</title>
+  <style>
+    :root {{ color-scheme: dark; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }}
+    * {{ box-sizing: border-box; }}
+    html, body {{ margin: 0; width: 100%; height: 100%; background: #030712; overflow: hidden; }}
+    body {{ color: #e5edf6; }}
+    .stream-stage {{ position: fixed; left: 50%; top: 50%; width: 1920px; height: 1080px; transform-origin: center; background: #07111f; overflow: hidden; }}
+    .stream-stage::before {{ content: ""; position: absolute; inset: 0; background: radial-gradient(circle at 18% 18%, rgba(20, 125, 100, 0.24), transparent 36%), linear-gradient(135deg, rgba(15, 23, 42, 0.94), rgba(4, 10, 19, 0.98)); }}
+    .stream-scene {{ position: absolute; inset: 0; display: none; padding: 70px 86px 58px; grid-template-rows: auto 1fr auto; gap: 30px; }}
+    .stream-scene.active {{ display: grid; }}
+    .scene-head {{ position: relative; display: flex; justify-content: space-between; align-items: flex-start; gap: 40px; z-index: 1; }}
+    .scene-kicker {{ color: #8bd8c2; font-size: 26px; font-weight: 800; letter-spacing: 0; text-transform: uppercase; }}
+    h1 {{ margin: 8px 0 0; font-size: 74px; line-height: 0.98; letter-spacing: 0; }}
+    .scene-meta {{ text-align: right; color: #a6b7c8; font-size: 25px; font-weight: 700; line-height: 1.45; }}
+    .scene-body {{ position: relative; z-index: 1; display: grid; gap: 28px; min-height: 0; }}
+    .grid-2 {{ grid-template-columns: 1fr 1fr; align-items: stretch; }}
+    .grid-main {{ grid-template-columns: 0.9fr 1.1fr; align-items: stretch; }}
+    .metrics-grid {{ display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 22px; }}
+    .metrics-grid.compact {{ grid-template-columns: repeat(4, minmax(0, 1fr)); }}
+    .stream-metric {{ min-height: 178px; padding: 26px 28px; border: 1px solid rgba(148, 163, 184, 0.22); background: rgba(15, 23, 42, 0.78); border-radius: 8px; box-shadow: inset 0 1px 0 rgba(255,255,255,0.05); }}
+    .stream-metric.ok {{ border-color: rgba(52, 211, 153, 0.48); }}
+    .stream-metric.warn {{ border-color: rgba(251, 191, 36, 0.60); }}
+    .stream-metric.critical {{ border-color: rgba(248, 113, 113, 0.70); }}
+    .metric-label {{ color: #90a4b8; font-size: 24px; font-weight: 800; text-transform: uppercase; }}
+    .metric-value {{ margin-top: 14px; color: #f8fafc; font-size: 58px; line-height: 0.95; font-weight: 900; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
+    .metric-detail {{ margin-top: 18px; color: #a6b7c8; font-size: 24px; font-weight: 700; line-height: 1.25; }}
+    .chart-panel {{ padding: 30px; border: 1px solid rgba(148, 163, 184, 0.22); border-radius: 8px; background: rgba(8, 17, 31, 0.78); min-height: 0; }}
+    .chart-title {{ margin-bottom: 20px; color: #d6e2ef; font-size: 28px; font-weight: 900; }}
+    .processed-chart, .sparkline {{ width: 100%; height: 320px; display: block; background: rgba(2, 6, 23, 0.55); border-radius: 8px; }}
+    .sparkline {{ height: 210px; }}
+    .empty-chart {{ display: grid; place-items: center; min-height: 210px; color: #93a4b8; border: 1px dashed rgba(148, 163, 184, 0.32); border-radius: 8px; font-size: 26px; font-weight: 800; }}
+    .severity-timeline {{ height: 72px; display: flex; gap: 6px; align-items: stretch; }}
+    .severity-segment {{ flex: 1; border-radius: 3px; background: #64748b; }}
+    .severity-segment.ok {{ background: #34d399; }}
+    .severity-segment.warn {{ background: #fbbf24; }}
+    .severity-segment.critical {{ background: #f87171; }}
+    .hero-value {{ align-self: center; padding: 56px; border-radius: 8px; border: 1px solid rgba(110, 231, 183, 0.42); background: rgba(6, 78, 59, 0.24); }}
+    .hero-value .label {{ color: #9fe8d4; font-size: 30px; font-weight: 900; text-transform: uppercase; }}
+    .hero-value .value {{ margin-top: 18px; color: #f8fafc; font-size: 128px; line-height: 0.9; font-weight: 950; }}
+    .hero-value .detail {{ margin-top: 24px; color: #b7c8d8; font-size: 31px; font-weight: 700; }}
+    .scene-foot {{ position: relative; z-index: 1; display: flex; align-items: center; justify-content: space-between; color: #91a4b8; font-size: 22px; font-weight: 800; }}
+    .scene-dots {{ display: flex; gap: 10px; }}
+    .scene-dot {{ width: 48px; height: 7px; border-radius: 999px; background: rgba(148, 163, 184, 0.35); }}
+    .scene-dot.active {{ background: #6ee7b7; }}
+    .progress {{ position: absolute; left: 0; right: 0; bottom: 0; height: 8px; background: rgba(148, 163, 184, 0.18); }}
+    .progress > span {{ display: block; width: 0%; height: 100%; background: #6ee7b7; }}
+  </style>
+</head>
+<body>
+  <main id="stream-stage" class="stream-stage" data-stream-width="1920" data-stream-height="1080" data-default-interval-ms="5000">
+    <section class="stream-scene active" data-scene="overall">
+      <header class="scene-head"><div><div class="scene-kicker">Kaspa Watchtower</div><h1>Overall Status</h1></div><div class="scene-meta">{html.escape(node_name)}<br>{html.escape(checked_at)}</div></header>
+      <div class="scene-body"><div class="metrics-grid">{overview_metrics}</div><div class="chart-panel"><div class="chart-title">Recent Severity</div>{severity_chart}</div></div>
+      <footer class="scene-foot"><span>Failed checks: {html.escape(failure_text)}</span><span data-scene-label></span></footer>
+    </section>
+    <section class="stream-scene" data-scene="network">
+      <header class="scene-head"><div><div class="scene-kicker">Network</div><h1>Network Health</h1></div><div class="scene-meta">sync {html.escape(sync_text)}<br>network {html.escape(network_id)}</div></header>
+      <div class="scene-body grid-main"><div class="metrics-grid compact">{network_metrics}</div><div class="chart-panel"><div class="chart-title">Relay Intake</div>{relay_chart}</div><div class="chart-panel"><div class="chart-title">Peer Trend</div>{peer_chart}</div><div class="chart-panel"><div class="chart-title">DAA Trend</div>{daa_chart}</div></div>
+      <footer class="scene-foot"><span>Sync progress: DAA {html.escape(compact_number(sync_progress.get('daa_delta')))} delta</span><span data-scene-label></span></footer>
+    </section>
+    <section class="stream-scene" data-scene="throughput">
+      <header class="scene-head"><div><div class="scene-kicker">Throughput</div><h1>Transaction Throughput</h1></div><div class="scene-meta">processed stats<br>{html.escape(latest_processed_age_text)}</div></header>
+      <div class="scene-body grid-main"><div class="hero-value"><div class="label">Live Tx Rate</div><div class="value">{html.escape(transaction_rate_text)}</div><div class="detail">{html.escape(str(latest_processed.get('transactions', 'unknown')))} tx over {html.escape(str(latest_processed.get('seconds', 'unknown')))}s</div></div><div class="chart-panel"><div class="chart-title">Transactions Per Second</div>{transaction_chart}</div><div class="metrics-grid compact">{throughput_metrics}</div><div class="chart-panel"><div class="chart-title">Blocks Per Second</div>{processed_chart}</div></div>
+      <footer class="scene-foot"><span>Processed freshness check: {html.escape('OK' if check_passed(report, 'processed_stats_freshness') else 'FAIL')}</span><span data-scene-label></span></footer>
+    </section>
+    <section class="stream-scene" data-scene="mempool">
+      <header class="scene-head"><div><div class="scene-kicker">Mempool</div><h1>Mempool Activity</h1></div><div class="scene-meta">10-second bars<br>latest {html.escape(compact_number(grpc_metrics.get('mempool_size')))}</div></header>
+      <div class="scene-body grid-2"><div class="hero-value"><div class="label">Current Mempool</div><div class="value">{html.escape(compact_number(grpc_metrics.get('mempool_size')))}</div><div class="detail">Latest gRPC mempool size</div></div><div class="chart-panel"><div class="chart-title">Mempool Size By 10s Bucket</div>{mempool_chart}</div></div>
+      <footer class="scene-foot"><span>Chart includes latest check appended to history</span><span data-scene-label></span></footer>
+    </section>
+    <section class="stream-scene" data-scene="market">
+      <header class="scene-head"><div><div class="scene-kicker">Market</div><h1>KAS/USDT Market</h1></div><div class="scene-meta">snapshot<br>{html.escape(str(market_checked))}</div></header>
+      <div class="scene-body"><div class="metrics-grid compact">{market_metrics_html}</div><div class="chart-panel"><div class="chart-title">Market Snapshot Source</div><div class="hero-value"><div class="label">{html.escape(str(market_metrics.get('source', 'unknown')))}</div><div class="value">{html.escape(format_market_price(spot.get('last_price')))}</div><div class="detail">Persisted snapshot from state/market-snapshots.jsonl</div></div></div></div>
+      <footer class="scene-foot"><span>Snapshots: {html.escape(str(market_metrics.get('snapshots', 0)))} total / {html.escape(str(market_metrics.get('successful_snapshots', 0)))} ok</span><span data-scene-label></span></footer>
+    </section>
+    <section class="stream-scene" data-scene="futures">
+      <header class="scene-head"><div><div class="scene-kicker">Futures</div><h1>Futures Positioning</h1></div><div class="scene-meta">KAS/USDT linear<br>{html.escape(str(market_checked))}</div></header>
+      <div class="scene-body"><div class="metrics-grid compact">{futures_metrics_html}</div><div class="chart-panel"><div class="chart-title">Operator Context</div><div class="metrics-grid compact">{stream_metric("Benchmark OK", format_ratio(benchmark_summary.get("ok_ratio")), f"{benchmark_summary.get('snapshots')} snapshots", "neutral")}{stream_metric("Recovery", recovery.get("action", "unknown"), recovery.get("mode", "manual"), "neutral")}{stream_metric("Status", report.get("status", "unknown"), severity.upper(), severity if severity in {"ok", "warn", "critical"} else "neutral")}{stream_metric("Checked", checked_at[-14:], "local watchtower run", "neutral")}</div></div></div>
+      <footer class="scene-foot"><span>Liquidation maps remain available in status.html for manual drill-down</span><span data-scene-label></span></footer>
+    </section>
+    <div class="progress"><span id="stream-progress"></span></div>
+  </main>
+  <script>
+    const stage = document.getElementById("stream-stage");
+    const scenes = Array.from(document.querySelectorAll(".stream-scene"));
+    const progress = document.getElementById("stream-progress");
+    const params = new URLSearchParams(window.location.search);
+    const streamIntervalMs = Math.max(1000, Number(params.get("interval") || stage.dataset.defaultIntervalMs || 5000));
+    const pinnedScene = params.get("scene");
+    let sceneIndex = Math.max(0, scenes.findIndex((scene) => scene.dataset.scene === pinnedScene));
+    let sceneStartedAt = Date.now();
+
+    function scaleStage() {{
+      const scale = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
+      stage.style.transform = `translate(-50%, -50%) scale(${{scale}})`;
+    }}
+
+    function renderScene() {{
+      scenes.forEach((scene, index) => {{
+        scene.classList.toggle("active", index === sceneIndex);
+      }});
+      document.querySelectorAll("[data-scene-label]").forEach((label) => {{
+        label.textContent = `${{sceneIndex + 1}} / ${{scenes.length}}`;
+      }});
+      document.querySelectorAll(".scene-dots").forEach((dots) => dots.remove());
+      scenes.forEach((scene) => {{
+        const dots = document.createElement("span");
+        dots.className = "scene-dots";
+        scenes.forEach((_, index) => {{
+          const dot = document.createElement("span");
+          dot.className = "scene-dot" + (index === sceneIndex ? " active" : "");
+          dots.appendChild(dot);
+        }});
+        scene.querySelector(".scene-foot").appendChild(dots);
+      }});
+      sceneStartedAt = Date.now();
+      if (progress) progress.style.width = "0%";
+    }}
+
+    function moveScene(delta) {{
+      sceneIndex = (sceneIndex + delta + scenes.length) % scenes.length;
+      renderScene();
+    }}
+
+    window.addEventListener("resize", scaleStage);
+    window.addEventListener("keydown", (event) => {{
+      if (event.key === "ArrowRight") moveScene(1);
+      if (event.key === "ArrowLeft") moveScene(-1);
+      if (/^[1-9]$/.test(event.key)) {{
+        const target = Number(event.key) - 1;
+        if (target < scenes.length) {{
+          sceneIndex = target;
+          renderScene();
+        }}
+      }}
+    }});
+
+    scaleStage();
+    renderScene();
+    setInterval(() => {{
+      const elapsed = Date.now() - sceneStartedAt;
+      if (progress) progress.style.width = `${{Math.min(100, (elapsed / streamIntervalMs) * 100)}}%`;
+      if (!pinnedScene && elapsed >= streamIntervalMs) moveScene(1);
+    }}, 100);
+  </script>
+</body>
+</html>
+"""
+    path.write_text(page, encoding="utf-8")
 
 
 def recent_recovery_records(config: dict, limit: int = 5) -> list[dict[str, Any]]:
@@ -4397,7 +4665,10 @@ def alert(config: dict) -> int:
     state_path = Path(config.get("state_path") or DEFAULT_CONFIG["state_path"])
     status_page_path = Path(config.get("status_page_path") or DEFAULT_CONFIG["status_page_path"])
     canvas_status_page = config.get("canvas_status_page_path") or DEFAULT_CONFIG["canvas_status_page_path"]
+    stream_page_path = Path(config.get("stream_page_path") or DEFAULT_CONFIG["stream_page_path"])
+    canvas_stream_page = config.get("canvas_stream_page_path") or DEFAULT_CONFIG["canvas_stream_page_path"]
     benchmark_path = Path(config.get("benchmark_path") or DEFAULT_CONFIG["benchmark_path"])
+    market_snapshot_path = Path(config.get("market_snapshot_path") or DEFAULT_CONFIG["market_snapshot_path"])
     metrics_path = Path(config.get("prometheus_metrics_path") or DEFAULT_CONFIG["prometheus_metrics_path"])
     benchmark_summary = build_benchmark_summary(benchmark_path, limit=48)
     thresholds = config.get("thresholds", {})
@@ -4433,12 +4704,30 @@ def alert(config: dict) -> int:
     write_status_page(status_page_path, report, state, benchmark_path, recovery_records)
     if canvas_status_page:
         write_status_page(Path(canvas_status_page), report, state, benchmark_path, recovery_records)
+    write_stream_page(stream_page_path, report, state, benchmark_path, market_snapshot_path)
+    if canvas_stream_page:
+        write_stream_page(Path(canvas_stream_page), report, state, benchmark_path, market_snapshot_path)
     recovery_summary = build_recovery_summary(recovery_history_path(config))
-    market_metrics = build_market_metrics(Path(config.get("market_snapshot_path") or DEFAULT_CONFIG["market_snapshot_path"]))
+    market_metrics = build_market_metrics(market_snapshot_path)
     write_prometheus_metrics(metrics_path, report, benchmark_summary, recovery_summary, market_metrics)
 
     if should_emit:
         print(format_alert(report, previous_status, previous_severity, event=event))
+    return 0 if report["status"] == "ok" else 1
+
+
+def stream_page(config: dict) -> int:
+    report, state = build_stateful_report(config)
+    benchmark_path = Path(config.get("benchmark_path") or DEFAULT_CONFIG["benchmark_path"])
+    market_snapshot_path = Path(config.get("market_snapshot_path") or DEFAULT_CONFIG["market_snapshot_path"])
+    stream_page_path = Path(config.get("stream_page_path") or DEFAULT_CONFIG["stream_page_path"])
+    canvas_stream_page = config.get("canvas_stream_page_path") or DEFAULT_CONFIG["canvas_stream_page_path"]
+    write_stream_page(stream_page_path, report, state, benchmark_path, market_snapshot_path)
+    if canvas_stream_page:
+        write_stream_page(Path(canvas_stream_page), report, state, benchmark_path, market_snapshot_path)
+    print(f"Stream page written: {stream_page_path}")
+    if canvas_stream_page:
+        print(f"Canvas stream page written: {canvas_stream_page}")
     return 0 if report["status"] == "ok" else 1
 
 
@@ -5699,6 +5988,10 @@ def config_validation_checks(config: dict) -> list[Check]:
             "status_page_path",
             config.get("status_page_path") or DEFAULT_CONFIG["status_page_path"],
         ),
+        parent_writable_check(
+            "stream_page_path",
+            config.get("stream_page_path") or DEFAULT_CONFIG["stream_page_path"],
+        ),
         parent_writable_check("benchmark_path", config.get("benchmark_path") or DEFAULT_CONFIG["benchmark_path"]),
         parent_writable_check(
             "prometheus_metrics_path",
@@ -5758,6 +6051,9 @@ def config_validation_checks(config: dict) -> list[Check]:
     canvas_status_page = config.get("canvas_status_page_path") or ""
     if canvas_status_page:
         checks.append(parent_writable_check("canvas_status_page_path", canvas_status_page))
+    canvas_stream_page = config.get("canvas_stream_page_path") or ""
+    if canvas_stream_page:
+        checks.append(parent_writable_check("canvas_stream_page_path", canvas_stream_page))
     if restart_command:
         ok = bool(shutil.which(str(restart_command[0])))
         checks.append(
@@ -5957,6 +6253,7 @@ def main() -> int:
     parser.add_argument("--diagnostics-summary", action="store_true", help="Print a sanitized diagnostics summary.")
     parser.add_argument("--incident-report", action="store_true", help="Print a sanitized Markdown incident report.")
     parser.add_argument("--alert", action="store_true", help="Print only alert transition output and update state.")
+    parser.add_argument("--stream-page", action="store_true", help="Write the 1080p OBS/YouTube rotating stream page.")
     parser.add_argument("--recover", action="store_true", help="Run the configured manual recovery command when unhealthy.")
     parser.add_argument("--force-recover", action="store_true", help="Run recovery even when the current report is healthy.")
     parser.add_argument("--dry-run", action="store_true", help="Show recovery command without executing it.")
@@ -5987,6 +6284,8 @@ def main() -> int:
         return incident_report(config)
     if args.alert:
         return alert(config)
+    if args.stream_page:
+        return stream_page(config)
     if args.recover:
         return recover(config, force=args.force_recover, dry_run=args.dry_run)
     if args.benchmark_snapshot:

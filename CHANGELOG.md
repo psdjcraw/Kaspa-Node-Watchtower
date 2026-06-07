@@ -10,6 +10,9 @@ All notable changes to Kaspa Node Watchtower are tracked here.
 - Generated `status.html` now separates dense operator data into Market,
   Futures, Network, Ops, and History tabs, with timeframe and liquidation-map
   selectors showing one chart range at a time.
+- Added a fixed 1920x1080 `stream.html` view for OBS/YouTube broadcasts that
+  rotates every 5 seconds through Overall, Network, Throughput, Mempool,
+  Market, and Futures scenes.
 
 ## 0.6.1 - 2026-06-07
 

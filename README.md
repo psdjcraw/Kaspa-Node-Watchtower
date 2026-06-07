@@ -184,6 +184,7 @@ Common operator commands are also available through `make`:
 ```bash
 make help
 make status
+make stream
 make sync-report
 make incident-report
 make smoke

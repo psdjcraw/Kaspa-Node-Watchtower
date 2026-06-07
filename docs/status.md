@@ -44,6 +44,12 @@
 - State: `state/watchtower-state.json`
 - Status HTML: `state/status.html`
 - Canvas HTML: `/Users/psdjc/.openclaw/canvas/kaspa-watchtower/status.html`
+- Stream HTML: `state/stream.html`
+- Canvas stream HTML: `/Users/psdjc/.openclaw/canvas/kaspa-watchtower/stream.html`
+- Stream dashboard layout: fixed 1920x1080 OBS/YouTube view that rotates every
+  5 seconds through Overall, Network, Throughput, Mempool, Market, and Futures
+  scenes. Use `make stream` to regenerate it on demand. Browser source URLs may
+  set `?interval=5000` for timing or `?scene=mempool` to pin one scene.
 - Status dashboard layout: status-first operator view with incident verdict and
   dynamic health cards above Market, Futures, Network, Ops, and History tabs.
   Timeframe candles and liquidation maps use range selectors so only one dense
