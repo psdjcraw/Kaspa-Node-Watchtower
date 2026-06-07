@@ -2661,6 +2661,14 @@ def write_status_page(
       return ((payload || {{}}).fromCache ? "cached " : "live ") + new Date(time).toLocaleTimeString();
     }}
 
+    function marketErrorDetail(error) {{
+      const message = error && (error.message || String(error));
+      if (!message) {{
+        return "unavailable";
+      }}
+      return String(message).slice(0, 120);
+    }}
+
     function marketRenderSourceStates() {{
       const list = document.getElementById("market-source-list");
       if (!list) {{
@@ -3905,7 +3913,7 @@ def write_status_page(
         marketTrendBadge(config.trendId, {{ tone: "", text: "Trend pending", detail: "Market candles unavailable" }});
         marketRsiBadge(config.rsiId, {{ tone: "", text: "RSI pending", detail: "Market candles unavailable" }});
         marketSignalWatch(config.label, {{ tone: "", text: "Unavailable" }});
-        marketSourceStatus("spot-" + config.label, "Spot " + config.label, "fail", "unavailable");
+        marketSourceStatus("spot-" + config.label, "Spot " + config.label, "fail", marketErrorDetail(error));
       }}
     }}
 
@@ -3924,7 +3932,7 @@ def write_status_page(
         marketSourceStatus("cross", "KAS/BTC cross", payloads.some((payload) => payload.fromCache) ? "cached" : "ok", "2/2 series " + marketSourceDetail(payloads[0]));
       }} catch (error) {{
         marketText(marketConfig.cross.statusId, "KAS/BTC daily cross unavailable");
-        marketSourceStatus("cross", "KAS/BTC cross", "fail", "unavailable");
+        marketSourceStatus("cross", "KAS/BTC cross", "fail", marketErrorDetail(error));
       }}
     }}
 
@@ -3947,13 +3955,16 @@ def write_status_page(
             color: source.color,
             rows: [],
             cached: false,
+            error: marketErrorDetail(error),
           }};
         }}
       }}));
       drawMarketVolumeChart(sourceRows, marketConfig.volume);
       const availableSources = sourceRows.filter((source) => source.rows.length > 0).length;
       const cachedSources = sourceRows.filter((source) => source.cached).length;
-      marketSourceStatus("volume", "Exchange volume", availableSources > 0 ? (cachedSources > 0 ? "cached" : "ok") : "fail", availableSources + "/" + marketConfig.volume.sources.length + " venues");
+      const failedSources = sourceRows.filter((source) => source.rows.length === 0);
+      const failedDetail = failedSources.length ? "; failed " + failedSources.slice(0, 3).map((source) => source.label).join(", ") : "";
+      marketSourceStatus("volume", "Exchange volume", availableSources > 0 ? (cachedSources > 0 ? "cached" : "ok") : "fail", availableSources + "/" + marketConfig.volume.sources.length + " venues" + failedDetail);
     }}
 
     async function refreshLiquidationMap(config) {{
@@ -3969,7 +3980,7 @@ def write_status_page(
         marketSourceStatus("liquidation-" + config.label, "Liquidation " + config.label, payloads.some((payload) => payload.fromCache) ? "cached" : "ok", marketSourceDetail(payloads[0]));
       }} catch (error) {{
         marketText(config.statusId, "KAS/USDT futures liquidation map unavailable");
-        marketSourceStatus("liquidation-" + config.label, "Liquidation " + config.label, "fail", "unavailable");
+        marketSourceStatus("liquidation-" + config.label, "Liquidation " + config.label, "fail", marketErrorDetail(error));
       }}
     }}
 
@@ -4000,7 +4011,7 @@ def write_status_page(
         marketSourceStatus("futures-positioning", "Futures positioning", payload.fromCache ? "cached" : "ok", marketSourceDetail(payload));
       }} catch (error) {{
         marketText("futures-status", "KAS/USDT futures positioning unavailable");
-        marketSourceStatus("futures-positioning", "Futures positioning", "fail", "unavailable");
+        marketSourceStatus("futures-positioning", "Futures positioning", "fail", marketErrorDetail(error));
       }}
     }}
 
@@ -4017,7 +4028,7 @@ def write_status_page(
         marketSourceStatus("futures-trend", "Futures trend", payloads.some((payload) => payload.fromCache) ? "cached" : "ok", marketSourceDetail(payloads[0]));
       }} catch (error) {{
         marketText(marketConfig.futuresTrend.statusId, "KAS/USDT futures trend unavailable");
-        marketSourceStatus("futures-trend", "Futures trend", "fail", "unavailable");
+        marketSourceStatus("futures-trend", "Futures trend", "fail", marketErrorDetail(error));
       }}
     }}
 
@@ -4042,7 +4053,7 @@ def write_status_page(
       }} catch (error) {{
         marketText("market-last", "Unavailable");
         marketText("market-change", "Market API unavailable");
-        marketSourceStatus("spot-ticker", "Spot ticker", "fail", "unavailable");
+        marketSourceStatus("spot-ticker", "Spot ticker", "fail", marketErrorDetail(error));
       }}
       await Promise.all([
         ...marketConfig.klines.map(refreshMarketChart),

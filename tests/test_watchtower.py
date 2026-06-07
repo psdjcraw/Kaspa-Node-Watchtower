@@ -939,6 +939,7 @@ class WatchtowerUnitTests(unittest.TestCase):
             self.assertIn("marketSourceStatus", html)
             self.assertIn("marketSourceStates", html)
             self.assertIn("marketSourceDetail", html)
+            self.assertIn("marketErrorDetail", html)
             self.assertIn("marketSourceOrder", html)
             self.assertIn("marketRenderSourceStates", html)
             self.assertIn("waiting for refresh", html)

@@ -31,6 +31,8 @@ All notable changes to Kaspa Node Watchtower are tracked here.
   live, cached, or failed status for public market-data API groups.
 - Market Data Sources rows now render in a stable order with pending states
   before the first browser refresh completes.
+- Market Data Sources failure rows now include short browser-side error details
+  such as HTTP, API, or timeout messages.
 
 ## 0.6.0 - 2026-06-07
 
