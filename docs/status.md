@@ -48,7 +48,7 @@
   details, command center, relay intake chart, block processing rate chart,
   transaction throughput freshness state, mempool 10-second bar chart, live
   KAS/USDT market watch, daily exchange-volume chart, estimated futures
-  liquidation maps, futures positioning panel, and recovery history
+  liquidation maps, futures positioning and trend panels, and recovery history
 - Market watch source: Bybit public spot ticker and 15-minute kline endpoints,
   plus 4-hour and daily kline endpoints, fetched by the browser when
   `status.html` is open
@@ -59,6 +59,8 @@
   interest; these are not exchange-reported liquidation fills
 - Futures positioning panel: Bybit KAS/USDT linear perp mark price, funding,
   next funding time, open interest, OI value, and 24-hour futures volume
+- Futures trend panel: 7-day Bybit KAS/USDT open interest line with
+  funding-rate bars from public linear perp endpoints
 - Benchmark JSONL: `state/benchmarks.jsonl`
 - Upgrade checkpoints: `state/upgrade-checkpoints.jsonl`
 - SQLite history: `state/watchtower-history.sqlite`

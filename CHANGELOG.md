@@ -20,6 +20,8 @@ All notable changes to Kaspa Node Watchtower are tracked here.
 - Generated `status.html` now includes a Bybit KAS/USDT linear perp
   positioning panel with mark price, funding, next funding time, open interest,
   OI value, and 24-hour futures volume.
+- Generated `status.html` now includes a 7-day Bybit KAS/USDT futures trend
+  panel that plots open interest with funding-rate bars.
 
 ## 0.6.0 - 2026-06-07
 

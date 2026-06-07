@@ -1859,6 +1859,16 @@ def write_status_page(
     .futures-panel .market-meta {{
       grid-template-columns: repeat(6, minmax(0, 1fr));
     }}
+    .futures-trend-panel {{
+      min-height: 340px;
+      margin-bottom: 14px;
+      display: flex;
+      flex-direction: column;
+    }}
+    .futures-trend-panel .market-chart {{
+      flex: 1 1 auto;
+      min-height: 244px;
+    }}
     .liquidation-grid {{
       display: grid;
       grid-template-columns: 1fr 1fr;
@@ -2198,6 +2208,18 @@ def write_status_page(
         <div class="context-item"><div class="context-label">24h futures volume</div><div id="futures-volume" class="context-value">unknown</div></div>
       </div>
     </section>
+    <section class="panel futures-trend-panel">
+      <div class="market-chart-head">
+        <h2>KAS/USDT Futures Trend 7D</h2>
+        <div id="futures-trend-status" class="market-status">Loading futures trend</div>
+      </div>
+      <div class="market-legend">
+        <span style="color: #2563eb"><i></i>Open interest</span>
+        <span style="color: #147a46"><i></i>Funding +</span>
+        <span style="color: #b42318"><i></i>Funding -</span>
+      </div>
+      <svg id="futures-trend-chart" class="market-chart" viewBox="0 0 720 244" role="img" aria-label="KAS/USDT futures open interest and funding trend"></svg>
+    </section>
     <section class="liquidation-grid">
       <section class="panel">
         <div class="market-chart-head">
@@ -2528,6 +2550,12 @@ def write_status_page(
           openInterestUrl: "https://api.bybit.com/v5/market/open-interest?category=linear&symbol=KASUSDT&intervalTime=1d&limit=32",
         }},
       ],
+      futuresTrend: {{
+        chartId: "futures-trend-chart",
+        statusId: "futures-trend-status",
+        openInterestUrl: "https://api.bybit.com/v5/market/open-interest?category=linear&symbol=KASUSDT&intervalTime=4h&limit=42",
+        fundingUrl: "https://api.bybit.com/v5/market/funding/history?category=linear&symbol=KASUSDT&limit=42",
+      }},
     }};
     const marketSignals = new Map();
 
@@ -2562,6 +2590,17 @@ def write_status_page(
       return (parsed * 100).toLocaleString(undefined, {{
         minimumFractionDigits: 2,
         maximumFractionDigits: 2,
+      }}) + "%";
+    }}
+
+    function formatFundingPercent(value) {{
+      const parsed = marketNumber(value);
+      if (parsed === null) {{
+        return "unknown";
+      }}
+      return (parsed * 100).toLocaleString(undefined, {{
+        minimumFractionDigits: 4,
+        maximumFractionDigits: 4,
       }}) + "%";
     }}
 
@@ -3422,6 +3461,131 @@ def write_status_page(
         .sort((left, right) => left.time - right.time);
     }}
 
+    function marketFundingRows(payload) {{
+      return ((((payload || {{}}).result || {{}}).list || []))
+        .map((row) => ({{
+          time: marketNumber(row.fundingRateTimestamp),
+          fundingRate: marketNumber(row.fundingRate),
+        }}))
+        .filter((row) => row.time !== null && row.fundingRate !== null)
+        .sort((left, right) => left.time - right.time);
+    }}
+
+    function drawFuturesTrend(openInterestPayload, fundingPayload, config) {{
+      const svg = document.getElementById(config.chartId);
+      if (!svg) {{
+        return;
+      }}
+      svg.replaceChildren();
+      const oiRows = marketOpenInterestRows(openInterestPayload);
+      const fundingRows = marketFundingRows(fundingPayload);
+      if (oiRows.length < 2 || fundingRows.length < 2) {{
+        marketText(config.statusId, "Not enough futures trend data");
+        return;
+      }}
+      const width = 720;
+      const height = 244;
+      const leftPad = 42;
+      const rightPad = 86;
+      const topPad = 18;
+      const bottomPad = 34;
+      const fundingHeight = 52;
+      const chartWidth = width - leftPad - rightPad;
+      const oiHeight = height - topPad - bottomPad - fundingHeight;
+      const fundingTop = topPad + oiHeight + 14;
+      const fundingBase = fundingTop + fundingHeight / 2;
+      const oiValues = oiRows.map((row) => row.openInterest);
+      const rawHigh = Math.max(...oiValues);
+      const rawLow = Math.min(...oiValues);
+      const rawSpan = rawHigh - rawLow || 1;
+      const oiHigh = rawHigh + rawSpan * 0.08;
+      const oiLow = Math.max(0, rawLow - rawSpan * 0.08);
+      const oiSpan = oiHigh - oiLow || 1;
+      const maxFunding = Math.max(...fundingRows.map((row) => Math.abs(row.fundingRate))) || 0.0001;
+      const ns = "http://www.w3.org/2000/svg";
+      const xOi = (index) => leftPad + (chartWidth / Math.max(1, oiRows.length - 1)) * index;
+      const yOi = (value) => topPad + oiHeight - ((value - oiLow) / oiSpan) * oiHeight;
+      const xFunding = (index) => leftPad + (chartWidth / fundingRows.length) * index + chartWidth / fundingRows.length / 2;
+
+      [0, 0.5, 1].forEach((ratio) => {{
+        const lineY = topPad + oiHeight * ratio;
+        const line = document.createElementNS(ns, "line");
+        line.setAttribute("x1", String(leftPad));
+        line.setAttribute("x2", String(width - rightPad));
+        line.setAttribute("y1", String(lineY));
+        line.setAttribute("y2", String(lineY));
+        line.setAttribute("stroke", "#d9e1e8");
+        line.setAttribute("stroke-width", "1");
+        svg.appendChild(line);
+
+        const label = document.createElementNS(ns, "text");
+        label.textContent = formatMarketVolume(oiHigh - oiSpan * ratio).replace(" KAS", "");
+        label.setAttribute("x", String(width - rightPad + 10));
+        label.setAttribute("y", String(lineY + 4));
+        label.setAttribute("fill", "#66727f");
+        label.setAttribute("font-size", "11");
+        label.setAttribute("font-weight", "700");
+        label.setAttribute("class", "market-axis-label");
+        svg.appendChild(label);
+      }});
+
+      const zeroLine = document.createElementNS(ns, "line");
+      zeroLine.setAttribute("x1", String(leftPad));
+      zeroLine.setAttribute("x2", String(width - rightPad));
+      zeroLine.setAttribute("y1", String(fundingBase));
+      zeroLine.setAttribute("y2", String(fundingBase));
+      zeroLine.setAttribute("stroke", "#8aa0ad");
+      zeroLine.setAttribute("stroke-dasharray", "4 4");
+      zeroLine.setAttribute("stroke-width", "1");
+      svg.appendChild(zeroLine);
+
+      fundingRows.forEach((row, index) => {{
+        const step = chartWidth / fundingRows.length;
+        const barHeight = Math.max(1, Math.abs(row.fundingRate) / maxFunding * (fundingHeight / 2 - 3));
+        const positive = row.fundingRate >= 0;
+        const rect = document.createElementNS(ns, "rect");
+        rect.setAttribute("x", String(xFunding(index) - Math.max(3, step * 0.36) / 2));
+        rect.setAttribute("y", String(positive ? fundingBase - barHeight : fundingBase));
+        rect.setAttribute("width", String(Math.max(3, step * 0.36)));
+        rect.setAttribute("height", String(barHeight));
+        rect.setAttribute("rx", "2");
+        rect.setAttribute("fill", positive ? "#147a46" : "#b42318");
+        rect.setAttribute("opacity", "0.82");
+        svg.appendChild(rect);
+      }});
+
+      const oiPath = document.createElementNS(ns, "path");
+      oiPath.setAttribute(
+        "d",
+        oiRows
+          .map((row, index) => (index === 0 ? "M" : "L") + xOi(index).toFixed(1) + " " + yOi(row.openInterest).toFixed(1))
+          .join(" ")
+      );
+      oiPath.setAttribute("fill", "none");
+      oiPath.setAttribute("stroke", "#2563eb");
+      oiPath.setAttribute("stroke-width", "3");
+      oiPath.setAttribute("stroke-linecap", "round");
+      oiPath.setAttribute("stroke-linejoin", "round");
+      svg.appendChild(oiPath);
+
+      [0, Math.floor((oiRows.length - 1) / 2), oiRows.length - 1].forEach((index) => {{
+        const label = document.createElementNS(ns, "text");
+        label.textContent = marketAxisTimeLabel(oiRows[index].time, "day");
+        label.setAttribute("x", String(xOi(index)));
+        label.setAttribute("y", String(height - 9));
+        label.setAttribute("text-anchor", index === 0 ? "start" : index === oiRows.length - 1 ? "end" : "middle");
+        label.setAttribute("fill", "#66727f");
+        label.setAttribute("font-size", "10");
+        label.setAttribute("font-weight", "700");
+        label.setAttribute("class", "market-axis-label");
+        svg.appendChild(label);
+      }});
+
+      const latestOi = oiRows[oiRows.length - 1];
+      const latestFunding = fundingRows[fundingRows.length - 1];
+      marketText(config.statusId, "OI " + formatMarketVolume(latestOi.openInterest) + " / funding " + formatFundingPercent(latestFunding.fundingRate));
+    }}
+
     function nearestOpenInterest(rows, time) {{
       if (!rows.length) {{
         return null;
@@ -3657,7 +3821,7 @@ def write_status_page(
         const payload = await fetchMarketJson(marketConfig.futuresTickerUrl);
         const ticker = ((payload.result || {{}}).list || [])[0] || {{}};
         marketText("futures-mark", formatMarketPrice(ticker.markPrice || ticker.lastPrice));
-        marketText("futures-funding", formatMarketPercent(ticker.fundingRate));
+        marketText("futures-funding", formatFundingPercent(ticker.fundingRate));
         marketText("futures-next-funding", formatMarketTime(ticker.nextFundingTime));
         marketText("futures-open-interest", formatMarketVolume(ticker.openInterest));
         marketText("futures-open-interest-value", formatMarketUsdt(ticker.openInterestValue));
@@ -3666,6 +3830,18 @@ def write_status_page(
         marketText("futures-status", updatedPrefix + "linear perp updated at " + new Date(Number(payload.cachedAt || payload.time || Date.now())).toLocaleTimeString());
       }} catch (error) {{
         marketText("futures-status", "KAS/USDT futures positioning unavailable");
+      }}
+    }}
+
+    async function refreshFuturesTrend() {{
+      try {{
+        const payloads = await Promise.all([
+          fetchMarketJson(marketConfig.futuresTrend.openInterestUrl),
+          fetchMarketJson(marketConfig.futuresTrend.fundingUrl),
+        ]);
+        drawFuturesTrend(payloads[0], payloads[1], marketConfig.futuresTrend);
+      }} catch (error) {{
+        marketText(marketConfig.futuresTrend.statusId, "KAS/USDT futures trend unavailable");
       }}
     }}
 
@@ -3695,6 +3871,7 @@ def write_status_page(
         refreshMarketCrossChart(),
         refreshMarketVolumeChart(),
         refreshFuturesPositioning(),
+        refreshFuturesTrend(),
         ...marketConfig.liquidations.map(refreshLiquidationMap),
       ]);
     }}
