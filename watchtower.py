@@ -1897,6 +1897,7 @@ def write_status_page(
     .market-source-row.ok .state {{ color: var(--ok); }}
     .market-source-row.cached .state {{ color: #b26a00; }}
     .market-source-row.fail .state {{ color: var(--critical); }}
+    .market-source-row.pending .state {{ color: var(--muted); }}
     .market-source-row .detail {{
       color: var(--muted);
       overflow-wrap: anywhere;
@@ -2262,7 +2263,7 @@ def write_status_page(
         <div class="market-status">Live, cached, or unavailable public API groups</div>
       </div>
       <div id="market-source-list" class="market-source-list">
-        <div class="market-source-row cached"><span class="state">pending</span><span class="detail">Waiting for first market refresh</span></div>
+        <div class="market-source-row pending"><span class="state">pending</span><span class="detail">Waiting for first market refresh</span></div>
       </div>
     </section>
     <section class="liquidation-grid">
@@ -2617,6 +2618,22 @@ def write_status_page(
     const marketSignals = new Map();
     const marketRefreshTimes = new Map();
     const marketSourceStates = new Map();
+    const marketSourceOrder = [
+      ["spot-ticker", "Spot ticker"],
+      ["spot-15m", "Spot 15m"],
+      ["spot-4h", "Spot 4h"],
+      ["spot-1D", "Spot 1D"],
+      ["spot-1W", "Spot 1W"],
+      ["spot-1M", "Spot 1M"],
+      ["cross", "KAS/BTC cross"],
+      ["volume", "Exchange volume"],
+      ["futures-positioning", "Futures positioning"],
+      ["futures-trend", "Futures trend"],
+      ["liquidation-12H", "Liquidation 12H"],
+      ["liquidation-24H", "Liquidation 24H"],
+      ["liquidation-1W", "Liquidation 1W"],
+      ["liquidation-1M", "Liquidation 1M"],
+    ];
 
     function marketShouldRefresh(key, refreshMs) {{
       const interval = Number(refreshMs || 0);
@@ -2644,14 +2661,23 @@ def write_status_page(
       return ((payload || {{}}).fromCache ? "cached " : "live ") + new Date(time).toLocaleTimeString();
     }}
 
-    function marketSourceStatus(key, label, state, detail) {{
-      marketSourceStates.set(key, {{ label, state, detail }});
+    function marketRenderSourceStates() {{
       const list = document.getElementById("market-source-list");
       if (!list) {{
         return;
       }}
       list.replaceChildren();
-      Array.from(marketSourceStates.values()).forEach((item) => {{
+      const ordered = marketSourceOrder.map((entry) => {{
+        const key = entry[0];
+        const label = entry[1];
+        return marketSourceStates.get(key) || {{ label, state: "pending", detail: "waiting for refresh" }};
+      }});
+      marketSourceStates.forEach((value, key) => {{
+        if (!marketSourceOrder.some((entry) => entry[0] === key)) {{
+          ordered.push(value);
+        }}
+      }});
+      ordered.forEach((item) => {{
         const row = document.createElement("div");
         row.className = "market-source-row " + item.state;
 
@@ -2667,6 +2693,11 @@ def write_status_page(
 
         list.appendChild(row);
       }});
+    }}
+
+    function marketSourceStatus(key, label, state, detail) {{
+      marketSourceStates.set(key, {{ label, state, detail }});
+      marketRenderSourceStates();
     }}
 
     function marketNumber(value) {{
@@ -4023,6 +4054,7 @@ def write_status_page(
       ]);
     }}
 
+    marketRenderSourceStates();
     refreshMarketWatch();
     window.setInterval(refreshMarketWatch, 30000);
 

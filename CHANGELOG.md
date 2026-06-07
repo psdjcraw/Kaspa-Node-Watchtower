@@ -29,6 +29,8 @@ All notable changes to Kaspa Node Watchtower are tracked here.
   every 30 seconds.
 - Generated `status.html` now includes a Market Data Sources panel that shows
   live, cached, or failed status for public market-data API groups.
+- Market Data Sources rows now render in a stable order with pending states
+  before the first browser refresh completes.
 
 ## 0.6.0 - 2026-06-07
 

@@ -67,7 +67,8 @@
   throttled to reduce public API load
 - Market Data Sources panel: browser-side source health for spot ticker,
   timeframe candles, cross chart, exchange volume, futures positioning/trend,
-  and liquidation-map groups
+  and liquidation-map groups, rendered in a stable order with pending states
+  before first refresh
 - Benchmark JSONL: `state/benchmarks.jsonl`
 - Upgrade checkpoints: `state/upgrade-checkpoints.jsonl`
 - SQLite history: `state/watchtower-history.sqlite`

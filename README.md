@@ -69,7 +69,7 @@ which supports a more resilient decentralized network.
   futures trend panel plots open interest with funding-rate bars; browser
   market-data refreshes are throttled per panel to avoid unnecessary public API
   calls for long-window data, with a source-status panel for live, cached, or
-  unavailable public API groups
+  unavailable public API groups in a stable operator-facing order
 - Prometheus textfile metrics for local scraping or textfile collectors
 - Long-lived SQLite history export and operator summary reporting
 
