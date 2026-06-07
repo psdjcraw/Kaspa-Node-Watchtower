@@ -46,8 +46,8 @@
 - Status dashboard layout: status-first operator view with incident verdict,
   dynamic health cards, trend panels, severity timeline, triage queue, check
   details, command center, relay intake chart, block processing rate chart,
-  transaction throughput freshness state, mempool activity chart, live KAS/USDT
-  market watch, and recovery history
+  transaction throughput freshness state, mempool 10-second candle chart, live
+  KAS/USDT market watch, and recovery history
 - Market watch source: Bybit public spot ticker and 15-minute kline endpoints,
   plus 4-hour and daily kline endpoints, fetched by the browser when
   `status.html` is open

@@ -812,8 +812,9 @@ class WatchtowerUnitTests(unittest.TestCase):
             state = {
                 "history": [
                     {"checked_at": "2026-06-06T09:58:00+09:00", "severity": "ok"},
-                    {"checked_at": "2026-06-06T09:59:00+09:00", "severity": "warn", "mempool_size": 2},
-                    {"checked_at": "2026-06-06T10:00:00+09:00", "severity": "critical", "mempool_size": 0},
+                    {"checked_at": "2026-06-06T09:59:02+09:00", "severity": "warn", "mempool_size": 2},
+                    {"checked_at": "2026-06-06T09:59:08+09:00", "severity": "warn", "mempool_size": 5},
+                    {"checked_at": "2026-06-06T09:59:12+09:00", "severity": "critical", "mempool_size": 1},
                 ]
             }
             output = tmp_path / "status.html"
@@ -940,6 +941,11 @@ class WatchtowerUnitTests(unittest.TestCase):
             self.assertIn("Recent transactions per second", html)
             self.assertIn("processed-chart", html)
             self.assertIn("Mempool Activity", html)
+            self.assertIn("Mempool Activity - 10s", html)
+            self.assertIn("mempool-candles", html)
+            self.assertIn('data-bucket="10s"', html)
+            self.assertIn("Mempool size 10 second candles", html)
+            self.assertIn("10s mempool candle", html)
             self.assertIn("Relay Intake", html)
             self.assertIn("16 relay blocks", html)
 

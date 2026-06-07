@@ -952,6 +952,111 @@ def sparkline_svg(items: list[dict[str, Any]], key: str, color: str) -> str:
 </svg>"""
 
 
+def mempool_10s_candles(items: list[dict[str, Any]]) -> str:
+    buckets: dict[dt.datetime, dict[str, Any]] = {}
+    for item in items:
+        value = numeric(item.get("mempool_size"))
+        checked_at = parse_iso_datetime(str(item.get("checked_at") or ""))
+        if value is None or checked_at is None:
+            continue
+        bucket_at = checked_at.replace(
+            second=(checked_at.second // 10) * 10,
+            microsecond=0,
+        )
+        bucket = buckets.setdefault(
+            bucket_at,
+            {
+                "timestamp": bucket_at,
+                "open": value,
+                "high": value,
+                "low": value,
+                "close": value,
+            },
+        )
+        bucket["high"] = max(float(bucket["high"]), value)
+        bucket["low"] = min(float(bucket["low"]), value)
+        bucket["close"] = value
+
+    candles = [buckets[key] for key in sorted(buckets)]
+    if not candles:
+        return '<div class="empty-chart">No mempool history</div>'
+
+    width = 320
+    height = 92
+    left_pad = 10
+    right_pad = 34
+    top_pad = 10
+    bottom_pad = 20
+    chart_width = width - left_pad - right_pad
+    chart_height = height - top_pad - bottom_pad
+    low = min(float(item["low"]) for item in candles)
+    high = max(float(item["high"]) for item in candles)
+    span = high - low or 1
+    step = chart_width / len(candles)
+    body_width = max(5, min(14, step * 0.56))
+
+    def y(value: float) -> float:
+        return top_pad + chart_height - ((value - low) / span) * chart_height
+
+    grid_parts = []
+    for ratio in [0, 1]:
+        line_y = top_pad + chart_height * ratio
+        value = high if ratio == 0 else low
+        grid_parts.append(
+            f'<line x1="{left_pad}" x2="{width - right_pad}" y1="{line_y:.1f}" y2="{line_y:.1f}" '
+            'stroke="#d9e1e8" stroke-width="1"></line>'
+        )
+        grid_parts.append(
+            f'<text x="{width - right_pad + 8}" y="{line_y + 4:.1f}" fill="#66727f" '
+            f'font-size="10" font-weight="700">{html.escape(compact_number(value))}</text>'
+        )
+
+    candle_parts = []
+    for index, item in enumerate(candles):
+        x_mid = left_pad + step * index + step / 2
+        open_value = float(item["open"])
+        close_value = float(item["close"])
+        high_value = float(item["high"])
+        low_value = float(item["low"])
+        high_y = y(high_value)
+        low_y = y(low_value)
+        body_top = min(y(open_value), y(close_value))
+        body_height = max(2, abs(y(open_value) - y(close_value)))
+        color = "#147d64" if close_value >= open_value else "#b42318"
+        label = item["timestamp"].strftime("%H:%M:%S")
+        candle_parts.append(
+            f'<g class="mempool-candle" data-bucket="10s">'
+            f'<line x1="{x_mid:.1f}" x2="{x_mid:.1f}" y1="{high_y:.1f}" y2="{low_y:.1f}" '
+            f'stroke="{color}" stroke-width="2" opacity="0.8"></line>'
+            f'<rect x="{x_mid - body_width / 2:.1f}" y="{body_top:.1f}" width="{body_width:.1f}" '
+            f'height="{body_height:.1f}" rx="2" fill="{color}" opacity="0.88">'
+            f'<title>{html.escape(label)} 10s mempool candle: '
+            f'O {compact_number(open_value)} H {compact_number(high_value)} '
+            f'L {compact_number(low_value)} C {compact_number(close_value)}</title>'
+            '</rect></g>'
+        )
+
+    label_indexes = sorted({0, len(candles) - 1})
+    labels = []
+    for index in label_indexes:
+        item = candles[index]
+        x = left_pad + step * index + step / 2
+        anchor = "start" if index == 0 else "end"
+        labels.append(
+            f'<text x="{x:.1f}" y="{height - 6}" text-anchor="{anchor}" fill="#66727f" '
+            f'font-size="10" font-weight="700">{html.escape(item["timestamp"].strftime("%H:%M:%S"))}</text>'
+        )
+
+    return (
+        '<svg class="mempool-candles" viewBox="0 0 320 92" role="img" '
+        'aria-label="Mempool size 10 second candles">'
+        + "".join(grid_parts)
+        + "".join(candle_parts)
+        + "".join(labels)
+        + "</svg>"
+    )
+
+
 def severity_timeline(items: list[dict[str, Any]]) -> str:
     if not items:
         return '<div class="empty-chart">No status history</div>'
@@ -1367,10 +1472,13 @@ def write_status_page(
     relay_chart = sparkline_svg(history_items, "relay_blocks_in_window", "#147d64")
     daa_chart = sparkline_svg(history_items, "virtual_daa_score", "#3858e9")
     peer_chart = sparkline_svg(history_items, "peer_count", "#b26a00")
-    mempool_history = history_items + [{"mempool_size": grpc_metrics.get("mempool_size")}]
-    if sum(1 for item in mempool_history if numeric(item.get("mempool_size")) is not None) == 1:
-        mempool_history.append({"mempool_size": grpc_metrics.get("mempool_size")})
-    mempool_chart = sparkline_svg(mempool_history, "mempool_size", "#276b74")
+    mempool_history = history_items + [
+        {
+            "checked_at": report.get("checked_at"),
+            "mempool_size": grpc_metrics.get("mempool_size"),
+        }
+    ]
+    mempool_chart = mempool_10s_candles(mempool_history)
     hashrate_history = history_items + [{"network_hashes_per_second": grpc_metrics.get("network_hashes_per_second")}]
     if sum(1 for item in hashrate_history if numeric(item.get("network_hashes_per_second")) is not None) == 1:
         hashrate_history.append({"network_hashes_per_second": grpc_metrics.get("network_hashes_per_second")})
@@ -1767,7 +1875,7 @@ def write_status_page(
     .chart-grid {{ display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 14px; }}
     .chart-head {{ display: flex; justify-content: space-between; gap: 10px; margin-bottom: 8px; min-width: 0; }}
     .chart-value {{ font-size: 18px; font-weight: 800; overflow-wrap: anywhere; text-align: right; }}
-    .sparkline {{ width: 100%; height: 92px; display: block; }}
+    .sparkline, .mempool-candles {{ width: 100%; height: 92px; display: block; }}
     .processed-chart {{ width: 100%; height: 164px; display: block; background: #f8fafc; border-radius: 8px; }}
     .empty-chart {{ height: 92px; display: grid; place-items: center; color: var(--muted); font-size: 13px; background: #f8fafc; border-radius: 8px; }}
     .severity-timeline {{
@@ -2053,7 +2161,7 @@ def write_status_page(
         {peer_chart}
       </section>
       <section class="panel">
-        <div class="chart-head"><h2>Mempool Activity</h2><div class="chart-value">{compact_number(grpc_metrics.get('mempool_size'))}</div></div>
+        <div class="chart-head"><h2>Mempool Activity - 10s</h2><div class="chart-value">{compact_number(grpc_metrics.get('mempool_size'))}</div></div>
         {mempool_chart}
       </section>
       <section class="panel">
