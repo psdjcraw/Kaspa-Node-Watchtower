@@ -12,6 +12,8 @@ All notable changes to Kaspa Node Watchtower are tracked here.
 - Bundled Grafana dashboard now includes a mempool size chart.
 - Generated `status.html` now renders mempool activity as 10-second bar
   buckets aligned with the transaction throughput chart.
+- Generated `status.html` now includes a daily KAS exchange-volume bar chart
+  for Gate, MEXC, KuCoin, Bybit, Bitget, Kraken, HTX, and Total.
 
 ## 0.6.0 - 2026-06-07
 

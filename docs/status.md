@@ -47,10 +47,12 @@
   dynamic health cards, trend panels, severity timeline, triage queue, check
   details, command center, relay intake chart, block processing rate chart,
   transaction throughput freshness state, mempool 10-second bar chart, live
-  KAS/USDT market watch, and recovery history
+  KAS/USDT market watch, daily exchange-volume chart, and recovery history
 - Market watch source: Bybit public spot ticker and 15-minute kline endpoints,
   plus 4-hour and daily kline endpoints, fetched by the browser when
   `status.html` is open
+- Exchange-volume chart sources: Gate, MEXC, KuCoin, Bybit, Bitget, Kraken,
+  and HTX public daily candles, rendered as KAS base-volume bars plus Total
 - Benchmark JSONL: `state/benchmarks.jsonl`
 - Upgrade checkpoints: `state/upgrade-checkpoints.jsonl`
 - SQLite history: `state/watchtower-history.sqlite`

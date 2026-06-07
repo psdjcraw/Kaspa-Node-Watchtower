@@ -61,7 +61,9 @@ which supports a more resilient decentralized network.
   normalized daily KAS/USDT vs BTC/USDT cross chart with browser cache fallback;
   KAS/USDT timeframe charts include EMA overlays, short-trend status badges,
   RSI 14 badges, a compact Signal Watch summary, and operator-focused time
-  ranges from intraday through full monthly history
+  ranges from intraday through full monthly history; the market section also
+  shows daily KAS exchange-volume bars for Gate, MEXC, KuCoin, Bybit, Bitget,
+  Kraken, HTX, and Total
 - Prometheus textfile metrics for local scraping or textfile collectors
 - Long-lived SQLite history export and operator summary reporting
 

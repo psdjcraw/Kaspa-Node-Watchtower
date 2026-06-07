@@ -1829,6 +1829,30 @@ def write_status_page(
       display: inline-block;
       background: currentColor;
     }}
+    .market-volume-panel {{
+      min-height: 340px;
+      margin-bottom: 14px;
+      display: flex;
+      flex-direction: column;
+    }}
+    .market-volume-panel .market-chart {{
+      flex: 1 1 auto;
+      min-height: 244px;
+    }}
+    .market-volume-panel .market-legend {{
+      flex-wrap: wrap;
+      row-gap: 8px;
+    }}
+    .market-volume-panel .market-legend i {{
+      width: 10px;
+      height: 10px;
+      border-radius: 3px;
+    }}
+    .market-volume-panel .market-legend .total i {{
+      width: 18px;
+      height: 3px;
+      border-radius: 999px;
+    }}
     .market-status {{
       color: var(--muted);
       font-size: 12px;
@@ -2127,6 +2151,14 @@ def write_status_page(
       </div>
       <svg id="market-cross-chart" class="market-chart" viewBox="0 0 720 230" role="img" aria-label="KAS/USDT and BTC/USDT daily normalized comparison chart"></svg>
     </section>
+    <section class="panel market-volume-panel">
+      <div class="market-chart-head">
+        <h2>KAS Exchange Volume 1D</h2>
+        <div id="market-volume-status" class="market-status">Loading exchange volumes</div>
+      </div>
+      <div id="market-volume-legend" class="market-legend"></div>
+      <svg id="market-volume-chart" class="market-chart" viewBox="0 0 720 244" role="img" aria-label="Daily KAS trading volume by exchange and total"></svg>
+    </section>
     <section class="chart-grid">
       <section class="panel">
         <div class="chart-head"><h2>Relay Activity</h2><div class="chart-value">{compact_number(progress.get('relay_blocks_in_window'))}</div></div>
@@ -2326,6 +2358,56 @@ def write_status_page(
           }},
         ],
       }},
+      volume: {{
+        chartId: "market-volume-chart",
+        statusId: "market-volume-status",
+        legendId: "market-volume-legend",
+        limit: 32,
+        sources: [
+          {{
+            label: "Gate",
+            color: "#2563eb",
+            parser: "gate",
+            url: "https://api.gateio.ws/api/v4/spot/candlesticks?currency_pair=KAS_USDT&interval=1d&limit=32",
+          }},
+          {{
+            label: "MEXC",
+            color: "#16a34a",
+            parser: "mexc",
+            url: "https://api.mexc.com/api/v3/klines?symbol=KASUSDT&interval=1d&limit=32",
+          }},
+          {{
+            label: "KuCoin",
+            color: "#7c3aed",
+            parser: "kucoin",
+            url: "https://api.kucoin.com/api/v1/market/candles?type=1day&symbol=KAS-USDT",
+          }},
+          {{
+            label: "Bybit",
+            color: "#d97706",
+            parser: "bybit",
+            url: "https://api.bybit.com/v5/market/kline?category=spot&symbol=KASUSDT&interval=D&limit=32",
+          }},
+          {{
+            label: "Bitget",
+            color: "#0891b2",
+            parser: "bitget",
+            url: "https://api.bitget.com/api/v2/spot/market/candles?symbol=KASUSDT&granularity=1day&limit=32",
+          }},
+          {{
+            label: "Kraken",
+            color: "#be123c",
+            parser: "kraken",
+            url: "https://api.kraken.com/0/public/OHLC?pair=KASUSD&interval=1440",
+          }},
+          {{
+            label: "HTX",
+            color: "#4b5563",
+            parser: "htx",
+            url: "https://api.huobi.pro/market/history/kline?symbol=kasusdt&period=1day&size=32",
+          }},
+        ],
+      }},
     }};
     const marketSignals = new Map();
 
@@ -2466,8 +2548,17 @@ def write_status_page(
             throw new Error("HTTP " + response.status);
           }}
           const payload = await response.json();
-          if (payload.retCode !== 0) {{
+          if (payload.retCode !== undefined && payload.retCode !== 0) {{
             throw new Error(payload.retMsg || "market API error");
+          }}
+          if (payload.code !== undefined && payload.code !== "00000" && payload.code !== "200000") {{
+            throw new Error(payload.msg || "market API error");
+          }}
+          if (payload.status !== undefined && payload.status !== "ok") {{
+            throw new Error(payload["err-msg"] || "market API error");
+          }}
+          if (Array.isArray(payload.error) && payload.error.length > 0) {{
+            throw new Error(payload.error.join(", "));
           }}
           window.clearTimeout(timeout);
           writeMarketCache(url, payload);
@@ -2954,6 +3045,211 @@ def write_status_page(
       marketText(statusId, summary + " at " + new Date(latest.time).toLocaleTimeString());
     }}
 
+    function marketDayKey(time) {{
+      const date = new Date(time);
+      return date.getUTCFullYear() + "-" + marketPad2(date.getUTCMonth() + 1) + "-" + marketPad2(date.getUTCDate());
+    }}
+
+    function marketVolumePoint(time, volume) {{
+      const parsedTime = marketNumber(time);
+      const parsedVolume = marketNumber(volume);
+      if (parsedTime === null || parsedVolume === null || parsedVolume < 0) {{
+        return null;
+      }}
+      return {{
+        time: parsedTime < 1000000000000 ? parsedTime * 1000 : parsedTime,
+        volume: parsedVolume,
+      }};
+    }}
+
+    function marketVolumeRows(payload, parser) {{
+      let rows = [];
+      if (parser === "gate") {{
+        rows = Array.isArray(payload) ? payload.map((row) => marketVolumePoint(row[0], row[6])) : [];
+      }} else if (parser === "mexc") {{
+        rows = Array.isArray(payload) ? payload.map((row) => marketVolumePoint(row[0], row[5])) : [];
+      }} else if (parser === "kucoin") {{
+        rows = (((payload || {{}}).data || [])).map((row) => marketVolumePoint(row[0], row[5]));
+      }} else if (parser === "bybit") {{
+        rows = ((((payload || {{}}).result || {{}}).list || [])).map((row) => marketVolumePoint(row[0], row[5]));
+      }} else if (parser === "bitget") {{
+        rows = (((payload || {{}}).data || [])).map((row) => marketVolumePoint(row[0], row[5]));
+      }} else if (parser === "kraken") {{
+        const result = (payload || {{}}).result || {{}};
+        const pairKey = Object.keys(result).find((key) => key !== "last");
+        rows = pairKey ? (result[pairKey] || []).map((row) => marketVolumePoint(row[0], row[6])) : [];
+      }} else if (parser === "htx") {{
+        rows = (((payload || {{}}).data || [])).map((row) => marketVolumePoint(row.id, row.amount));
+      }}
+      return rows
+        .filter((row) => row !== null)
+        .sort((left, right) => left.time - right.time);
+    }}
+
+    function marketVolumeDataset(sourceRows, limit) {{
+      const sourceLabels = sourceRows.map((item) => item.label);
+      const sourceColors = new Map(sourceRows.map((item) => [item.label, item.color]));
+      const byDay = new Map();
+      sourceRows.forEach((source) => {{
+        source.rows.forEach((row) => {{
+          const key = marketDayKey(row.time);
+          if (!byDay.has(key)) {{
+            byDay.set(key, {{
+              key,
+              time: row.time,
+              volumes: new Map(),
+            }});
+          }}
+          const day = byDay.get(key);
+          day.time = Math.min(day.time, row.time);
+          day.volumes.set(source.label, (day.volumes.get(source.label) || 0) + row.volume);
+        }});
+      }});
+      const days = Array.from(byDay.values())
+        .sort((left, right) => left.time - right.time)
+        .slice(-limit)
+        .map((day) => {{
+          const total = sourceLabels.reduce((sum, label) => sum + (day.volumes.get(label) || 0), 0);
+          return {{
+            ...day,
+            total,
+          }};
+        }})
+        .filter((day) => day.total > 0);
+      return {{ days, sourceLabels, sourceColors }};
+    }}
+
+    function drawMarketVolumeChart(sourceRows, config) {{
+      const svg = document.getElementById(config.chartId);
+      if (!svg) {{
+        return;
+      }}
+      svg.replaceChildren();
+      const legend = document.getElementById(config.legendId);
+      if (legend) {{
+        legend.replaceChildren();
+        config.sources.forEach((source) => {{
+          const item = document.createElement("span");
+          item.style.color = source.color;
+          const swatch = document.createElement("i");
+          item.appendChild(swatch);
+          item.appendChild(document.createTextNode(source.label));
+          legend.appendChild(item);
+        }});
+        const totalItem = document.createElement("span");
+        totalItem.className = "total";
+        totalItem.style.color = "#111827";
+        const totalSwatch = document.createElement("i");
+        totalItem.appendChild(totalSwatch);
+        totalItem.appendChild(document.createTextNode("Total"));
+        legend.appendChild(totalItem);
+      }}
+
+      const dataset = marketVolumeDataset(sourceRows, Number(config.limit || 32));
+      if (dataset.days.length < 2) {{
+        marketText(config.statusId, "Not enough exchange volume data");
+        return;
+      }}
+      const width = 720;
+      const height = 244;
+      const leftPad = 42;
+      const rightPad = 82;
+      const topPad = 18;
+      const bottomPad = 34;
+      const chartWidth = width - leftPad - rightPad;
+      const chartHeight = height - topPad - bottomPad;
+      const high = Math.max(...dataset.days.map((day) => day.total)) || 1;
+      const y = (value) => topPad + chartHeight - (value / high) * chartHeight;
+      const step = chartWidth / dataset.days.length;
+      const barWidth = Math.max(5, Math.min(18, step * 0.58));
+      const ns = "http://www.w3.org/2000/svg";
+
+      [0, 0.25, 0.5, 0.75, 1].forEach((ratio) => {{
+        const lineY = topPad + chartHeight * ratio;
+        const line = document.createElementNS(ns, "line");
+        line.setAttribute("x1", String(leftPad));
+        line.setAttribute("x2", String(width - rightPad));
+        line.setAttribute("y1", String(lineY));
+        line.setAttribute("y2", String(lineY));
+        line.setAttribute("stroke", "#d9e1e8");
+        line.setAttribute("stroke-width", "1");
+        svg.appendChild(line);
+
+        const label = document.createElementNS(ns, "text");
+        label.textContent = formatMarketVolume(high * (1 - ratio)).replace(" KAS", "");
+        label.setAttribute("x", String(width - rightPad + 10));
+        label.setAttribute("y", String(lineY + 4));
+        label.setAttribute("fill", "#66727f");
+        label.setAttribute("font-size", "11");
+        label.setAttribute("font-weight", "700");
+        label.setAttribute("class", "market-axis-label");
+        svg.appendChild(label);
+      }});
+
+      [0, Math.floor((dataset.days.length - 1) / 2), dataset.days.length - 1].forEach((index) => {{
+        const day = dataset.days[index];
+        const label = document.createElementNS(ns, "text");
+        label.textContent = marketAxisTimeLabel(day.time, "day");
+        label.setAttribute("x", String(leftPad + step * index + step / 2));
+        label.setAttribute("y", String(height - 9));
+        label.setAttribute("text-anchor", index === 0 ? "start" : index === dataset.days.length - 1 ? "end" : "middle");
+        label.setAttribute("fill", "#66727f");
+        label.setAttribute("font-size", "10");
+        label.setAttribute("font-weight", "700");
+        label.setAttribute("class", "market-axis-label");
+        svg.appendChild(label);
+      }});
+
+      dataset.days.forEach((day, index) => {{
+        const x = leftPad + step * index + step / 2;
+        let stacked = 0;
+        dataset.sourceLabels.forEach((label) => {{
+          const value = day.volumes.get(label) || 0;
+          if (value <= 0) {{
+            return;
+          }}
+          const next = stacked + value;
+          const rect = document.createElementNS(ns, "rect");
+          rect.setAttribute("x", String(x - barWidth / 2));
+          rect.setAttribute("y", String(y(next)));
+          rect.setAttribute("width", String(barWidth));
+          rect.setAttribute("height", String(Math.max(1, y(stacked) - y(next))));
+          rect.setAttribute("rx", "2");
+          rect.setAttribute("fill", dataset.sourceColors.get(label) || "#66727f");
+          rect.setAttribute("opacity", "0.88");
+          const title = document.createElementNS(ns, "title");
+          title.textContent = day.key + " " + label + " " + formatMarketVolume(value);
+          rect.appendChild(title);
+          svg.appendChild(rect);
+          stacked = next;
+        }});
+      }});
+
+      const totalPath = document.createElementNS(ns, "path");
+      totalPath.setAttribute(
+        "d",
+        dataset.days
+          .map((day, index) => {{
+            const x = leftPad + step * index + step / 2;
+            return (index === 0 ? "M" : "L") + x.toFixed(1) + " " + y(day.total).toFixed(1);
+          }})
+          .join(" ")
+      );
+      totalPath.setAttribute("fill", "none");
+      totalPath.setAttribute("stroke", "#111827");
+      totalPath.setAttribute("stroke-width", "3");
+      totalPath.setAttribute("stroke-linecap", "round");
+      totalPath.setAttribute("stroke-linejoin", "round");
+      svg.appendChild(totalPath);
+
+      const latest = dataset.days[dataset.days.length - 1];
+      const available = sourceRows.filter((source) => source.rows.length > 0).length;
+      marketText(
+        config.statusId,
+        "Total " + formatMarketVolume(latest.total) + " across " + available + "/" + config.sources.length + " venues at " + marketAxisTimeLabel(latest.time, "day")
+      );
+    }}
+
     async function refreshMarketChart(config) {{
       try {{
         const payload = await fetchMarketJson(marketKlineUrl(config));
@@ -2980,6 +3276,26 @@ def write_status_page(
       }}
     }}
 
+    async function refreshMarketVolumeChart() {{
+      const sourceRows = await Promise.all(marketConfig.volume.sources.map(async (source) => {{
+        try {{
+          const payload = await fetchMarketJson(source.url);
+          return {{
+            label: source.label,
+            color: source.color,
+            rows: marketVolumeRows(payload, source.parser),
+          }};
+        }} catch (error) {{
+          return {{
+            label: source.label,
+            color: source.color,
+            rows: [],
+          }};
+        }}
+      }}));
+      drawMarketVolumeChart(sourceRows, marketConfig.volume);
+    }}
+
     async function refreshMarketWatch() {{
       try {{
         const tickerPayload = await fetchMarketJson(marketConfig.tickerUrl);
@@ -3004,6 +3320,7 @@ def write_status_page(
       await Promise.all([
         ...marketConfig.klines.map(refreshMarketChart),
         refreshMarketCrossChart(),
+        refreshMarketVolumeChart(),
       ]);
     }}
 
