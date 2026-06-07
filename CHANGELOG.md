@@ -7,6 +7,9 @@ All notable changes to Kaspa Node Watchtower are tracked here.
 ### Changed
 
 - Homebrew formula now points to the v0.6.1 release tarball and checksum.
+- Generated `status.html` now separates dense operator data into Market,
+  Futures, Network, Ops, and History tabs, with timeframe and liquidation-map
+  selectors showing one chart range at a time.
 
 ## 0.6.1 - 2026-06-07
 

@@ -44,12 +44,19 @@
 - State: `state/watchtower-state.json`
 - Status HTML: `state/status.html`
 - Canvas HTML: `/Users/psdjc/.openclaw/canvas/kaspa-watchtower/status.html`
-- Status dashboard layout: status-first operator view with incident verdict,
-  dynamic health cards, trend panels, severity timeline, triage queue, check
-  details, command center, relay intake chart, block processing rate chart,
-  transaction throughput freshness state, mempool 10-second bar chart, live
-  KAS/USDT market watch, daily exchange-volume chart, estimated futures
-  liquidation maps, futures positioning and trend panels, and recovery history
+- Status dashboard layout: status-first operator view with incident verdict and
+  dynamic health cards above Market, Futures, Network, Ops, and History tabs.
+  Timeframe candles and liquidation maps use range selectors so only one dense
+  chart range is shown at a time.
+- Network tab: trend panels, severity timeline, relay intake chart, block
+  processing rate chart, transaction throughput freshness state, and mempool
+  10-second bar chart
+- Market tab: live KAS/USDT market watch, selectable timeframe candles, daily
+  cross chart, and exchange-volume chart
+- Futures tab: futures positioning, futures trend, market source health, and
+  selectable estimated liquidation maps
+- Ops and History tabs: triage queue, check details, command center, benchmark
+  trend, recovery history, and recent status history
 - Market watch source: Bybit public spot ticker and 15-minute kline endpoints,
   plus 4-hour and daily kline endpoints, fetched by the browser when
   `status.html` is open

@@ -39,6 +39,8 @@ which supports a more resilient decentralized network.
   block/header counts, mempool, DAG tips, pruning point, difficulty, estimated
   network hashrate, and process metrics
 - Alert severity, repeat suppression, history, and polished local HTML status page generation
+- Tabbed `status.html` layout that separates Market, Futures, Network, Ops,
+  and History views so dense operator data is not shown all at once
 - Concise `--summary` output for quick Discord/operator status checks
 - Benchmark snapshots and reports for version/configuration comparison
 - Benchmark trend section in the generated status dashboard

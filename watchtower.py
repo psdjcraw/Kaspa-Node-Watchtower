@@ -1985,11 +1985,12 @@ def write_status_page(
       border-radius: 8px;
     }}
     .market-timeframe-grid {{
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 14px;
+      display: block;
       margin-bottom: 14px;
     }}
+    .timeframe-panel:not(.active),
+    .liquidation-panel:not(.active),
+    .tab-panel:not(.active) {{ display: none; }}
     .market-watch > .panel,
     .market-timeframe-grid > .panel,
     .market-cross-panel {{
@@ -2273,6 +2274,34 @@ def write_status_page(
     .context-item {{ background: #f8fafc; border: 1px solid #edf1f6; border-radius: 8px; padding: 10px; min-width: 0; }}
     .context-label {{ color: var(--muted); font-size: 12px; margin-bottom: 4px; }}
     .context-value {{ font-size: 13px; font-weight: 700; overflow-wrap: anywhere; }}
+    .status-tabs,
+    .subtab-row {{
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin: 0 0 14px;
+    }}
+    .tab-button,
+    .subtab-button {{
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #ffffff;
+      color: var(--ink);
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 900;
+      min-height: 36px;
+      padding: 7px 11px;
+    }}
+    .tab-button.active,
+    .subtab-button.active {{
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #ffffff;
+    }}
+    .tab-panel {{
+      margin-bottom: 14px;
+    }}
     table {{ border-collapse: collapse; width: 100%; font-size: 13px; }}
     th, td {{ border-bottom: 1px solid var(--line); padding: 8px; text-align: left; vertical-align: top; }}
     th {{ color: var(--muted); font-size: 12px; font-weight: 700; }}
@@ -2298,6 +2327,7 @@ def write_status_page(
       .market-source-list {{ grid-template-columns: 1fr; }}
       .panel {{ overflow-x: auto; }}
       .bar-block, .context-item {{ margin-bottom: 10px; }}
+      .status-tabs, .subtab-row {{ display: grid; grid-template-columns: 1fr 1fr; }}
     }}
   </style>
 </head>
@@ -2326,6 +2356,21 @@ def write_status_page(
     <section class="visual-grid">
       {visual_cards}
     </section>
+    <nav class="status-tabs" aria-label="Status dashboard sections">
+      <button class="tab-button active" type="button" data-tab-target="tab-market">Market</button>
+      <button class="tab-button" type="button" data-tab-target="tab-futures">Futures</button>
+      <button class="tab-button" type="button" data-tab-target="tab-network">Network</button>
+      <button class="tab-button" type="button" data-tab-target="tab-ops">Ops</button>
+      <button class="tab-button" type="button" data-tab-target="tab-history">History</button>
+    </nav>
+    <section id="tab-market" class="tab-panel active">
+    <div class="subtab-row" aria-label="KAS/USDT timeframe selector">
+      <button class="subtab-button active" type="button" data-timeframe-target="15m">15m</button>
+      <button class="subtab-button" type="button" data-timeframe-target="4h">4h</button>
+      <button class="subtab-button" type="button" data-timeframe-target="1d">1D</button>
+      <button class="subtab-button" type="button" data-timeframe-target="1w">1W</button>
+      <button class="subtab-button" type="button" data-timeframe-target="1m">1M</button>
+    </div>
     <section class="market-watch">
       <section class="panel market-price">
         <div class="market-pair">
@@ -2347,7 +2392,7 @@ def write_status_page(
           </div>
         </div>
       </section>
-      <section class="panel">
+      <section class="panel timeframe-panel active" data-timeframe-panel="15m">
         <div class="market-chart-head">
           <div class="market-title-row">
             <h2>KAS/USDT 15m</h2>
@@ -2360,7 +2405,7 @@ def write_status_page(
       </section>
     </section>
     <section class="market-timeframe-grid">
-      <section class="panel">
+      <section class="panel timeframe-panel" data-timeframe-panel="4h">
         <div class="market-chart-head">
           <div class="market-title-row">
             <h2>KAS/USDT 4h</h2>
@@ -2371,7 +2416,7 @@ def write_status_page(
         </div>
         <svg id="market-chart-4h" class="market-chart" viewBox="0 0 720 230" role="img" aria-label="KAS/USDT 4 hour candlestick chart"></svg>
       </section>
-      <section class="panel">
+      <section class="panel timeframe-panel" data-timeframe-panel="1d">
         <div class="market-chart-head">
           <div class="market-title-row">
             <h2>KAS/USDT 1D</h2>
@@ -2382,7 +2427,7 @@ def write_status_page(
         </div>
         <svg id="market-chart-1d" class="market-chart" viewBox="0 0 720 230" role="img" aria-label="KAS/USDT daily candlestick chart"></svg>
       </section>
-      <section class="panel">
+      <section class="panel timeframe-panel" data-timeframe-panel="1w">
         <div class="market-chart-head">
           <div class="market-title-row">
             <h2>KAS/USDT 1W</h2>
@@ -2393,7 +2438,7 @@ def write_status_page(
         </div>
         <svg id="market-chart-1w" class="market-chart" viewBox="0 0 720 230" role="img" aria-label="KAS/USDT weekly candlestick chart"></svg>
       </section>
-      <section class="panel">
+      <section class="panel timeframe-panel" data-timeframe-panel="1m">
         <div class="market-chart-head">
           <div class="market-title-row">
             <h2>KAS/USDT 1M</h2>
@@ -2424,6 +2469,8 @@ def write_status_page(
       <div id="market-volume-legend" class="market-legend"></div>
       <svg id="market-volume-chart" class="market-chart" viewBox="0 0 720 244" role="img" aria-label="Daily KAS trading volume by exchange and total"></svg>
     </section>
+    </section>
+    <section id="tab-futures" class="tab-panel">
     <section class="panel futures-panel">
       <div class="market-chart-head">
         <div class="market-title-row">
@@ -2465,8 +2512,14 @@ def write_status_page(
         <div class="market-source-row pending"><span class="state">pending</span><span class="detail">Waiting for first market refresh</span></div>
       </div>
     </section>
+    <div class="subtab-row" aria-label="Liquidation map range selector">
+      <button class="subtab-button active" type="button" data-liquidation-target="12h">12H</button>
+      <button class="subtab-button" type="button" data-liquidation-target="24h">24H</button>
+      <button class="subtab-button" type="button" data-liquidation-target="1w">1W</button>
+      <button class="subtab-button" type="button" data-liquidation-target="1m">1M</button>
+    </div>
     <section class="liquidation-grid">
-      <section class="panel">
+      <section class="panel liquidation-panel active" data-liquidation-panel="12h">
         <div class="market-chart-head">
           <h2>KAS/USDT Futures Liquidation Map 12H</h2>
           <div id="liquidation-status-12h" class="market-status">Loading liquidation map</div>
@@ -2478,7 +2531,7 @@ def write_status_page(
         </div>
         <svg id="liquidation-chart-12h" class="market-chart" viewBox="0 0 720 244" role="img" aria-label="Estimated 12 hour KAS/USDT futures liquidation heatmap"></svg>
       </section>
-      <section class="panel">
+      <section class="panel liquidation-panel" data-liquidation-panel="24h">
         <div class="market-chart-head">
           <h2>KAS/USDT Futures Liquidation Map 24H</h2>
           <div id="liquidation-status-24h" class="market-status">Loading liquidation map</div>
@@ -2490,7 +2543,7 @@ def write_status_page(
         </div>
         <svg id="liquidation-chart-24h" class="market-chart" viewBox="0 0 720 244" role="img" aria-label="Estimated 24 hour KAS/USDT futures liquidation heatmap"></svg>
       </section>
-      <section class="panel">
+      <section class="panel liquidation-panel" data-liquidation-panel="1w">
         <div class="market-chart-head">
           <h2>KAS/USDT Futures Liquidation Map 1W</h2>
           <div id="liquidation-status-1w" class="market-status">Loading liquidation map</div>
@@ -2502,7 +2555,7 @@ def write_status_page(
         </div>
         <svg id="liquidation-chart-1w" class="market-chart" viewBox="0 0 720 244" role="img" aria-label="Estimated one week KAS/USDT futures liquidation heatmap"></svg>
       </section>
-      <section class="panel">
+      <section class="panel liquidation-panel" data-liquidation-panel="1m">
         <div class="market-chart-head">
           <h2>KAS/USDT Futures Liquidation Map 1M</h2>
           <div id="liquidation-status-1m" class="market-status">Loading liquidation map</div>
@@ -2515,6 +2568,8 @@ def write_status_page(
         <svg id="liquidation-chart-1m" class="market-chart" viewBox="0 0 720 244" role="img" aria-label="Estimated one month KAS/USDT futures liquidation heatmap"></svg>
       </section>
     </section>
+    </section>
+    <section id="tab-network" class="tab-panel">
     <section class="chart-grid">
       <section class="panel">
         <div class="chart-head"><h2>Relay Activity</h2><div class="chart-value">{compact_number(progress.get('relay_blocks_in_window'))}</div></div>
@@ -2569,6 +2624,8 @@ def write_status_page(
       <div class="subtle">{html.escape(mempool_detail)}</div>
       {mempool_chart}
     </section>
+    </section>
+    <section id="tab-ops" class="tab-panel">
     <section class="layout">
       <section class="panel">
         <h2>Triage Queue</h2>
@@ -2610,6 +2667,8 @@ def write_status_page(
         <tbody>{checks}</tbody>
       </table>
     </section>
+    </section>
+    <section id="tab-history" class="tab-panel">
     <section class="panel">
       <h2>Benchmark Trend</h2>
       <table>
@@ -2630,8 +2689,36 @@ def write_status_page(
         <tbody>{history}</tbody>
       </table>
     </section>
+    </section>
   </main>
   <script>
+    function activateDashboardGroup(buttonSelector, panelSelector, buttonAttr, panelAttr, target) {{
+      document.querySelectorAll(buttonSelector).forEach((button) => {{
+        button.classList.toggle("active", button.getAttribute(buttonAttr) === target);
+      }});
+      document.querySelectorAll(panelSelector).forEach((panel) => {{
+        panel.classList.toggle("active", panel.getAttribute(panelAttr) === target);
+      }});
+    }}
+
+    document.querySelectorAll("[data-tab-target]").forEach((button) => {{
+      button.addEventListener("click", () => {{
+        activateDashboardGroup(".tab-button", ".tab-panel", "data-tab-target", "id", button.getAttribute("data-tab-target"));
+      }});
+    }});
+
+    document.querySelectorAll("[data-timeframe-target]").forEach((button) => {{
+      button.addEventListener("click", () => {{
+        activateDashboardGroup("[data-timeframe-target]", "[data-timeframe-panel]", "data-timeframe-target", "data-timeframe-panel", button.getAttribute("data-timeframe-target"));
+      }});
+    }});
+
+    document.querySelectorAll("[data-liquidation-target]").forEach((button) => {{
+      button.addEventListener("click", () => {{
+        activateDashboardGroup("[data-liquidation-target]", "[data-liquidation-panel]", "data-liquidation-target", "data-liquidation-panel", button.getAttribute("data-liquidation-target"));
+      }});
+    }});
+
     const marketConfig = {{
       tickerUrl: "https://api.bybit.com/v5/market/tickers?category=spot&symbol=KASUSDT",
       futuresTickerUrl: "https://api.bybit.com/v5/market/tickers?category=linear&symbol=KASUSDT",
