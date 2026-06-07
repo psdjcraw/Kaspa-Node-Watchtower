@@ -10,7 +10,8 @@ All notable changes to Kaspa Node Watchtower are tracked here.
 - Benchmark snapshots now persist processed transaction rate and
   processed-stats age for SQLite history summaries.
 - Bundled Grafana dashboard now includes a mempool size chart.
-- Generated `status.html` now renders mempool activity as 10-second candles.
+- Generated `status.html` now renders mempool activity as 10-second bar
+  buckets aligned with the transaction throughput chart.
 
 ## 0.6.0 - 2026-06-07
 

@@ -952,7 +952,7 @@ def sparkline_svg(items: list[dict[str, Any]], key: str, color: str) -> str:
 </svg>"""
 
 
-def mempool_10s_candles(items: list[dict[str, Any]]) -> str:
+def mempool_10s_chart(items: list[dict[str, Any]]) -> str:
     buckets: dict[dt.datetime, dict[str, Any]] = {}
     for item in items:
         value = numeric(item.get("mempool_size"))
@@ -967,18 +967,13 @@ def mempool_10s_candles(items: list[dict[str, Any]]) -> str:
             bucket_at,
             {
                 "timestamp": bucket_at,
-                "open": value,
-                "high": value,
-                "low": value,
-                "close": value,
+                "value": value,
             },
         )
-        bucket["high"] = max(float(bucket["high"]), value)
-        bucket["low"] = min(float(bucket["low"]), value)
-        bucket["close"] = value
+        bucket["value"] = value
 
-    candles = [buckets[key] for key in sorted(buckets)]
-    if not candles:
+    points = [buckets[key] for key in sorted(buckets)]
+    if not points:
         return '<div class="empty-chart">No mempool history</div>'
 
     width = 720
@@ -989,19 +984,14 @@ def mempool_10s_candles(items: list[dict[str, Any]]) -> str:
     bottom_pad = 30
     chart_width = width - left_pad - right_pad
     chart_height = height - top_pad - bottom_pad
-    low = min(float(item["low"]) for item in candles)
-    high = max(float(item["high"]) for item in candles)
-    span = high - low or 1
-    step = chart_width / len(candles)
-    body_width = max(4, min(14, step * 0.56))
-
-    def y(value: float) -> float:
-        return top_pad + chart_height - ((value - low) / span) * chart_height
+    high = max(float(item["value"]) for item in points) or 1
+    step = chart_width / len(points)
+    bar_width = max(4, min(14, step * 0.58))
 
     grid_parts = []
     for ratio in [0, 0.5, 1]:
         line_y = top_pad + chart_height * ratio
-        value = high - (span * ratio)
+        value = high * (1 - ratio)
         grid_parts.append(
             f'<line x1="{left_pad}" x2="{width - right_pad}" y1="{line_y:.1f}" y2="{line_y:.1f}" '
             'stroke="#d9e1e8" stroke-width="1"></line>'
@@ -1011,47 +1001,36 @@ def mempool_10s_candles(items: list[dict[str, Any]]) -> str:
             f'font-size="11" font-weight="700">{html.escape(compact_number(value))}</text>'
         )
 
-    candle_parts = []
-    for index, item in enumerate(candles):
-        x_mid = left_pad + step * index + step / 2
-        open_value = float(item["open"])
-        close_value = float(item["close"])
-        high_value = float(item["high"])
-        low_value = float(item["low"])
-        high_y = y(high_value)
-        low_y = y(low_value)
-        body_top = min(y(open_value), y(close_value))
-        body_height = max(2, abs(y(open_value) - y(close_value)))
-        color = "#147d64" if close_value >= open_value else "#b42318"
+    bars = []
+    for index, item in enumerate(points):
+        value = float(item["value"])
+        bar_height = max(2, (value / high) * chart_height)
+        x = left_pad + step * index + (step - bar_width) / 2
+        y = top_pad + chart_height - bar_height
         label = item["timestamp"].strftime("%H:%M:%S")
-        candle_parts.append(
-            f'<g class="mempool-candle" data-bucket="10s">'
-            f'<line x1="{x_mid:.1f}" x2="{x_mid:.1f}" y1="{high_y:.1f}" y2="{low_y:.1f}" '
-            f'stroke="{color}" stroke-width="2" opacity="0.8"></line>'
-            f'<rect x="{x_mid - body_width / 2:.1f}" y="{body_top:.1f}" width="{body_width:.1f}" '
-            f'height="{body_height:.1f}" rx="2" fill="{color}" opacity="0.88">'
-            f'<title>{html.escape(label)} 10s mempool candle: '
-            f'O {compact_number(open_value)} H {compact_number(high_value)} '
-            f'L {compact_number(low_value)} C {compact_number(close_value)}</title>'
-            '</rect></g>'
+        bars.append(
+            f'<rect class="mempool-bar" data-bucket="10s" x="{x:.1f}" y="{y:.1f}" '
+            f'width="{bar_width:.1f}" height="{bar_height:.1f}" rx="2" fill="#147d64" opacity="0.86">'
+            f'<title>{html.escape(label)} 10s mempool size {compact_number(value)}</title>'
+            '</rect>'
         )
 
-    label_indexes = sorted({0, len(candles) // 2, len(candles) - 1})
+    label_indexes = sorted({0, len(points) // 2, len(points) - 1})
     labels = []
     for index in label_indexes:
-        item = candles[index]
+        item = points[index]
         x = left_pad + step * index + step / 2
-        anchor = "start" if index == 0 else "end" if index == len(candles) - 1 else "middle"
+        anchor = "start" if index == 0 else "end" if index == len(points) - 1 else "middle"
         labels.append(
             f'<text x="{x:.1f}" y="{height - 8}" text-anchor="{anchor}" fill="#66727f" '
             f'font-size="10" font-weight="700">{html.escape(item["timestamp"].strftime("%H:%M:%S"))}</text>'
         )
 
     return (
-        '<svg class="processed-chart mempool-candles" viewBox="0 0 720 164" role="img" '
-        'aria-label="Mempool size 10 second candles">'
+        '<svg class="processed-chart mempool-bars" viewBox="0 0 720 164" role="img" '
+        'aria-label="Recent mempool size by 10 second bucket">'
         + "".join(grid_parts)
-        + "".join(candle_parts)
+        + "".join(bars)
         + "".join(labels)
         + "</svg>"
     )
@@ -1478,7 +1457,7 @@ def write_status_page(
             "mempool_size": grpc_metrics.get("mempool_size"),
         }
     ]
-    mempool_chart = mempool_10s_candles(mempool_history)
+    mempool_chart = mempool_10s_chart(mempool_history)
     hashrate_history = history_items + [{"network_hashes_per_second": grpc_metrics.get("network_hashes_per_second")}]
     if sum(1 for item in hashrate_history if numeric(item.get("network_hashes_per_second")) is not None) == 1:
         hashrate_history.append({"network_hashes_per_second": grpc_metrics.get("network_hashes_per_second")})
@@ -1491,7 +1470,7 @@ def write_status_page(
     transaction_chart = transaction_rate_chart(progress.get("processed_samples") or [])
     transaction_rate = latest_processed.get("transactions_per_second")
     transaction_rate_text = "unknown" if transaction_rate is None else f"{float(transaction_rate):.1f}/s"
-    mempool_detail = "10-second candles from status history"
+    mempool_detail = "10-second buckets from status history"
     latest_processed_age = progress.get("latest_processed_age_seconds")
     latest_processed_age_text = "unknown" if latest_processed_age is None else f"{latest_processed_age}s old"
     processed_detail = (
