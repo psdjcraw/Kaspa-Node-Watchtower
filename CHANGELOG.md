@@ -6,13 +6,12 @@ All notable changes to Kaspa Node Watchtower are tracked here.
 
 ### Changed
 
-- Nothing yet.
+- Homebrew formula now points to the v0.6.1 release tarball and checksum.
 
 ## 0.6.1 - 2026-06-07
 
 ### Changed
 
-- Homebrew formula now points to the v0.6.0 release tarball and checksum.
 - Benchmark snapshots now persist processed transaction rate and
   processed-stats age for SQLite history summaries.
 - Bundled Grafana dashboard now includes a mempool size chart.
