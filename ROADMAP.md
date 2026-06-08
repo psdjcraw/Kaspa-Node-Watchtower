@@ -42,6 +42,8 @@ surface area:
   operator reviews surface risky or lagging nodes without a separate command.
 - Make DAA/block lag, stale-node, peer-lag, and processed-freshness thresholds
   configurable for stricter same-network comparisons.
+- Surface the multi-node verdict in `status.html` and `scripts/ops_snapshot.sh`
+  so dashboard and release-readiness checks show the same operator signal.
 - Use the comparison output to decide which node needs attention before adding
   broader dashboard surface area.
 

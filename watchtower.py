@@ -11,10 +11,12 @@ import os
 import re
 import shutil
 import socket
+import sqlite3
 import subprocess
 import time
 import urllib.error
 import urllib.request
+from contextlib import closing
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
@@ -37,6 +39,7 @@ DEFAULT_CONFIG = {
     "stream_page_path": "state/stream.html",
     "canvas_stream_page_path": "",
     "benchmark_path": "state/benchmarks.jsonl",
+    "sqlite_history_path": "state/watchtower-history.sqlite",
     "market_snapshot_path": "state/market-snapshots.jsonl",
     "prometheus_metrics_path": "state/watchtower.prom",
     "recovery_history_path": "state/recovery-history.jsonl",
@@ -1851,12 +1854,219 @@ def recent_recovery_records(config: dict, limit: int = 5) -> list[dict[str, Any]
         return []
 
 
+def sqlite_history_path(config: dict) -> Path:
+    return Path(config.get("sqlite_history_path") or DEFAULT_CONFIG["sqlite_history_path"])
+
+
+def infer_history_network(node_name: str) -> str:
+    lowered = node_name.lower()
+    if "tn10" in lowered or "testnet" in lowered:
+        return "tn10"
+    if "mainnet" in lowered:
+        return "mainnet"
+    return "unknown"
+
+
+def sqlite_history_window(rows: list[sqlite3.Row], days: int) -> list[sqlite3.Row]:
+    dated_rows = [
+        (parsed, row)
+        for row in rows
+        if (parsed := parse_iso_datetime(row["checked_at"])) is not None
+    ]
+    if not dated_rows:
+        return []
+    latest_at = max(parsed for parsed, _row in dated_rows)
+    cutoff = latest_at - dt.timedelta(days=days)
+    return [row for parsed, row in dated_rows if parsed >= cutoff]
+
+
+def elapsed_minutes(later: Any, earlier: Any) -> float | None:
+    later_at = parse_iso_datetime(str(later) if later is not None else None)
+    earlier_at = parse_iso_datetime(str(earlier) if earlier is not None else None)
+    if later_at is None or earlier_at is None:
+        return None
+    return (later_at - earlier_at).total_seconds() / 60
+
+
+def load_multi_node_history_status(db_path: Path, days: int = 7) -> dict[str, Any]:
+    if not db_path.exists():
+        return {"available": False, "reason": f"missing {db_path}", "nodes": []}
+    try:
+        with closing(sqlite3.connect(db_path)) as connection:
+            connection.row_factory = sqlite3.Row
+            rows = list(
+                connection.execute(
+                    """
+                    select checked_at, node_name, status, severity, peer_count,
+                           virtual_daa_score, block_count,
+                           latest_processed_age_seconds
+                    from benchmark_snapshots
+                    order by checked_at
+                    """
+                )
+            )
+    except sqlite3.Error as exc:
+        return {"available": False, "reason": str(exc), "nodes": []}
+
+    window = sqlite_history_window(rows, days)
+    by_node: dict[str, list[sqlite3.Row]] = {}
+    for row in window:
+        by_node.setdefault(row["node_name"] or "unknown", []).append(row)
+    summaries = []
+    for node_name in sorted(by_node):
+        node_rows = by_node[node_name]
+        latest = node_rows[-1]
+        ok_count = sum(1 for row in node_rows if row["status"] == "ok" and row["severity"] == "ok")
+        processed_ages = [
+            value
+            for row in node_rows
+            if (value := numeric(row["latest_processed_age_seconds"])) is not None
+        ]
+        summaries.append(
+            {
+                "node_name": node_name,
+                "network": infer_history_network(node_name),
+                "snapshots": len(node_rows),
+                "latest_checked_at": latest["checked_at"],
+                "latest_status": latest["status"],
+                "latest_severity": latest["severity"],
+                "ok_ratio": ok_count / len(node_rows) if node_rows else None,
+                "latest_peer_count": numeric(latest["peer_count"]),
+                "latest_daa_score": numeric(latest["virtual_daa_score"]),
+                "latest_block_count": numeric(latest["block_count"]),
+                "max_processed_age_seconds": max(processed_ages) if processed_ages else None,
+            }
+        )
+
+    if not summaries:
+        return {"available": True, "verdict": "unknown", "baselines": {}, "nodes": []}
+
+    by_network: dict[str, list[dict[str, Any]]] = {}
+    for item in summaries:
+        by_network.setdefault(item["network"], []).append(item)
+    baselines = {}
+    for network, items in by_network.items():
+        scored = [item for item in items if item["latest_daa_score"] is not None]
+        baselines[network] = max(scored, key=lambda item: item["latest_daa_score"]) if scored else items[0]
+
+    verdict = "ok"
+    compared = []
+    for item in summaries:
+        baseline = baselines[item["network"]]
+        flags = []
+        daa_lag = None
+        block_lag = None
+        check_lag = elapsed_minutes(baseline["latest_checked_at"], item["latest_checked_at"])
+        peer_lag = None
+        processed_age_lag = None
+        if baseline["latest_daa_score"] is not None and item["latest_daa_score"] is not None:
+            daa_lag = baseline["latest_daa_score"] - item["latest_daa_score"]
+            if daa_lag > 120:
+                flags.append("daa_lag")
+        if baseline["latest_block_count"] is not None and item["latest_block_count"] is not None:
+            block_lag = baseline["latest_block_count"] - item["latest_block_count"]
+            if block_lag > 120:
+                flags.append("block_lag")
+        if check_lag is not None and check_lag > 10:
+            flags.append("stale_node")
+        if baseline["latest_peer_count"] is not None and item["latest_peer_count"] is not None:
+            peer_lag = baseline["latest_peer_count"] - item["latest_peer_count"]
+            if peer_lag >= 2:
+                flags.append("peer_lag")
+        if baseline["max_processed_age_seconds"] is not None and item["max_processed_age_seconds"] is not None:
+            processed_age_lag = item["max_processed_age_seconds"] - baseline["max_processed_age_seconds"]
+            if processed_age_lag >= 60:
+                flags.append("processed_age_lag")
+        if item["latest_severity"] in {"warn", "critical"}:
+            flags.append(f"severity_{item['latest_severity']}")
+        if item["latest_status"] != "ok":
+            flags.append(f"status_{item['latest_status']}")
+        if item["ok_ratio"] is not None and item["ok_ratio"] < 1:
+            flags.append("imperfect_ok_ratio")
+        if item["latest_peer_count"] is not None and item["latest_peer_count"] <= 0:
+            flags.append("no_peers")
+        if item["max_processed_age_seconds"] is not None and item["max_processed_age_seconds"] > 120:
+            flags.append("processed_stale")
+        if item["latest_severity"] == "critical" or "no_peers" in flags:
+            verdict = "critical"
+        elif flags and verdict == "ok":
+            verdict = "warn"
+        compared.append(
+            {
+                **item,
+                "baseline_node": baseline["node_name"],
+                "check_lag_minutes": check_lag,
+                "daa_lag": daa_lag,
+                "block_lag": block_lag,
+                "peer_lag": peer_lag,
+                "processed_age_lag_seconds": processed_age_lag,
+                "flags": sorted(set(flags)),
+            }
+        )
+
+    return {
+        "available": True,
+        "verdict": verdict,
+        "baselines": {network: item["node_name"] for network, item in sorted(baselines.items())},
+        "nodes": compared,
+    }
+
+
+def multi_node_history_panel(db_path: Path | None) -> str:
+    status = (
+        load_multi_node_history_status(db_path)
+        if db_path is not None
+        else {"available": False, "reason": "SQLite history path not configured", "nodes": []}
+    )
+    if not status.get("available"):
+        return f"""
+    <section class="panel">
+      <h2>Multi-Node History</h2>
+      <div class="subtle">{html.escape(status.get('reason', 'SQLite history unavailable'))}</div>
+    </section>
+    """
+    baseline_text = ", ".join(f"{network}: {node}" for network, node in status.get("baselines", {}).items()) or "none"
+    rows = "\n".join(
+        html_row(
+            [
+                item["node_name"],
+                item["network"],
+                item["latest_severity"],
+                format_ratio(item["ok_ratio"]),
+                format_optional_number(item["check_lag_minutes"]),
+                format_optional_number(item["daa_lag"]),
+                format_optional_number(item["block_lag"]),
+                format_optional_number(item["peer_lag"]),
+                format_optional_number(item["processed_age_lag_seconds"]),
+                ",".join(item["flags"]) or "none",
+            ]
+        )
+        for item in status.get("nodes", [])
+    )
+    if not rows:
+        rows = html_row(["No multi-node history", "", "", "", "", "", "", "", "", ""])
+    return f"""
+    <section class="panel">
+      <div class="chart-head">
+        <h2>Multi-Node History</h2>
+        <div class="chart-value">{html.escape(str(status.get('verdict', 'unknown')).upper())}</div>
+      </div>
+      <div class="subtle">Baselines: {html.escape(baseline_text)}</div>
+      <table>
+        <thead>{html_row(["Node", "Network", "Severity", "OK Ratio", "Check Lag Min", "DAA Lag", "Block Lag", "Peer Lag", "Processed Age Lag", "Flags"], "th")}</thead>
+        <tbody>{rows}</tbody>
+      </table>
+    </section>
+    """
+
+
 def write_status_page(
     path: Path,
     report: dict[str, Any],
     state: dict[str, Any],
     benchmark_path: Path | None = None,
     recovery_records: list[dict[str, Any]] | None = None,
+    sqlite_history: Path | None = None,
 ) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     checks = "\n".join(
@@ -1905,6 +2115,7 @@ def write_status_page(
             ("Disk Free Delta", benchmark_summary["disk_delta"]),
         ]
     )
+    multi_node_panel = multi_node_history_panel(sqlite_history)
     recovery_rows = "\n".join(
         html_row(
             [
@@ -2976,6 +3187,7 @@ def write_status_page(
     </section>
     </section>
     <section id="tab-history" class="tab-panel">
+    {multi_node_panel}
     <section class="panel">
       <h2>Benchmark Trend</h2>
       <table>
@@ -4707,6 +4919,7 @@ def alert(config: dict) -> int:
     stream_page_path = Path(config.get("stream_page_path") or DEFAULT_CONFIG["stream_page_path"])
     canvas_stream_page = config.get("canvas_stream_page_path") or DEFAULT_CONFIG["canvas_stream_page_path"]
     benchmark_path = Path(config.get("benchmark_path") or DEFAULT_CONFIG["benchmark_path"])
+    history_db_path = sqlite_history_path(config)
     market_snapshot_path = Path(config.get("market_snapshot_path") or DEFAULT_CONFIG["market_snapshot_path"])
     metrics_path = Path(config.get("prometheus_metrics_path") or DEFAULT_CONFIG["prometheus_metrics_path"])
     benchmark_summary = build_benchmark_summary(benchmark_path, limit=48)
@@ -4740,9 +4953,9 @@ def alert(config: dict) -> int:
         state["last_alert_at"] = report["checked_at"]
     save_state(state_path, state)
     recovery_records = recent_recovery_records(config)
-    write_status_page(status_page_path, report, state, benchmark_path, recovery_records)
+    write_status_page(status_page_path, report, state, benchmark_path, recovery_records, history_db_path)
     if canvas_status_page:
-        write_status_page(Path(canvas_status_page), report, state, benchmark_path, recovery_records)
+        write_status_page(Path(canvas_status_page), report, state, benchmark_path, recovery_records, history_db_path)
     write_stream_page(stream_page_path, report, state, benchmark_path, market_snapshot_path)
     if canvas_stream_page:
         write_stream_page(Path(canvas_stream_page), report, state, benchmark_path, market_snapshot_path)

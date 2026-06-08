@@ -242,6 +242,8 @@ the SQLite history. Thresholds can be tuned with
 `MULTI_NODE_DAA_LAG_WARNING`, `MULTI_NODE_BLOCK_LAG_WARNING`,
 `MULTI_NODE_STALE_MINUTES`, `MULTI_NODE_PEER_LAG_WARNING`, and
 `MULTI_NODE_PROCESSED_AGE_LAG_WARNING`.
+The HTML status page and `scripts/ops_snapshot.sh` surface the same multi-node
+verdict for quick operator review.
 
 Copy or upload an archive:
 

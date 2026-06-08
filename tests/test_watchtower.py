@@ -1,10 +1,12 @@
 import json
 import copy
 import datetime as dt
+import sqlite3
 import subprocess
 import sys
 import tempfile
 import unittest
+from contextlib import closing
 from pathlib import Path
 from unittest import mock
 
@@ -1038,8 +1040,43 @@ class WatchtowerUnitTests(unittest.TestCase):
                 ]
             }
             output = tmp_path / "status.html"
+            history_db = tmp_path / "watchtower-history.sqlite"
+            with closing(sqlite3.connect(history_db)) as connection:
+                connection.execute(
+                    """
+                    create table benchmark_snapshots (
+                      checked_at text primary key,
+                      node_name text,
+                      status text,
+                      severity text,
+                      peer_count integer,
+                      virtual_daa_score integer,
+                      block_count integer,
+                      latest_processed_age_seconds real
+                    )
+                    """
+                )
+                connection.executemany(
+                    """
+                    insert into benchmark_snapshots (
+                      checked_at, node_name, status, severity, peer_count,
+                      virtual_daa_score, block_count, latest_processed_age_seconds
+                    ) values (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    [
+                        ("2026-06-06T10:10:00+09:00", "mainnet-a", "ok", "ok", 8, 10000, 20000, 5),
+                        ("2026-06-06T09:50:00+09:00", "mainnet-b", "ok", "ok", 8, 10000, 20000, 5),
+                    ],
+                )
+                connection.commit()
 
-            watchtower.write_status_page(output, report, state, benchmark_path=tmp_path / "missing.jsonl")
+            watchtower.write_status_page(
+                output,
+                report,
+                state,
+                benchmark_path=tmp_path / "missing.jsonl",
+                sqlite_history=history_db,
+            )
 
             html = output.read_text(encoding="utf-8")
             self.assertIn("Operator verdict", html)
@@ -1073,6 +1110,9 @@ class WatchtowerUnitTests(unittest.TestCase):
             self.assertIn('id="tab-network" class="tab-panel"', html)
             self.assertIn('id="tab-ops" class="tab-panel"', html)
             self.assertIn('id="tab-history" class="tab-panel"', html)
+            self.assertIn("Multi-Node History", html)
+            self.assertIn("mainnet-b", html)
+            self.assertIn("stale_node", html)
             self.assertIn('data-timeframe-target="15m"', html)
             self.assertIn('data-timeframe-panel="15m"', html)
             self.assertIn('data-liquidation-target="12h"', html)

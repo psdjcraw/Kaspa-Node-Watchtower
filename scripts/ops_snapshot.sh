@@ -41,6 +41,9 @@ exporter_metric() {
 section "Watchtower"
 "$PYTHON_BIN" watchtower.py -c config.json --summary
 
+section "Multi-Node History"
+scripts/export_history_sqlite.py --multi-node-summary --days 7 | sed -n '/^window_days=/,$p'
+
 section "Cron Jobs"
 cat <<'EOF'
 alerts: d370358a-e1f3-4456-9818-68537c558f88 every 10m
