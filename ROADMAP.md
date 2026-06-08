@@ -44,6 +44,8 @@ surface area:
   configurable for stricter same-network comparisons.
 - Surface the multi-node verdict in `status.html` and `scripts/ops_snapshot.sh`
   so dashboard and release-readiness checks show the same operator signal.
+- Export multi-node verdict and per-node lag values as Prometheus metrics and
+  add Grafana panels for the same signal.
 - Use the comparison output to decide which node needs attention before adding
   broader dashboard surface area.
 

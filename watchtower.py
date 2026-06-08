@@ -5672,11 +5672,16 @@ def build_market_metrics(path: Path) -> dict[str, Any]:
     }
 
 
+def build_multi_node_metrics(path: Path) -> dict[str, Any]:
+    return load_multi_node_history_status(path)
+
+
 def format_prometheus_metrics(
     report: dict[str, Any],
     benchmark_summary: dict[str, Any],
     recovery_summary: dict[str, Any] | None = None,
     market_metrics: dict[str, Any] | None = None,
+    multi_node_metrics: dict[str, Any] | None = None,
 ) -> str:
     node_labels = {"node": report["node_name"]}
     grpc_metrics = report.get("grpc_metrics") or {}
@@ -5687,6 +5692,7 @@ def format_prometheus_metrics(
     disk = report.get("disk") or {}
     recovery_summary = recovery_summary or {}
     market_metrics = market_metrics or {}
+    multi_node_metrics = multi_node_metrics or {}
     latest_market = market_metrics.get("latest_successful") or {}
     market_labels = {**node_labels, "source": market_metrics.get("source", "unknown")}
     severity_values = {"ok": 0, "warn": 1, "critical": 2}
@@ -5694,6 +5700,8 @@ def format_prometheus_metrics(
         "# TYPE kaspa_watchtower_status_ok gauge",
         "# TYPE kaspa_watchtower_severity_value gauge",
         "# TYPE kaspa_watchtower_check_ok gauge",
+        "# TYPE kaspa_watchtower_multi_node_available gauge",
+        "# TYPE kaspa_watchtower_multi_node_verdict_value gauge",
     ]
     add_prometheus_metric(lines, "kaspa_watchtower_status_ok", report["status"] == "ok", node_labels)
     add_prometheus_metric(
@@ -6125,6 +6133,70 @@ def format_prometheus_metrics(
         latest_market.get("futures_volume_24h"),
         market_labels,
     )
+    verdict_values = {"ok": 0, "warn": 1, "critical": 2, "unknown": -1}
+    multi_node_nodes = multi_node_metrics.get("nodes") or []
+    risk_nodes = [item for item in multi_node_nodes if item.get("flags")]
+    lagging_nodes = [
+        item
+        for item in multi_node_nodes
+        if "daa_lag" in (item.get("flags") or []) or "block_lag" in (item.get("flags") or [])
+    ]
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_multi_node_available",
+        bool(multi_node_metrics.get("available")),
+        node_labels,
+    )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_multi_node_verdict_value",
+        verdict_values.get(str(multi_node_metrics.get("verdict", "unknown")), -1),
+        node_labels,
+    )
+    add_prometheus_metric(lines, "kaspa_watchtower_multi_node_nodes", len(multi_node_nodes), node_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_multi_node_risk_nodes", len(risk_nodes), node_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_multi_node_lagging_nodes", len(lagging_nodes), node_labels)
+    for item in multi_node_nodes:
+        history_labels = {
+            **node_labels,
+            "history_node": item.get("node_name", "unknown"),
+            "network": item.get("network", "unknown"),
+        }
+        add_prometheus_metric(
+            lines,
+            "kaspa_watchtower_multi_node_node_severity_value",
+            severity_values.get(str(item.get("latest_severity")), -1),
+            history_labels,
+        )
+        add_prometheus_metric(lines, "kaspa_watchtower_multi_node_node_ok_ratio", item.get("ok_ratio"), history_labels)
+        add_prometheus_metric(
+            lines,
+            "kaspa_watchtower_multi_node_check_lag_minutes",
+            item.get("check_lag_minutes"),
+            history_labels,
+        )
+        add_prometheus_metric(lines, "kaspa_watchtower_multi_node_daa_lag", item.get("daa_lag"), history_labels)
+        add_prometheus_metric(lines, "kaspa_watchtower_multi_node_block_lag", item.get("block_lag"), history_labels)
+        add_prometheus_metric(lines, "kaspa_watchtower_multi_node_peer_lag", item.get("peer_lag"), history_labels)
+        add_prometheus_metric(
+            lines,
+            "kaspa_watchtower_multi_node_processed_age_lag_seconds",
+            item.get("processed_age_lag_seconds"),
+            history_labels,
+        )
+        add_prometheus_metric(
+            lines,
+            "kaspa_watchtower_multi_node_flag_count",
+            len(item.get("flags") or []),
+            history_labels,
+        )
+        for flag in item.get("flags") or []:
+            add_prometheus_metric(
+                lines,
+                "kaspa_watchtower_multi_node_flag",
+                1,
+                {**history_labels, "flag": flag},
+            )
     return "\n".join(lines) + "\n"
 
 
@@ -6134,10 +6206,11 @@ def write_prometheus_metrics(
     benchmark_summary: dict[str, Any],
     recovery_summary: dict[str, Any] | None = None,
     market_metrics: dict[str, Any] | None = None,
+    multi_node_metrics: dict[str, Any] | None = None,
 ) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
-        format_prometheus_metrics(report, benchmark_summary, recovery_summary, market_metrics),
+        format_prometheus_metrics(report, benchmark_summary, recovery_summary, market_metrics, multi_node_metrics),
         encoding="utf-8",
     )
 
@@ -6149,7 +6222,8 @@ def prometheus(config: dict) -> int:
     benchmark_summary = build_benchmark_summary(benchmark_path, limit=48)
     recovery_summary = build_recovery_summary(recovery_history_path(config))
     market_metrics = build_market_metrics(Path(config.get("market_snapshot_path") or DEFAULT_CONFIG["market_snapshot_path"]))
-    write_prometheus_metrics(metrics_path, report, benchmark_summary, recovery_summary, market_metrics)
+    multi_node_metrics = build_multi_node_metrics(sqlite_history_path(config))
+    write_prometheus_metrics(metrics_path, report, benchmark_summary, recovery_summary, market_metrics, multi_node_metrics)
     print(f"Prometheus metrics written: {metrics_path}")
     return 0 if report["status"] == "ok" else 1
 

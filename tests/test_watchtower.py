@@ -307,8 +307,44 @@ class WatchtowerUnitTests(unittest.TestCase):
                 "futures_volume_24h": 78000000,
             },
         }
+        multi_node_metrics = {
+            "available": True,
+            "verdict": "warn",
+            "nodes": [
+                {
+                    "node_name": "mainnet-a",
+                    "network": "mainnet",
+                    "latest_severity": "ok",
+                    "ok_ratio": 1.0,
+                    "check_lag_minutes": 0,
+                    "daa_lag": 0,
+                    "block_lag": 0,
+                    "peer_lag": 0,
+                    "processed_age_lag_seconds": 0,
+                    "flags": [],
+                },
+                {
+                    "node_name": "mainnet-b",
+                    "network": "mainnet",
+                    "latest_severity": "warn",
+                    "ok_ratio": 0.75,
+                    "check_lag_minutes": 12,
+                    "daa_lag": 300,
+                    "block_lag": 280,
+                    "peer_lag": 3,
+                    "processed_age_lag_seconds": 75,
+                    "flags": ["daa_lag", "stale_node"],
+                },
+            ],
+        }
 
-        metrics = watchtower.format_prometheus_metrics(report, benchmark_summary, recovery_summary, market_metrics)
+        metrics = watchtower.format_prometheus_metrics(
+            report,
+            benchmark_summary,
+            recovery_summary,
+            market_metrics,
+            multi_node_metrics,
+        )
 
         self.assertIn("kaspa_watchtower_mempool_size", metrics)
         self.assertIn("kaspa_watchtower_latest_processed_transactions", metrics)
@@ -333,6 +369,17 @@ class WatchtowerUnitTests(unittest.TestCase):
         self.assertIn("kaspa_watchtower_market_futures_basis_percent", metrics)
         self.assertIn("kaspa_watchtower_market_futures_open_interest_kas", metrics)
         self.assertIn("2.3e+08", metrics)
+        self.assertIn('kaspa_watchtower_multi_node_available{node="test-node"} 1', metrics)
+        self.assertIn('kaspa_watchtower_multi_node_verdict_value{node="test-node"} 1', metrics)
+        self.assertIn('kaspa_watchtower_multi_node_risk_nodes{node="test-node"} 1', metrics)
+        self.assertIn(
+            'kaspa_watchtower_multi_node_daa_lag{history_node="mainnet-b",network="mainnet",node="test-node"} 300',
+            metrics,
+        )
+        self.assertIn(
+            'kaspa_watchtower_multi_node_flag{flag="stale_node",history_node="mainnet-b",network="mainnet",node="test-node"} 1',
+            metrics,
+        )
 
     def test_prometheus_metrics_emit_inactive_sync_progress(self):
         report = {
@@ -402,6 +449,27 @@ class WatchtowerUnitTests(unittest.TestCase):
             any(
                 target.get("expr") == 'kaspa_watchtower_market_futures_basis_percent{node="$node"}'
                 for target in futures_targets
+            )
+        )
+
+    def test_grafana_dashboard_includes_multi_node_panels(self):
+        dashboard = json.loads(Path("grafana/kaspa-watchtower.json").read_text(encoding="utf-8"))
+        panels = {panel.get("title"): panel for panel in dashboard.get("panels", [])}
+
+        self.assertIn("Multi-Node Verdict", panels)
+        verdict_targets = panels["Multi-Node Verdict"].get("targets") or []
+        self.assertTrue(
+            any(
+                target.get("expr") == 'kaspa_watchtower_multi_node_verdict_value{node="$node"}'
+                for target in verdict_targets
+            )
+        )
+        self.assertIn("Multi-Node Node Lag", panels)
+        lag_targets = panels["Multi-Node Node Lag"].get("targets") or []
+        self.assertTrue(
+            any(
+                target.get("expr") == 'kaspa_watchtower_multi_node_daa_lag{node="$node"}'
+                for target in lag_targets
             )
         )
 

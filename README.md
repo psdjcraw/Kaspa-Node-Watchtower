@@ -244,6 +244,8 @@ the SQLite history. Thresholds can be tuned with
 `MULTI_NODE_PROCESSED_AGE_LAG_WARNING`.
 The HTML status page and `scripts/ops_snapshot.sh` surface the same multi-node
 verdict for quick operator review.
+Prometheus metrics expose the multi-node verdict and per-node lag values, and
+the Grafana dashboard includes multi-node verdict and lag panels.
 
 Copy or upload an archive:
 

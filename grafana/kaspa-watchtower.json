@@ -1475,6 +1475,193 @@
       ],
       "title": "KAS Futures Positioning",
       "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "-1": {
+                  "text": "UNKNOWN"
+                },
+                "0": {
+                  "text": "OK"
+                },
+                "1": {
+                  "text": "WARN"
+                },
+                "2": {
+                  "text": "CRITICAL"
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "gray",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 0
+              },
+              {
+                "color": "orange",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 2
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 0,
+        "y": 55
+      },
+      "id": 27,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "targets": [
+        {
+          "expr": "kaspa_watchtower_multi_node_verdict_value{node=\"$node\"}",
+          "legendFormat": "multi-node verdict",
+          "refId": "A"
+        }
+      ],
+      "title": "Multi-Node Verdict",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 2
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 6,
+        "y": 55
+      },
+      "id": 28,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "targets": [
+        {
+          "expr": "kaspa_watchtower_multi_node_risk_nodes{node=\"$node\"}",
+          "legendFormat": "multi-node risk nodes",
+          "refId": "A"
+        }
+      ],
+      "title": "Multi-Node Risk Nodes",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 12,
+        "x": 12,
+        "y": 55
+      },
+      "id": 29,
+      "options": {
+        "showHeader": true
+      },
+      "targets": [
+        {
+          "expr": "kaspa_watchtower_multi_node_daa_lag{node=\"$node\"}",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "{{history_node}} DAA",
+          "refId": "A"
+        },
+        {
+          "expr": "kaspa_watchtower_multi_node_block_lag{node=\"$node\"}",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "{{history_node}} block",
+          "refId": "B"
+        },
+        {
+          "expr": "kaspa_watchtower_multi_node_flag_count{node=\"$node\"}",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "{{history_node}} flags",
+          "refId": "C"
+        }
+      ],
+      "title": "Multi-Node Node Lag",
+      "type": "table"
     }
   ],
   "refresh": "30s",
