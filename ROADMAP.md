@@ -40,6 +40,8 @@ surface area:
   nodes, latest DAA/block lag, and concise risk flags.
 - Include the multi-node verdict in daily and weekly reports so scheduled
   operator reviews surface risky or lagging nodes without a separate command.
+- Make DAA/block lag, stale-node, peer-lag, and processed-freshness thresholds
+  configurable for stricter same-network comparisons.
 - Use the comparison output to decide which node needs attention before adding
   broader dashboard surface area.
 

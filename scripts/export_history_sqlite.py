@@ -620,7 +620,23 @@ def inferred_network(node_name: str) -> str:
     return "unknown"
 
 
-def multi_node_comparison(summaries: list[dict[str, Any]]) -> dict[str, Any]:
+def elapsed_minutes_between(later: Any, earlier: Any) -> float | None:
+    later_at = parse_checked_at(later)
+    earlier_at = parse_checked_at(earlier)
+    if later_at is None or earlier_at is None:
+        return None
+    return (later_at - earlier_at).total_seconds() / 60
+
+
+def multi_node_comparison(
+    summaries: list[dict[str, Any]],
+    *,
+    daa_lag_warning: float = 120,
+    block_lag_warning: float = 120,
+    stale_node_minutes: float = 10,
+    peer_lag_warning: float = 2,
+    processed_age_lag_warning: float = 60,
+) -> dict[str, Any]:
     if not summaries:
         return {
             "verdict": "unknown",
@@ -648,17 +664,32 @@ def multi_node_comparison(summaries: list[dict[str, Any]]) -> dict[str, Any]:
         baseline = baselines[network]
         baseline_daa = baseline["latest_daa_score"]
         baseline_block = baseline["latest_block_count"]
+        baseline_peer_count = baseline["latest_peer_count"]
+        baseline_processed_age = baseline["max_processed_age_seconds"]
         flags = []
         daa_lag = None
         block_lag = None
+        check_lag_minutes = elapsed_minutes_between(baseline["latest_checked_at"], item["latest_checked_at"])
+        peer_lag = None
+        processed_age_lag_seconds = None
         if baseline_daa is not None and item["latest_daa_score"] is not None:
             daa_lag = baseline_daa - item["latest_daa_score"]
-            if daa_lag > 120:
+            if daa_lag > daa_lag_warning:
                 flags.append("daa_lag")
         if baseline_block is not None and item["latest_block_count"] is not None:
             block_lag = baseline_block - item["latest_block_count"]
-            if block_lag > 120:
+            if block_lag > block_lag_warning:
                 flags.append("block_lag")
+        if check_lag_minutes is not None and check_lag_minutes > stale_node_minutes:
+            flags.append("stale_node")
+        if baseline_peer_count is not None and item["latest_peer_count"] is not None:
+            peer_lag = baseline_peer_count - item["latest_peer_count"]
+            if peer_lag >= peer_lag_warning:
+                flags.append("peer_lag")
+        if baseline_processed_age is not None and item["max_processed_age_seconds"] is not None:
+            processed_age_lag_seconds = item["max_processed_age_seconds"] - baseline_processed_age
+            if processed_age_lag_seconds >= processed_age_lag_warning:
+                flags.append("processed_age_lag")
         if item["latest_severity"] in {"warn", "critical"}:
             flags.append(f"severity_{item['latest_severity']}")
         if item["latest_status"] != "ok":
@@ -686,6 +717,9 @@ def multi_node_comparison(summaries: list[dict[str, Any]]) -> dict[str, Any]:
             "baseline_node": baseline["node_name"],
             "daa_lag": daa_lag,
             "block_lag": block_lag,
+            "check_lag_minutes": check_lag_minutes,
+            "peer_lag": peer_lag,
+            "processed_age_lag_seconds": processed_age_lag_seconds,
             "flags": sorted(set(flags)),
         }
         compared_nodes.append(compared)
@@ -772,8 +806,24 @@ def print_history_summary(summary: dict[str, Any]) -> None:
         print("latest_upgrade=none")
 
 
-def print_multi_node_summary(summaries: list[dict[str, Any]], days: int) -> None:
-    comparison = multi_node_comparison(summaries)
+def print_multi_node_summary(
+    summaries: list[dict[str, Any]],
+    days: int,
+    *,
+    daa_lag_warning: float = 120,
+    block_lag_warning: float = 120,
+    stale_node_minutes: float = 10,
+    peer_lag_warning: float = 2,
+    processed_age_lag_warning: float = 60,
+) -> None:
+    comparison = multi_node_comparison(
+        summaries,
+        daa_lag_warning=daa_lag_warning,
+        block_lag_warning=block_lag_warning,
+        stale_node_minutes=stale_node_minutes,
+        peer_lag_warning=peer_lag_warning,
+        processed_age_lag_warning=processed_age_lag_warning,
+    )
     print("== Multi-Node History Summary ==")
     print(f"window_days={days}")
     if not summaries:
@@ -802,12 +852,15 @@ def print_multi_node_summary(summaries: list[dict[str, Any]], days: int) -> None
             f"ok_ratio={format_ratio(item['ok_ratio'])} "
             f"min_peers={format_optional_number(item['min_peer_count'])} "
             f"min_disk={format_gib(item['min_disk_free_gb'])} "
+            f"check_lag_minutes={format_optional_number(item['check_lag_minutes'])} "
             f"daa_lag={format_optional_number(item['daa_lag'])} "
             f"block_lag={format_optional_number(item['block_lag'])} "
+            f"peer_lag={format_optional_number(item['peer_lag'])} "
             f"daa_delta={format_optional_number(item['daa_delta'])} "
             f"block_delta={format_optional_number(item['block_delta'])} "
             f"processed_tx_rate={format_per_second(item['latest_processed_tx_rate'])} "
             f"processed_max_age_seconds={format_optional_number(item['max_processed_age_seconds'])} "
+            f"processed_age_lag_seconds={format_optional_number(item['processed_age_lag_seconds'])} "
             f"flags={','.join(item['flags']) or 'none'}"
         )
 
@@ -949,7 +1002,15 @@ def export(args: argparse.Namespace) -> int:
         print_history_summary(summary)
     if getattr(args, "multi_node_summary", False) and node_summary is not None:
         print()
-        print_multi_node_summary(node_summary, args.days)
+        print_multi_node_summary(
+            node_summary,
+            args.days,
+            daa_lag_warning=args.daa_lag_warning,
+            block_lag_warning=args.block_lag_warning,
+            stale_node_minutes=args.stale_node_minutes,
+            peer_lag_warning=args.peer_lag_warning,
+            processed_age_lag_warning=args.processed_age_lag_warning,
+        )
     return 0
 
 
@@ -963,6 +1024,16 @@ def main() -> int:
     parser.add_argument("--summary", action="store_true", help="Print an operator summary from the SQLite history.")
     parser.add_argument("--multi-node-summary", action="store_true", help="Print per-node history summaries from SQLite.")
     parser.add_argument("--days", type=int, default=7, help="History summary window in days.")
+    parser.add_argument("--daa-lag-warning", type=float, default=120, help="DAA lag threshold for multi-node warnings.")
+    parser.add_argument("--block-lag-warning", type=float, default=120, help="Block lag threshold for multi-node warnings.")
+    parser.add_argument("--stale-node-minutes", type=float, default=10, help="Latest check age lag threshold for stale-node warnings.")
+    parser.add_argument("--peer-lag-warning", type=float, default=2, help="Peer-count lag threshold for multi-node warnings.")
+    parser.add_argument(
+        "--processed-age-lag-warning",
+        type=float,
+        default=60,
+        help="Processed transaction freshness lag threshold for multi-node warnings.",
+    )
     parser.add_argument(
         "--archive-dir",
         type=Path,

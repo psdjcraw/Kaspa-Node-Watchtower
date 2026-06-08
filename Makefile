@@ -2,6 +2,11 @@ PYTHON ?= .venv/bin/python
 CONFIG ?= config.json
 ARCHIVE_SOURCE ?= state/history-archives
 ARCHIVE_TARGET ?=
+MULTI_NODE_DAA_LAG_WARNING ?= 120
+MULTI_NODE_BLOCK_LAG_WARNING ?= 120
+MULTI_NODE_STALE_MINUTES ?= 10
+MULTI_NODE_PEER_LAG_WARNING ?= 2
+MULTI_NODE_PROCESSED_AGE_LAG_WARNING ?= 60
 
 .PHONY: help bootstrap proto-check version status stream summary sync-report diagnostics-summary incident-report json alert smoke ci integrations simulate-exporter-failure ensure-exporter diagnostics diagnostics-archive daily-report weekly-report weekly-archive benchmark benchmark-report prometheus export-history history-report history-multi-node history-archive upload-archive package prune validate recover-dry-run recover force-recover-dry-run
 
@@ -122,7 +127,12 @@ history-report:
 	@scripts/export_history_sqlite.py --summary
 
 history-multi-node:
-	@scripts/export_history_sqlite.py --multi-node-summary
+	@scripts/export_history_sqlite.py --multi-node-summary \
+		--daa-lag-warning "$(MULTI_NODE_DAA_LAG_WARNING)" \
+		--block-lag-warning "$(MULTI_NODE_BLOCK_LAG_WARNING)" \
+		--stale-node-minutes "$(MULTI_NODE_STALE_MINUTES)" \
+		--peer-lag-warning "$(MULTI_NODE_PEER_LAG_WARNING)" \
+		--processed-age-lag-warning "$(MULTI_NODE_PROCESSED_AGE_LAG_WARNING)"
 
 history-archive:
 	@scripts/export_history_sqlite.py --archive-dir state/history-archives

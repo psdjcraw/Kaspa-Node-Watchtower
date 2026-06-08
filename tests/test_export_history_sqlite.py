@@ -342,8 +342,112 @@ class ExportHistorySqliteTests(unittest.TestCase):
         self.assertEqual(nodes["mainnet-b"]["daa_lag"], 300)
         self.assertEqual(nodes["mainnet-b"]["block_lag"], 300)
         self.assertIn("daa_lag", nodes["mainnet-b"]["flags"])
+        self.assertIn("peer_lag", nodes["mainnet-b"]["flags"])
         self.assertIn("no_peers", nodes["mainnet-b"]["flags"])
+        self.assertIn("processed_age_lag", nodes["mainnet-b"]["flags"])
         self.assertIn("processed_stale", nodes["mainnet-b"]["flags"])
+
+    def test_multi_node_comparison_flags_stale_node_with_configurable_threshold(self):
+        summaries = [
+            {
+                "node_name": "mainnet-a",
+                "snapshots": 2,
+                "latest_checked_at": "2026-06-06T10:10:00+09:00",
+                "latest_status": "ok",
+                "latest_severity": "ok",
+                "ok_ratio": 1.0,
+                "latest_peer_count": 8,
+                "min_peer_count": 8,
+                "min_disk_free_gb": 300,
+                "latest_daa_score": 10_000,
+                "latest_block_count": 20_000,
+                "daa_delta": 100,
+                "block_delta": 100,
+                "latest_processed_tx_rate": 150.0,
+                "max_processed_age_seconds": 4.0,
+            },
+            {
+                "node_name": "mainnet-b",
+                "snapshots": 2,
+                "latest_checked_at": "2026-06-06T09:50:00+09:00",
+                "latest_status": "ok",
+                "latest_severity": "ok",
+                "ok_ratio": 1.0,
+                "latest_peer_count": 8,
+                "min_peer_count": 8,
+                "min_disk_free_gb": 300,
+                "latest_daa_score": 10_000,
+                "latest_block_count": 20_000,
+                "daa_delta": 100,
+                "block_delta": 100,
+                "latest_processed_tx_rate": 150.0,
+                "max_processed_age_seconds": 4.0,
+            },
+        ]
+
+        comparison = export_history_sqlite.multi_node_comparison(summaries, stale_node_minutes=10)
+        nodes = {item["node_name"]: item for item in comparison["nodes"]}
+
+        self.assertEqual(comparison["verdict"], "warn")
+        self.assertEqual(comparison["risk_nodes"], ["mainnet-b"])
+        self.assertEqual(nodes["mainnet-b"]["check_lag_minutes"], 20)
+        self.assertEqual(nodes["mainnet-b"]["flags"], ["stale_node"])
+
+        relaxed = export_history_sqlite.multi_node_comparison(summaries, stale_node_minutes=30)
+        relaxed_nodes = {item["node_name"]: item for item in relaxed["nodes"]}
+        self.assertEqual(relaxed["verdict"], "ok")
+        self.assertEqual(relaxed_nodes["mainnet-b"]["flags"], [])
+
+    def test_multi_node_comparison_flags_peer_and_processed_age_lag(self):
+        summaries = [
+            {
+                "node_name": "mainnet-a",
+                "snapshots": 2,
+                "latest_checked_at": "2026-06-06T10:00:00+09:00",
+                "latest_status": "ok",
+                "latest_severity": "ok",
+                "ok_ratio": 1.0,
+                "latest_peer_count": 8,
+                "min_peer_count": 8,
+                "min_disk_free_gb": 300,
+                "latest_daa_score": 10_000,
+                "latest_block_count": 20_000,
+                "daa_delta": 100,
+                "block_delta": 100,
+                "latest_processed_tx_rate": 150.0,
+                "max_processed_age_seconds": 5.0,
+            },
+            {
+                "node_name": "mainnet-b",
+                "snapshots": 2,
+                "latest_checked_at": "2026-06-06T10:00:00+09:00",
+                "latest_status": "ok",
+                "latest_severity": "ok",
+                "ok_ratio": 1.0,
+                "latest_peer_count": 5,
+                "min_peer_count": 5,
+                "min_disk_free_gb": 300,
+                "latest_daa_score": 10_000,
+                "latest_block_count": 20_000,
+                "daa_delta": 100,
+                "block_delta": 100,
+                "latest_processed_tx_rate": 150.0,
+                "max_processed_age_seconds": 80.0,
+            },
+        ]
+
+        comparison = export_history_sqlite.multi_node_comparison(
+            summaries,
+            peer_lag_warning=2,
+            processed_age_lag_warning=60,
+        )
+        nodes = {item["node_name"]: item for item in comparison["nodes"]}
+
+        self.assertEqual(comparison["verdict"], "warn")
+        self.assertEqual(comparison["risk_nodes"], ["mainnet-b"])
+        self.assertEqual(nodes["mainnet-b"]["peer_lag"], 3)
+        self.assertEqual(nodes["mainnet-b"]["processed_age_lag_seconds"], 75)
+        self.assertEqual(nodes["mainnet-b"]["flags"], ["peer_lag", "processed_age_lag"])
 
     def test_multi_node_comparison_does_not_lag_compare_mainnet_and_tn10(self):
         summaries = [

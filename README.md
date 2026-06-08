@@ -238,7 +238,10 @@ JSON, and a manifest for off-host backup or object storage upload.
 archive in the same pass.
 `make history-multi-node` compares per-node status, severity, peer floors, disk
 floors, DAA/block deltas, per-network latest DAA/block lag, and risk flags from
-the SQLite history.
+the SQLite history. Thresholds can be tuned with
+`MULTI_NODE_DAA_LAG_WARNING`, `MULTI_NODE_BLOCK_LAG_WARNING`,
+`MULTI_NODE_STALE_MINUTES`, `MULTI_NODE_PEER_LAG_WARNING`, and
+`MULTI_NODE_PROCESSED_AGE_LAG_WARNING`.
 
 Copy or upload an archive:
 
