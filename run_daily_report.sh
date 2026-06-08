@@ -125,6 +125,9 @@ PY
 section "History Summary"
 scripts/export_history_sqlite.py --summary --days 7 | sed -n '/^window_days=/,$p'
 
+section "Multi-Node History"
+scripts/export_history_sqlite.py --multi-node-summary --days 7 | sed -n '/^window_days=/,$p'
+
 section "Integrations"
 if ! scripts/check_integrations.sh; then
   printf 'integrations_status=failed\n'

@@ -38,6 +38,8 @@ surface area:
 - Promote `make history-multi-node` from a per-node table into an operator
   comparison verdict with per-network baseline nodes, lagging nodes, risky
   nodes, latest DAA/block lag, and concise risk flags.
+- Include the multi-node verdict in daily and weekly reports so scheduled
+  operator reviews surface risky or lagging nodes without a separate command.
 - Use the comparison output to decide which node needs attention before adding
   broader dashboard surface area.
 

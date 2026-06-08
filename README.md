@@ -379,11 +379,11 @@ make weekly-archive
 
 The daily report includes an operator verdict, node health, processed
 transaction freshness, mainnet sync progress, benchmark stability, optional
-KAS/USDT market context, recent SQLite history summary, integration status,
-and smoke/CodeQL workflow status.
+KAS/USDT market context, recent SQLite history summary, multi-node comparison
+verdict, integration status, and smoke/CodeQL workflow status.
 The weekly report focuses on diagnostics summary, 7-day and 30-day SQLite
-history, benchmark trend, optional KAS/USDT market context, recovery attempts,
-and upgrade checkpoints.
+history, multi-node comparison windows, benchmark trend, optional KAS/USDT
+market context, recovery attempts, and upgrade checkpoints.
 `make weekly-archive` pairs that report with a portable history archive.
 
 See [Documentation](#documentation) for setup, integrations, operations,

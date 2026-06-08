@@ -27,8 +27,14 @@ section "Market Snapshot"
 section "History Summary 7d"
 scripts/export_history_sqlite.py --summary --days 7 | sed -n '/^window_days=/,$p'
 
+section "Multi-Node History 7d"
+scripts/export_history_sqlite.py --multi-node-summary --days 7 | sed -n '/^window_days=/,$p'
+
 section "History Summary 30d"
 scripts/export_history_sqlite.py --summary --days 30 | sed -n '/^window_days=/,$p'
+
+section "Multi-Node History 30d"
+scripts/export_history_sqlite.py --multi-node-summary --days 30 | sed -n '/^window_days=/,$p'
 
 section "Recent Recovery Attempts"
 "$PYTHON_BIN" - <<'PY'
