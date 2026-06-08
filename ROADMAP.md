@@ -33,6 +33,14 @@ surface area:
 - After the single-node baseline stays stable, move the next development focus
   to multi-node history comparison and operator-friendly distribution.
 
+## v0.7 - Multi-Node Comparison
+
+- Promote `make history-multi-node` from a per-node table into an operator
+  comparison verdict with per-network baseline nodes, lagging nodes, risky
+  nodes, latest DAA/block lag, and concise risk flags.
+- Use the comparison output to decide which node needs attention before adding
+  broader dashboard surface area.
+
 ## 2026-06-08 Execution Status
 
 - Completed the single-node stability pass with live `scripts/ops_snapshot.sh`

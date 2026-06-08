@@ -237,7 +237,8 @@ JSON, and a manifest for off-host backup or object storage upload.
 `make weekly-archive` prints the weekly report and writes a dated history
 archive in the same pass.
 `make history-multi-node` compares per-node status, severity, peer floors, disk
-floors, and DAA/block deltas from the SQLite history.
+floors, DAA/block deltas, per-network latest DAA/block lag, and risk flags from
+the SQLite history.
 
 Copy or upload an archive:
 

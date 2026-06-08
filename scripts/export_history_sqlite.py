@@ -578,8 +578,11 @@ def summarize_benchmark_window(rows: list[sqlite3.Row], days: int) -> list[dict[
                 "latest_status": latest["status"],
                 "latest_severity": latest["severity"],
                 "ok_ratio": None if not node_rows else ok_count / len(node_rows),
+                "latest_peer_count": numeric(latest["peer_count"]),
                 "min_peer_count": min(peers) if peers else None,
                 "min_disk_free_gb": min(disks) if disks else None,
+                "latest_daa_score": numeric(latest["virtual_daa_score"]),
+                "latest_block_count": numeric(latest["block_count"]),
                 "daa_delta": None if len(daa_values) < 2 else daa_values[-1] - daa_values[0],
                 "block_delta": None if len(block_values) < 2 else block_values[-1] - block_values[0],
                 "latest_processed_tx_rate": numeric(
@@ -606,6 +609,98 @@ def multi_node_summary(connection: sqlite3.Connection, days: int) -> list[dict[s
         )
     )
     return summarize_benchmark_window(rows, days)
+
+
+def inferred_network(node_name: str) -> str:
+    lowered = node_name.lower()
+    if "tn10" in lowered or "testnet" in lowered:
+        return "tn10"
+    if "mainnet" in lowered:
+        return "mainnet"
+    return "unknown"
+
+
+def multi_node_comparison(summaries: list[dict[str, Any]]) -> dict[str, Any]:
+    if not summaries:
+        return {
+            "verdict": "unknown",
+            "baseline_nodes": {},
+            "nodes": [],
+            "lagging_nodes": [],
+            "risk_nodes": [],
+        }
+
+    by_network: dict[str, list[dict[str, Any]]] = {}
+    for item in summaries:
+        by_network.setdefault(inferred_network(item["node_name"]), []).append(item)
+    baselines = {}
+    for network, items in by_network.items():
+        scored = [item for item in items if item["latest_daa_score"] is not None]
+        baselines[network] = max(scored, key=lambda item: item["latest_daa_score"]) if scored else items[0]
+
+    compared_nodes = []
+    lagging_nodes = []
+    risk_nodes = []
+    worst = "ok"
+
+    for item in summaries:
+        network = inferred_network(item["node_name"])
+        baseline = baselines[network]
+        baseline_daa = baseline["latest_daa_score"]
+        baseline_block = baseline["latest_block_count"]
+        flags = []
+        daa_lag = None
+        block_lag = None
+        if baseline_daa is not None and item["latest_daa_score"] is not None:
+            daa_lag = baseline_daa - item["latest_daa_score"]
+            if daa_lag > 120:
+                flags.append("daa_lag")
+        if baseline_block is not None and item["latest_block_count"] is not None:
+            block_lag = baseline_block - item["latest_block_count"]
+            if block_lag > 120:
+                flags.append("block_lag")
+        if item["latest_severity"] in {"warn", "critical"}:
+            flags.append(f"severity_{item['latest_severity']}")
+        if item["latest_status"] != "ok":
+            flags.append(f"status_{item['latest_status']}")
+        if item["ok_ratio"] is not None and item["ok_ratio"] < 1:
+            flags.append("imperfect_ok_ratio")
+        if item["latest_peer_count"] is not None and item["latest_peer_count"] <= 0:
+            flags.append("no_peers")
+        if item["max_processed_age_seconds"] is not None and item["max_processed_age_seconds"] > 120:
+            flags.append("processed_stale")
+
+        severity_rank = 0
+        if item["latest_severity"] == "critical" or "no_peers" in flags:
+            severity_rank = 2
+        elif flags:
+            severity_rank = 1
+        if severity_rank == 2:
+            worst = "critical"
+        elif severity_rank == 1 and worst == "ok":
+            worst = "warn"
+
+        compared = {
+            **item,
+            "network": network,
+            "baseline_node": baseline["node_name"],
+            "daa_lag": daa_lag,
+            "block_lag": block_lag,
+            "flags": sorted(set(flags)),
+        }
+        compared_nodes.append(compared)
+        if "daa_lag" in flags or "block_lag" in flags:
+            lagging_nodes.append(item["node_name"])
+        if flags:
+            risk_nodes.append(item["node_name"])
+
+    return {
+        "verdict": worst,
+        "baseline_nodes": {network: item["node_name"] for network, item in sorted(baselines.items())},
+        "nodes": compared_nodes,
+        "lagging_nodes": sorted(set(lagging_nodes)),
+        "risk_nodes": sorted(set(risk_nodes)),
+    }
 
 
 def print_history_summary(summary: dict[str, Any]) -> None:
@@ -678,16 +773,28 @@ def print_history_summary(summary: dict[str, Any]) -> None:
 
 
 def print_multi_node_summary(summaries: list[dict[str, Any]], days: int) -> None:
+    comparison = multi_node_comparison(summaries)
     print("== Multi-Node History Summary ==")
     print(f"window_days={days}")
     if not summaries:
         print("nodes=0")
         return
     print(f"nodes={len(summaries)}")
-    for item in summaries:
+    baseline_text = ",".join(
+        f"{network}:{node}" for network, node in comparison["baseline_nodes"].items()
+    )
+    print(
+        "verdict="
+        f"{comparison['verdict']} "
+        f"baselines={baseline_text or 'none'} "
+        f"lagging_nodes={','.join(comparison['lagging_nodes']) or 'none'} "
+        f"risk_nodes={','.join(comparison['risk_nodes']) or 'none'}"
+    )
+    for item in comparison["nodes"]:
         print(
             "node="
             f"{item['node_name']} "
+            f"network={item['network']} "
             f"snapshots={item['snapshots']} "
             f"latest={item['latest_checked_at']} "
             f"status={item['latest_status']} "
@@ -695,10 +802,13 @@ def print_multi_node_summary(summaries: list[dict[str, Any]], days: int) -> None
             f"ok_ratio={format_ratio(item['ok_ratio'])} "
             f"min_peers={format_optional_number(item['min_peer_count'])} "
             f"min_disk={format_gib(item['min_disk_free_gb'])} "
+            f"daa_lag={format_optional_number(item['daa_lag'])} "
+            f"block_lag={format_optional_number(item['block_lag'])} "
             f"daa_delta={format_optional_number(item['daa_delta'])} "
             f"block_delta={format_optional_number(item['block_delta'])} "
             f"processed_tx_rate={format_per_second(item['latest_processed_tx_rate'])} "
-            f"processed_max_age_seconds={format_optional_number(item['max_processed_age_seconds'])}"
+            f"processed_max_age_seconds={format_optional_number(item['max_processed_age_seconds'])} "
+            f"flags={','.join(item['flags']) or 'none'}"
         )
 
 

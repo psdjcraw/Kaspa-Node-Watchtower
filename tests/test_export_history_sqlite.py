@@ -285,10 +285,116 @@ class ExportHistorySqliteTests(unittest.TestCase):
             self.assertEqual(set(by_node), {"mainnet-a", "mainnet-b"})
             self.assertEqual(by_node["mainnet-a"]["snapshots"], 2)
             self.assertEqual(by_node["mainnet-a"]["daa_delta"], 60)
+            self.assertEqual(by_node["mainnet-a"]["latest_daa_score"], 160)
+            self.assertEqual(by_node["mainnet-a"]["latest_peer_count"], 7)
             self.assertEqual(by_node["mainnet-a"]["latest_processed_tx_rate"], 150.0)
             self.assertEqual(by_node["mainnet-a"]["max_processed_age_seconds"], 5.0)
             self.assertEqual(by_node["mainnet-b"]["latest_severity"], "critical")
             self.assertEqual(by_node["mainnet-b"]["max_processed_age_seconds"], 240.0)
+
+    def test_multi_node_comparison_flags_lagging_risky_nodes(self):
+        summaries = [
+            {
+                "node_name": "mainnet-a",
+                "snapshots": 2,
+                "latest_checked_at": "2026-06-06T10:00:00+09:00",
+                "latest_status": "ok",
+                "latest_severity": "ok",
+                "ok_ratio": 1.0,
+                "latest_peer_count": 8,
+                "min_peer_count": 7,
+                "min_disk_free_gb": 300,
+                "latest_daa_score": 10_000,
+                "latest_block_count": 20_000,
+                "daa_delta": 100,
+                "block_delta": 100,
+                "latest_processed_tx_rate": 150.0,
+                "max_processed_age_seconds": 4.0,
+            },
+            {
+                "node_name": "mainnet-b",
+                "snapshots": 2,
+                "latest_checked_at": "2026-06-06T10:01:00+09:00",
+                "latest_status": "alert",
+                "latest_severity": "critical",
+                "ok_ratio": 0.5,
+                "latest_peer_count": 0,
+                "min_peer_count": 0,
+                "min_disk_free_gb": 250,
+                "latest_daa_score": 9_700,
+                "latest_block_count": 19_700,
+                "daa_delta": 0,
+                "block_delta": 0,
+                "latest_processed_tx_rate": 0.0,
+                "max_processed_age_seconds": 240.0,
+            },
+        ]
+
+        comparison = export_history_sqlite.multi_node_comparison(summaries)
+        nodes = {item["node_name"]: item for item in comparison["nodes"]}
+
+        self.assertEqual(comparison["verdict"], "critical")
+        self.assertEqual(comparison["baseline_nodes"], {"mainnet": "mainnet-a"})
+        self.assertEqual(comparison["lagging_nodes"], ["mainnet-b"])
+        self.assertEqual(comparison["risk_nodes"], ["mainnet-b"])
+        self.assertEqual(nodes["mainnet-a"]["network"], "mainnet")
+        self.assertEqual(nodes["mainnet-a"]["flags"], [])
+        self.assertEqual(nodes["mainnet-b"]["daa_lag"], 300)
+        self.assertEqual(nodes["mainnet-b"]["block_lag"], 300)
+        self.assertIn("daa_lag", nodes["mainnet-b"]["flags"])
+        self.assertIn("no_peers", nodes["mainnet-b"]["flags"])
+        self.assertIn("processed_stale", nodes["mainnet-b"]["flags"])
+
+    def test_multi_node_comparison_does_not_lag_compare_mainnet_and_tn10(self):
+        summaries = [
+            {
+                "node_name": "kaspa-mainnet-local",
+                "snapshots": 2,
+                "latest_checked_at": "2026-06-06T10:00:00+09:00",
+                "latest_status": "ok",
+                "latest_severity": "ok",
+                "ok_ratio": 1.0,
+                "latest_peer_count": 8,
+                "min_peer_count": 7,
+                "min_disk_free_gb": 300,
+                "latest_daa_score": 10_000,
+                "latest_block_count": 20_000,
+                "daa_delta": 100,
+                "block_delta": 100,
+                "latest_processed_tx_rate": 150.0,
+                "max_processed_age_seconds": 4.0,
+            },
+            {
+                "node_name": "kaspa-tn10-local",
+                "snapshots": 2,
+                "latest_checked_at": "2026-06-06T10:01:00+09:00",
+                "latest_status": "ok",
+                "latest_severity": "ok",
+                "ok_ratio": 1.0,
+                "latest_peer_count": 8,
+                "min_peer_count": 8,
+                "min_disk_free_gb": 250,
+                "latest_daa_score": 100_000,
+                "latest_block_count": 200_000,
+                "daa_delta": 100,
+                "block_delta": 100,
+                "latest_processed_tx_rate": None,
+                "max_processed_age_seconds": None,
+            },
+        ]
+
+        comparison = export_history_sqlite.multi_node_comparison(summaries)
+        nodes = {item["node_name"]: item for item in comparison["nodes"]}
+
+        self.assertEqual(
+            comparison["baseline_nodes"],
+            {"mainnet": "kaspa-mainnet-local", "tn10": "kaspa-tn10-local"},
+        )
+        self.assertEqual(comparison["verdict"], "ok")
+        self.assertEqual(comparison["lagging_nodes"], [])
+        self.assertEqual(comparison["risk_nodes"], [])
+        self.assertEqual(nodes["kaspa-mainnet-local"]["daa_lag"], 0)
+        self.assertEqual(nodes["kaspa-tn10-local"]["daa_lag"], 0)
 
 
 if __name__ == "__main__":
