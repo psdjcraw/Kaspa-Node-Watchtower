@@ -14,6 +14,39 @@ the primary source of truth.
 - Document safe diagnostics and recovery workflows for node operators.
 - Use local SQLite history summaries for longer-window operator review.
 
+## Next Execution Plan
+
+The next operator work should prioritize failure confidence over new dashboard
+surface area:
+
+- Keep `make smoke`, `make validate`, and Prometheus rule tests green before
+  each deployment change.
+- Re-run failure simulations for peer loss, relay stalls, RPC failure, gRPC
+  failure, disk pressure, stale logs, exporter downtime, alert repeat
+  suppression, recovered transitions, and recovery dry-runs.
+- Confirm the Prometheus alert bridge can query Prometheus, update
+  `state/prometheus-alert-state.json`, and report zero active alerts in the
+  healthy baseline.
+- Use `scripts/ops_snapshot.sh` as the final release-readiness snapshot because
+  it checks live node health, exporter metrics, Prometheus queries, active
+  alerts, Grafana reachability, and GitHub Actions status in one command.
+- After the single-node baseline stays stable, move the next development focus
+  to multi-node history comparison and operator-friendly distribution.
+
+## 2026-06-08 Execution Status
+
+- Completed the single-node stability pass with live `scripts/ops_snapshot.sh`
+  verification, Prometheus exporter health, zero active alerts, Grafana
+  reachability, and current CI status.
+- Completed failure rehearsal for peer loss, relay stalls, RPC failure, gRPC
+  failure, disk pressure, stale logs, exporter downtime, repeat suppression,
+  recovered transitions, and recovery dry-runs.
+- Kept dashboard and alert signals aligned by emitting inactive sync-progress
+  Prometheus metrics as `0` when the node is already synced.
+- Built the v0.6.1 portable release package and checksum from tracked files.
+- Verified multi-node SQLite history comparison with `kaspa-mainnet-local` and
+  `kaspa-tn10-local` history windows.
+
 ## v0.1 - Initial Operator Toolkit
 
 - Local process, TCP RPC, gRPC metrics, log freshness, disk, and data directory

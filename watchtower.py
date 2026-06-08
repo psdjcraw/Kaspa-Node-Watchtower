@@ -5531,25 +5531,57 @@ def format_prometheus_metrics(
     )
     add_prometheus_metric(lines, "kaspa_watchtower_block_count", grpc_metrics.get("block_count"), node_labels)
     add_prometheus_metric(lines, "kaspa_watchtower_header_count", grpc_metrics.get("header_count"), node_labels)
-    add_prometheus_metric(lines, "kaspa_watchtower_sync_active", sync_progress.get("active"), node_labels)
+    sync_active = bool(sync_progress.get("active"))
+    sync_baseline_available = bool(sync_progress.get("baseline_available")) if sync_active else False
+    add_prometheus_metric(lines, "kaspa_watchtower_sync_active", sync_active, node_labels)
     add_prometheus_metric(
         lines,
         "kaspa_watchtower_sync_baseline_available",
-        sync_progress.get("baseline_available"),
+        sync_baseline_available,
         node_labels,
     )
     add_prometheus_metric(
         lines,
         "kaspa_watchtower_sync_elapsed_minutes",
-        sync_progress.get("elapsed_minutes"),
+        sync_progress.get("elapsed_minutes", 0 if not sync_active else None),
         node_labels,
     )
-    add_prometheus_metric(lines, "kaspa_watchtower_sync_daa_delta", sync_progress.get("daa_delta"), node_labels)
-    add_prometheus_metric(lines, "kaspa_watchtower_sync_block_delta", sync_progress.get("block_delta"), node_labels)
-    add_prometheus_metric(lines, "kaspa_watchtower_sync_header_delta", sync_progress.get("header_delta"), node_labels)
-    add_prometheus_metric(lines, "kaspa_watchtower_sync_daa_rate_per_hour", sync_progress.get("daa_rate_per_hour"), node_labels)
-    add_prometheus_metric(lines, "kaspa_watchtower_sync_block_rate_per_hour", sync_progress.get("block_rate_per_hour"), node_labels)
-    add_prometheus_metric(lines, "kaspa_watchtower_sync_header_rate_per_hour", sync_progress.get("header_rate_per_hour"), node_labels)
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_sync_daa_delta",
+        sync_progress.get("daa_delta", 0 if not sync_active else None),
+        node_labels,
+    )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_sync_block_delta",
+        sync_progress.get("block_delta", 0 if not sync_active else None),
+        node_labels,
+    )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_sync_header_delta",
+        sync_progress.get("header_delta", 0 if not sync_active else None),
+        node_labels,
+    )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_sync_daa_rate_per_hour",
+        sync_progress.get("daa_rate_per_hour", 0 if not sync_active else None),
+        node_labels,
+    )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_sync_block_rate_per_hour",
+        sync_progress.get("block_rate_per_hour", 0 if not sync_active else None),
+        node_labels,
+    )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_sync_header_rate_per_hour",
+        sync_progress.get("header_rate_per_hour", 0 if not sync_active else None),
+        node_labels,
+    )
     add_prometheus_metric(lines, "kaspa_watchtower_require_synced", monitoring.get("require_synced"), node_labels)
     add_prometheus_metric(
         lines,

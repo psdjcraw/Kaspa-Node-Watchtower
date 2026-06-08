@@ -332,6 +332,24 @@ class WatchtowerUnitTests(unittest.TestCase):
         self.assertIn("kaspa_watchtower_market_futures_open_interest_kas", metrics)
         self.assertIn("2.3e+08", metrics)
 
+    def test_prometheus_metrics_emit_inactive_sync_progress(self):
+        report = {
+            "node_name": "test-node",
+            "status": "ok",
+            "severity": "ok",
+            "checks": [],
+            "grpc_metrics": {"is_synced": True},
+            "progress": {},
+            "monitoring": {},
+            "disk": {},
+        }
+
+        metrics = watchtower.format_prometheus_metrics(report, {}, {}, {})
+
+        self.assertIn('kaspa_watchtower_sync_active{node="test-node"} 0', metrics)
+        self.assertIn('kaspa_watchtower_sync_baseline_available{node="test-node"} 0', metrics)
+        self.assertIn('kaspa_watchtower_sync_daa_rate_per_hour{node="test-node"} 0', metrics)
+
     def test_grafana_dashboard_includes_processed_freshness_panel(self):
         dashboard = json.loads(Path("grafana/kaspa-watchtower.json").read_text(encoding="utf-8"))
         panels = {panel.get("title"): panel for panel in dashboard.get("panels", [])}

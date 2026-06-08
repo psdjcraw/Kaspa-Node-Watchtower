@@ -46,6 +46,8 @@ cat <<'EOF'
 alerts: d370358a-e1f3-4456-9818-68537c558f88 every 10m
 benchmarks: aef87796-2552-4cf6-b8ff-897b9ce3ca99 every 30m
 smoke: a7e56678-da5c-43dd-8d04-0f3e6e21f1cd daily 03:20 KST
+daily-report: c5e0794e-f65f-420b-b07a-4918bef137ae daily 09:10 KST
+prometheus-alert-bridge: 919e380f-9a3e-403f-b741-6241d5a60233 every 5m
 EOF
 
 section "LaunchAgent"

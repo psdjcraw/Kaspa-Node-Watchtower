@@ -38,6 +38,36 @@
 - `919e380f-9a3e-403f-b741-6241d5a60233`:
   `kaspa-watchtower-prometheus-alert-bridge`, every 5 minutes
 
+## Latest Operator Verification
+
+Last verified manually on `2026-06-08`:
+
+- `make smoke` passed, including unit tests, release package checks, Homebrew
+  formula syntax, Grafana dashboard JSON, Prometheus rule tests, config
+  validation, watchtower summary generation, diagnostics summary, incident
+  report, Prometheus textfile output, state retention, failure simulations,
+  exporter failure simulation, alert wrapper, benchmark wrapper, weekly report,
+  Prometheus alert bridge, history export, and archive upload helper.
+- `make validate` passed against `config.json`.
+- `prometheus/run_rule_tests.sh` passed.
+- `scripts/simulate_failures.sh` passed peer-critical, relay-warning,
+  relay-stalled, RPC-critical, gRPC-missing, disk-pressure, stale-log, repeat
+  suppression, recovered transition, and recovery dry-run cases.
+- `scripts/simulate_exporter_failure.sh` passed.
+- `scripts/check_prometheus_alerts.sh` passed with no active watchtower alerts.
+- Prometheus API returned an empty active alert list for watchtower service.
+- `scripts/ops_snapshot.sh` passed with node `ok`, severity `ok`, `8` peers,
+  Prometheus target `up`, Grafana dashboard HTTP `302`, and GitHub Actions
+  smoke/codeql success.
+- Synced-state sync progress metrics now export inactive `0` values instead of
+  appearing as missing in exporter and Prometheus query output.
+- `make history-multi-node` exported SQLite history and compared
+  `kaspa-mainnet-local` and `kaspa-tn10-local`; both nodes showed 100% OK
+  ratio in the 7-day window.
+- `make package` wrote
+  `dist/kaspa-node-watchtower-0.6.1-5e861c2.tar.gz` with SHA-256
+  `034dd0c1d0135ed63c57217462d47720ed18ec649d25b0e6d45c9de0c8849732`.
+
 ## Files
 
 - Config: `config.json`
