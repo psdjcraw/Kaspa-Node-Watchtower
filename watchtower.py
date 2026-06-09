@@ -73,6 +73,16 @@ DEFAULT_CONFIG = {
     },
 }
 
+NODE_NAME_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_.-]*$")
+NODE_NETWORK_HINT_PATTERN = re.compile(r"(mainnet|testnet|tn\d*|simnet|devnet|test)")
+MULTI_NODE_THRESHOLD_ENV_SPECS = {
+    "MULTI_NODE_DAA_LAG_WARNING": "integer >= 0",
+    "MULTI_NODE_BLOCK_LAG_WARNING": "integer >= 0",
+    "MULTI_NODE_STALE_MINUTES": "number >= 1",
+    "MULTI_NODE_PEER_LAG_WARNING": "integer >= 0",
+    "MULTI_NODE_PROCESSED_AGE_LAG_WARNING": "number >= 0",
+}
+
 
 @dataclass(frozen=True)
 class IbdCompletion:
@@ -6299,10 +6309,45 @@ def parent_writable_check(name: str, value: Any) -> Check:
     return Check(name, ok, validation_detail(text, "writable parent directory", ok))
 
 
+def path_suffix_check(name: str, value: Any, suffixes: Iterable[str]) -> Check:
+    text = str(value or "")
+    allowed = tuple(suffixes)
+    ok = bool(text) and Path(text).suffix in allowed
+    return Check(name, ok, validation_detail(text, "path ending in " + " or ".join(allowed), ok))
+
+
+def json_file_check(name: str, value: Any) -> Check:
+    text = str(value or "")
+    ok = False
+    detail = validation_detail(text, "valid JSON file", ok)
+    if text and Path(text).exists():
+        try:
+            json.loads(Path(text).read_text(encoding="utf-8"))
+            ok = True
+            detail = validation_detail(text, "valid JSON file", ok)
+        except json.JSONDecodeError as exc:
+            detail = f"{text}; expected valid JSON file ({exc.msg})"
+    return Check(name, ok, detail)
+
+
 def endpoint_check(name: str, value: Any) -> Check:
     text = str(value or "")
     ok = endpoint_configured(text)
     return Check(name, ok, validation_detail(text, "host:port endpoint", ok))
+
+
+def env_threshold_check(name: str, expected: str) -> Check:
+    value = os.environ.get(name)
+    if value is None:
+        return Check(f"env.{name}", True, "unset; ok")
+    if expected.startswith("integer"):
+        validator = non_negative_int_config
+    elif expected == "number >= 1":
+        validator = lambda item: number_between_config(item, 1)
+    else:
+        validator = lambda item: number_between_config(item, 0)
+    ok = validator(value)
+    return Check(f"env.{name}", ok, validation_detail(value, expected, ok))
 
 
 def config_validation_checks(config: dict) -> list[Check]:
@@ -6313,6 +6358,7 @@ def config_validation_checks(config: dict) -> list[Check]:
     recovery_mode = recovery.get("mode", DEFAULT_CONFIG["recovery"]["mode"])
     config_version = config.get("config_version", DEFAULT_CONFIG["config_version"])
     config_version_ok = isinstance(config_version, int) and 1 <= config_version <= DEFAULT_CONFIG["config_version"]
+    node_name = str(config.get("node_name") or "")
     checks = [
         Check(
             "config_version",
@@ -6325,8 +6371,26 @@ def config_validation_checks(config: dict) -> list[Check]:
         ),
         Check(
             "node_name",
-            bool(config.get("node_name")),
-            validation_detail(config.get("node_name"), "non-empty node name", bool(config.get("node_name"))),
+            bool(node_name),
+            validation_detail(node_name, "non-empty node name", bool(node_name)),
+        ),
+        Check(
+            "node_name.format",
+            bool(NODE_NAME_PATTERN.fullmatch(node_name)),
+            validation_detail(
+                node_name,
+                "lowercase slug using a-z, 0-9, dot, dash, or underscore",
+                bool(NODE_NAME_PATTERN.fullmatch(node_name)),
+            ),
+        ),
+        Check(
+            "node_name.network_hint",
+            bool(NODE_NETWORK_HINT_PATTERN.search(node_name)),
+            validation_detail(
+                node_name,
+                "node name containing network hint such as mainnet, testnet, tn10, simnet, or devnet",
+                bool(NODE_NETWORK_HINT_PATTERN.search(node_name)),
+            ),
         ),
         Check(
             "process_match",
@@ -6352,13 +6416,33 @@ def config_validation_checks(config: dict) -> list[Check]:
         ),
         parent_writable_check("benchmark_path", config.get("benchmark_path") or DEFAULT_CONFIG["benchmark_path"]),
         parent_writable_check(
+            "sqlite_history_path",
+            config.get("sqlite_history_path") or DEFAULT_CONFIG["sqlite_history_path"],
+        ),
+        path_suffix_check(
+            "sqlite_history_path.suffix",
+            config.get("sqlite_history_path") or DEFAULT_CONFIG["sqlite_history_path"],
+            (".sqlite", ".db"),
+        ),
+        parent_writable_check(
+            "market_snapshot_path",
+            config.get("market_snapshot_path") or DEFAULT_CONFIG["market_snapshot_path"],
+        ),
+        parent_writable_check(
             "prometheus_metrics_path",
             config.get("prometheus_metrics_path") or DEFAULT_CONFIG["prometheus_metrics_path"],
+        ),
+        path_suffix_check(
+            "prometheus_metrics_path.suffix",
+            config.get("prometheus_metrics_path") or DEFAULT_CONFIG["prometheus_metrics_path"],
+            (".prom",),
         ),
         parent_writable_check(
             "recovery_history_path",
             config.get("recovery_history_path") or DEFAULT_CONFIG["recovery_history_path"],
         ),
+        json_file_check("grafana.dashboard_json", "grafana/kaspa-watchtower.json"),
+        path_exists_check("prometheus.rules_file", "prometheus/kaspa-watchtower-rules.yml"),
         Check(
             "recovery.mode",
             recovery_mode in {"manual"},
@@ -6406,6 +6490,29 @@ def config_validation_checks(config: dict) -> list[Check]:
         value = nested_config_value(config, "retention", key)
         ok = validator(value)
         checks.append(Check(f"retention.{key}", ok, validation_detail(value, expected, ok)))
+    history_paths = {
+        "state_path": config.get("state_path") or DEFAULT_CONFIG["state_path"],
+        "benchmark_path": config.get("benchmark_path") or DEFAULT_CONFIG["benchmark_path"],
+        "sqlite_history_path": config.get("sqlite_history_path") or DEFAULT_CONFIG["sqlite_history_path"],
+        "market_snapshot_path": config.get("market_snapshot_path") or DEFAULT_CONFIG["market_snapshot_path"],
+        "prometheus_metrics_path": config.get("prometheus_metrics_path") or DEFAULT_CONFIG["prometheus_metrics_path"],
+        "recovery_history_path": config.get("recovery_history_path") or DEFAULT_CONFIG["recovery_history_path"],
+    }
+    normalized_paths = [str(Path(value).expanduser()) for value in history_paths.values()]
+    paths_distinct = len(normalized_paths) == len(set(normalized_paths))
+    checks.append(
+        Check(
+            "history_paths.distinct",
+            paths_distinct,
+            validation_detail(
+                ", ".join(f"{key}={value}" for key, value in history_paths.items()),
+                "distinct state, benchmark, SQLite, market, Prometheus, and recovery paths",
+                paths_distinct,
+            ),
+        )
+    )
+    for name, expected in MULTI_NODE_THRESHOLD_ENV_SPECS.items():
+        checks.append(env_threshold_check(name, expected))
     canvas_status_page = config.get("canvas_status_page_path") or ""
     if canvas_status_page:
         checks.append(parent_writable_check("canvas_status_page_path", canvas_status_page))

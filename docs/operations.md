@@ -188,9 +188,11 @@ Config validation:
 ```
 
 Validation checks `config_version`, paths, endpoints, recovery mode, threshold
-ranges, boolean feature flags, and retention limits. Failed checks include
-expected value hints
-and a final failed-setting summary.
+ranges, boolean feature flags, retention limits, `sqlite_history_path`,
+node-name multi-node hints, distinct history/metrics paths, bundled Prometheus
+rules, bundled Grafana JSON, and optional `MULTI_NODE_*` threshold environment
+overrides. Failed checks include expected value hints and a final
+failed-setting summary.
 
 Alert mode for cron:
 

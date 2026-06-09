@@ -162,7 +162,10 @@ Validate local configuration:
 
 Validation output includes failed setting names and expected value hints so
 operators can fix local config version, path, endpoint, threshold, and
-retention mistakes without reading the code.
+retention mistakes without reading the code. It also checks v0.8 migration
+surface such as `sqlite_history_path`, node-name format, distinct history and
+metrics paths, bundled Prometheus rules, bundled Grafana JSON, and optional
+multi-node threshold environment overrides.
 
 The reporter reads local process state, RPC TCP reachability, direct gRPC
 metrics, data directory size/free space, and recent `kaspad` logs. It reports

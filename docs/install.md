@@ -82,6 +82,10 @@ make smoke
 
 `make validate` prints failed setting names with expected value hints when a
 path, endpoint, threshold, boolean flag, or retention setting needs correction.
+For v0.8 host handoff, validation also checks `sqlite_history_path`,
+node-name slug/network hints for multi-node history, distinct state/history
+paths, bundled Prometheus rule and Grafana dashboard files, and optional
+`MULTI_NODE_*` threshold environment overrides when they are set.
 `make proto-check` verifies that checked-in generated protobuf files match
 `proto/rpc.proto` and `proto/messages.proto`.
 

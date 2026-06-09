@@ -1,6 +1,7 @@
 import json
 import copy
 import datetime as dt
+import os
 import sqlite3
 import subprocess
 import sys
@@ -755,6 +756,36 @@ class WatchtowerUnitTests(unittest.TestCase):
             self.assertIn("retention.benchmark_entries", failed)
             self.assertIn("expected number between 0 and 100", failed["thresholds.disk_free_percent_min"])
             self.assertIn("expected integer > 0", failed["retention.benchmark_entries"])
+
+    def test_config_validation_checks_migration_paths_and_node_name(self):
+        config = copy.deepcopy(watchtower.DEFAULT_CONFIG)
+        config["node_name"] = "Local Mainnet Node"
+        config["sqlite_history_path"] = "/missing-parent/watchtower.txt"
+        config["prometheus_metrics_path"] = "state/watchtower.metrics"
+
+        failed = {
+            check.name: check.detail
+            for check in watchtower.config_validation_checks(config)
+            if not check.ok
+        }
+
+        self.assertIn("node_name.format", failed)
+        self.assertIn("sqlite_history_path", failed)
+        self.assertIn("sqlite_history_path.suffix", failed)
+        self.assertIn("prometheus_metrics_path.suffix", failed)
+        self.assertIn("expected path ending in .sqlite or .db", failed["sqlite_history_path.suffix"])
+        self.assertIn("expected path ending in .prom", failed["prometheus_metrics_path.suffix"])
+
+    def test_config_validation_checks_multi_node_env_thresholds(self):
+        with mock.patch.dict(os.environ, {"MULTI_NODE_DAA_LAG_WARNING": "nope"}):
+            failed = {
+                check.name: check.detail
+                for check in watchtower.config_validation_checks(copy.deepcopy(watchtower.DEFAULT_CONFIG))
+                if not check.ok
+            }
+
+        self.assertIn("env.MULTI_NODE_DAA_LAG_WARNING", failed)
+        self.assertIn("expected integer >= 0", failed["env.MULTI_NODE_DAA_LAG_WARNING"])
 
     def test_config_validation_rejects_unsupported_config_version(self):
         config = copy.deepcopy(watchtower.DEFAULT_CONFIG)

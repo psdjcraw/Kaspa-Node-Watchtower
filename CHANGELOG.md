@@ -14,6 +14,10 @@ All notable changes to Kaspa Node Watchtower are tracked here.
   manage the exporter, status check, benchmark snapshot, daily report, weekly
   report, Prometheus alert bridge, and smoke-test LaunchAgents from the current
   checkout path.
+- `watchtower.py --validate-config` now checks v0.8 migration and handoff
+  settings, including `sqlite_history_path`, node-name format and network
+  hints, distinct state/history/metrics paths, bundled Prometheus/Grafana
+  files, and optional `MULTI_NODE_*` threshold overrides.
 
 ## 0.7.0 - 2026-06-09
 
