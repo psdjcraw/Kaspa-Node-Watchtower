@@ -19,6 +19,11 @@ ok "Python compile"
 bash -n scripts/onboard_local.sh
 ok "onboarding script syntax"
 
+bash -n scripts/manage_launchd.sh
+scripts/manage_launchd.sh --service exporter print >/dev/null
+scripts/manage_launchd.sh --service exporter install >/dev/null
+ok "launchd manager dry-run"
+
 "$PYTHON_BIN" watchtower.py --version >/dev/null
 ok "watchtower version"
 

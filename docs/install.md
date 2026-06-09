@@ -108,26 +108,41 @@ Run the local HTTP exporter:
 See `docs/integrations.md` for Prometheus/Grafana scrape, rule, and dashboard
 setup.
 
-## Optional launchd Exporter
+## Optional launchd Services
 
-On the current macOS host, the LaunchAgent plist is:
-
-```text
-launchd/com.openclaw.kaspa-watchtower-prometheus.plist
-```
-
-Install or repair it with:
+Render and dry-run the managed LaunchAgents first:
 
 ```bash
-make ensure-exporter
+scripts/manage_launchd.sh --service exporter print
+scripts/manage_launchd.sh install
 ```
 
-Manual bootstrap uses the exact local workspace path:
+Install or repair the full local service set on macOS:
 
 ```bash
-launchctl bootstrap gui/$(id -u) /Users/psdjc/.openclaw/workspace/Kaspa-Node-Watchtowe/launchd/com.openclaw.kaspa-watchtower-prometheus.plist
-launchctl kickstart -k gui/$(id -u)/com.openclaw.kaspa-watchtower-prometheus
+make launchd-install
+make launchd-status
 ```
 
-The local directory name may still be `Kaspa-Node-Watchtowe`; use the actual
-local path for launchd and cron commands.
+Managed services:
+
+- `exporter`: Prometheus HTTP exporter, kept alive
+- `status`: alert-mode health check every 5 minutes
+- `benchmark`: benchmark snapshot every 30 minutes
+- `daily`: daily operator report at 09:10
+- `weekly`: weekly operator report on Monday at 09:30
+- `alerts`: Prometheus alert bridge every 5 minutes
+- `smoke`: daily smoke test at 03:20
+
+Reload or remove the full set:
+
+```bash
+make launchd-restart
+make launchd-uninstall
+```
+
+The manager renders plists with the current checkout path before installing
+them to `~/Library/LaunchAgents`. The local directory name may still be
+`Kaspa-Node-Watchtowe`; use the actual local path for launchd and cron
+commands. `make ensure-exporter` remains available for repairing only the
+Prometheus exporter LaunchAgent.

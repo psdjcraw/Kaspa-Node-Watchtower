@@ -121,9 +121,13 @@ else
 fi
 
 section "Launchd"
-printf 'exporter_plist=launchd/com.openclaw.kaspa-watchtower-prometheus.plist\n'
-printf 'install_or_repair=make ensure-exporter\n'
-printf 'status=launchctl print gui/$(id -u)/com.openclaw.kaspa-watchtower-prometheus\n'
+printf 'manager=scripts/manage_launchd.sh\n'
+printf 'managed_services=exporter,status,benchmark,daily,weekly,alerts,smoke\n'
+printf 'preview=scripts/manage_launchd.sh --service exporter print\n'
+printf 'dry_run=scripts/manage_launchd.sh install\n'
+printf 'install_or_repair=make launchd-install\n'
+printf 'status=make launchd-status\n'
+printf 'legacy_exporter_only=make ensure-exporter\n'
 
 section "Smoke"
 if [ "$DO_SMOKE" -eq 1 ]; then
@@ -138,6 +142,6 @@ cat <<'EOF'
 2. Run make validate && make summary.
 3. Run make prometheus and confirm state/watchtower.prom exists.
 4. Run make history-multi-node after benchmark history exists.
-5. Run make ensure-exporter when ready to install/restart the exporter LaunchAgent.
+5. Run make launchd-install when ready to install/restart LaunchAgents.
 6. Run make smoke before release or host handoff.
 EOF

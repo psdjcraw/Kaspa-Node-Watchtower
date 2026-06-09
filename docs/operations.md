@@ -132,6 +132,22 @@ Full local smoke test:
 scripts/smoke_test.sh
 ```
 
+Managed launchd services:
+
+```bash
+scripts/manage_launchd.sh install
+make launchd-install
+make launchd-status
+make launchd-restart
+make launchd-uninstall
+```
+
+`scripts/manage_launchd.sh install` is a dry-run unless `--apply` is passed.
+The Makefile install/restart/uninstall targets pass `--apply` for the full
+service set. Use `--service exporter`, `--service status`, `--service
+benchmark`, `--service daily`, `--service weekly`, `--service alerts`, or
+`--service smoke` to scope operations to one LaunchAgent.
+
 Cron-friendly smoke test:
 
 ```bash

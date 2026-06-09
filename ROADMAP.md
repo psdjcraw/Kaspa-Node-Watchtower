@@ -16,22 +16,33 @@ the primary source of truth.
 
 ## Next Execution Plan
 
-The next operator work should prioritize failure confidence over new dashboard
-surface area:
+The next operator work should prioritize distribution and host handoff:
 
 - Keep `make smoke`, `make validate`, and Prometheus rule tests green before
   each deployment change.
-- Re-run failure simulations for peer loss, relay stalls, RPC failure, gRPC
-  failure, disk pressure, stale logs, exporter downtime, alert repeat
-  suppression, recovered transitions, and recovery dry-runs.
-- Confirm the Prometheus alert bridge can query Prometheus, update
-  `state/prometheus-alert-state.json`, and report zero active alerts in the
-  healthy baseline.
-- Use `scripts/ops_snapshot.sh` as the final release-readiness snapshot because
+- Use `make onboard` as the first local host check before editing config or
+  starting services.
+- Use `scripts/manage_launchd.sh install` to preview LaunchAgent changes, then
+  `make launchd-install` and `make launchd-status` on macOS hosts.
+- Keep `scripts/ops_snapshot.sh` as the final release-readiness snapshot because
   it checks live node health, exporter metrics, Prometheus queries, active
   alerts, Grafana reachability, and GitHub Actions status in one command.
-- After the single-node baseline stays stable, move the next development focus
-  to multi-node history comparison and operator-friendly distribution.
+- Finish v0.8 with config migration checks, a release install guide, and
+  Homebrew formula updates.
+
+## v0.8 - Distribution and Onboarding
+
+- Provide guided local onboarding with workspace, Python, config, state,
+  launchd, optional bootstrap, and optional smoke checks.
+- Manage launchd service installation, restart, status, uninstall, and plist
+  rendering for exporter, status, benchmark, daily, weekly, alert bridge, and
+  smoke-test jobs.
+- Tighten config migration validation around SQLite history paths, multi-node
+  naming, thresholds, and Prometheus/Grafana paths.
+- Publish a release install guide for a fresh macOS host, multi-node operation,
+  Prometheus/Grafana wiring, and alert bridge verification.
+- Refresh the Homebrew formula and post-install smoke guidance for the current
+  release asset.
 
 ## v0.7 - Multi-Node Comparison
 

@@ -8,7 +8,7 @@ MULTI_NODE_STALE_MINUTES ?= 10
 MULTI_NODE_PEER_LAG_WARNING ?= 2
 MULTI_NODE_PROCESSED_AGE_LAG_WARNING ?= 60
 
-.PHONY: help onboard bootstrap proto-check version status stream summary sync-report diagnostics-summary incident-report json alert smoke ci integrations simulate-exporter-failure ensure-exporter diagnostics diagnostics-archive daily-report weekly-report weekly-archive benchmark benchmark-report prometheus export-history history-report history-multi-node history-archive upload-archive package prune validate recover-dry-run recover force-recover-dry-run
+.PHONY: help onboard bootstrap proto-check version status stream summary sync-report diagnostics-summary incident-report json alert smoke ci integrations simulate-exporter-failure ensure-exporter launchd-status launchd-install launchd-restart launchd-uninstall diagnostics diagnostics-archive daily-report weekly-report weekly-archive benchmark benchmark-report prometheus export-history history-report history-multi-node history-archive upload-archive package prune validate recover-dry-run recover force-recover-dry-run
 
 help:
 	@printf 'Kaspa Node Watchtower operator commands\n'
@@ -29,6 +29,10 @@ help:
 	@printf '  make integrations        Check exporter, Prometheus, Grafana, and CI\n'
 	@printf '  make simulate-exporter-failure Verify exporter failure detection\n'
 	@printf '  make ensure-exporter     Install/restart the Prometheus exporter LaunchAgent\n'
+	@printf '  make launchd-status      Print managed LaunchAgent state\n'
+	@printf '  make launchd-install     Install/restart managed LaunchAgents\n'
+	@printf '  make launchd-restart     Reload managed LaunchAgents\n'
+	@printf '  make launchd-uninstall   Remove managed LaunchAgents\n'
 	@printf '  make diagnostics         Collect diagnostic report\n'
 	@printf '  make diagnostics-archive Collect diagnostic report and tar archive\n'
 	@printf '  make daily-report        Print the daily operator report\n'
@@ -98,6 +102,18 @@ simulate-exporter-failure:
 
 ensure-exporter:
 	@scripts/ensure_prometheus_exporter.sh
+
+launchd-status:
+	@scripts/manage_launchd.sh status
+
+launchd-install:
+	@scripts/manage_launchd.sh --apply install
+
+launchd-restart:
+	@scripts/manage_launchd.sh --apply restart
+
+launchd-uninstall:
+	@scripts/manage_launchd.sh --apply uninstall
 
 diagnostics:
 	@scripts/collect_diagnostics.sh

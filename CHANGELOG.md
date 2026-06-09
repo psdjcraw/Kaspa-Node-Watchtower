@@ -9,6 +9,11 @@ All notable changes to Kaspa Node Watchtower are tracked here.
 - `scripts/onboard_local.sh` and `make onboard` provide guided local onboarding
   checks for workspace, Python, config, state, launchd hints, optional
   bootstrap, and optional smoke validation.
+- `scripts/manage_launchd.sh` and `make launchd-status`, `make
+  launchd-install`, `make launchd-restart`, and `make launchd-uninstall`
+  manage the exporter, status check, benchmark snapshot, daily report, weekly
+  report, Prometheus alert bridge, and smoke-test LaunchAgents from the current
+  checkout path.
 
 ## 0.7.0 - 2026-06-09
 
