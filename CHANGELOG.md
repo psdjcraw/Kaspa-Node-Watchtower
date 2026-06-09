@@ -4,6 +4,12 @@ All notable changes to Kaspa Node Watchtower are tracked here.
 
 ## Unreleased
 
+### Added
+
+- `scripts/onboard_local.sh` and `make onboard` provide guided local onboarding
+  checks for workspace, Python, config, state, launchd hints, optional
+  bootstrap, and optional smoke validation.
+
 ## 0.7.0 - 2026-06-09
 
 ### Added

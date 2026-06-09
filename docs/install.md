@@ -12,6 +12,21 @@ the local `kaspad` process, logs, data directory, and RPC/gRPC endpoint.
 
 ## Bootstrap Python and Protobuf
 
+For a guided, check-only first pass, run:
+
+```bash
+make onboard
+```
+
+This prints workspace, Python, config, state, launchd, and next-step hints
+without installing services or overwriting config. Optional modes:
+
+```bash
+scripts/onboard_local.sh --write-config
+scripts/onboard_local.sh --bootstrap
+scripts/onboard_local.sh --smoke
+```
+
 Run:
 
 ```bash

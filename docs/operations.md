@@ -74,6 +74,7 @@ Makefile command index:
 
 ```bash
 make help
+make onboard
 make status
 make smoke
 make daily-report

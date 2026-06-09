@@ -16,6 +16,9 @@ ok() {
 "$PYTHON_BIN" -m py_compile watchtower.py kaspa_grpc_probe.py prometheus_file_server.py scripts/upgrade_checkpoint.py scripts/export_history_sqlite.py
 ok "Python compile"
 
+bash -n scripts/onboard_local.sh
+ok "onboarding script syntax"
+
 "$PYTHON_BIN" watchtower.py --version >/dev/null
 ok "watchtower version"
 

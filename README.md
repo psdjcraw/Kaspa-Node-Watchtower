@@ -120,6 +120,12 @@ First working local watchtower.
 
 ## Quick Start
 
+Run guided local onboarding checks:
+
+```bash
+make onboard
+```
+
 Run the local status reporter:
 
 ```bash

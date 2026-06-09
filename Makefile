@@ -8,11 +8,12 @@ MULTI_NODE_STALE_MINUTES ?= 10
 MULTI_NODE_PEER_LAG_WARNING ?= 2
 MULTI_NODE_PROCESSED_AGE_LAG_WARNING ?= 60
 
-.PHONY: help bootstrap proto-check version status stream summary sync-report diagnostics-summary incident-report json alert smoke ci integrations simulate-exporter-failure ensure-exporter diagnostics diagnostics-archive daily-report weekly-report weekly-archive benchmark benchmark-report prometheus export-history history-report history-multi-node history-archive upload-archive package prune validate recover-dry-run recover force-recover-dry-run
+.PHONY: help onboard bootstrap proto-check version status stream summary sync-report diagnostics-summary incident-report json alert smoke ci integrations simulate-exporter-failure ensure-exporter diagnostics diagnostics-archive daily-report weekly-report weekly-archive benchmark benchmark-report prometheus export-history history-report history-multi-node history-archive upload-archive package prune validate recover-dry-run recover force-recover-dry-run
 
 help:
 	@printf 'Kaspa Node Watchtower operator commands\n'
 	@printf '\n'
+	@printf '  make onboard             Run guided local onboarding checks\n'
 	@printf '  make bootstrap           Create venv, install deps, generate protobuf\n'
 	@printf '  make proto-check         Verify generated protobuf files are current\n'
 	@printf '  make version             Print watchtower version\n'
@@ -46,6 +47,9 @@ help:
 	@printf '  make validate            Validate config\n'
 	@printf '  make recover-dry-run     Show manual recovery command without restart\n'
 	@printf '  make recover             Run approved manual recovery when unhealthy\n'
+
+onboard:
+	@scripts/onboard_local.sh
 
 bootstrap:
 	@scripts/bootstrap_env.sh
