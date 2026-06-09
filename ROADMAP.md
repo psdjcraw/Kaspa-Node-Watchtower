@@ -46,6 +46,8 @@ surface area:
   so dashboard and release-readiness checks show the same operator signal.
 - Export multi-node verdict and per-node lag values as Prometheus metrics and
   add Grafana panels for the same signal.
+- Alert on multi-node warning/critical verdicts, risk nodes, lagging nodes,
+  stale-node flags, no-peer flags, and DAA/block lag flags.
 - Use the comparison output to decide which node needs attention before adding
   broader dashboard surface area.
 

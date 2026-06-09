@@ -235,3 +235,134 @@ tests:
             exp_annotations:
               summary: "Kaspa watchtower recovery command failed"
               description: "The latest recovery command returned a non-zero exit code for node test."
+
+  - interval: 1m
+    input_series:
+      - series: 'kaspa_watchtower_multi_node_verdict_value{job="kaspa-watchtower",node="test"}'
+        values: '1+0x10'
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: KaspaWatchtowerMultiNodeWarning
+        exp_alerts:
+          - exp_labels:
+              alertname: KaspaWatchtowerMultiNodeWarning
+              job: kaspa-watchtower
+              node: test
+              service: kaspa-watchtower
+              severity: warning
+            exp_annotations:
+              summary: "Kaspa watchtower multi-node verdict is warning"
+              description: "Multi-node comparison is warning for watchtower node test."
+
+  - interval: 1m
+    input_series:
+      - series: 'kaspa_watchtower_multi_node_verdict_value{job="kaspa-watchtower",node="test"}'
+        values: '2+0x5'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: KaspaWatchtowerMultiNodeCritical
+        exp_alerts:
+          - exp_labels:
+              alertname: KaspaWatchtowerMultiNodeCritical
+              job: kaspa-watchtower
+              node: test
+              service: kaspa-watchtower
+              severity: critical
+            exp_annotations:
+              summary: "Kaspa watchtower multi-node verdict is critical"
+              description: "Multi-node comparison is critical for watchtower node test."
+
+  - interval: 1m
+    input_series:
+      - series: 'kaspa_watchtower_multi_node_risk_nodes{job="kaspa-watchtower",node="test"}'
+        values: '1+0x10'
+      - series: 'kaspa_watchtower_multi_node_lagging_nodes{job="kaspa-watchtower",node="test"}'
+        values: '1+0x10'
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: KaspaWatchtowerMultiNodeRiskNodes
+        exp_alerts:
+          - exp_labels:
+              alertname: KaspaWatchtowerMultiNodeRiskNodes
+              job: kaspa-watchtower
+              node: test
+              service: kaspa-watchtower
+              severity: warning
+            exp_annotations:
+              summary: "Kaspa watchtower multi-node risk nodes detected"
+              description: "1 multi-node history nodes have risk flags for watchtower node test."
+      - eval_time: 6m
+        alertname: KaspaWatchtowerMultiNodeLagging
+        exp_alerts:
+          - exp_labels:
+              alertname: KaspaWatchtowerMultiNodeLagging
+              job: kaspa-watchtower
+              node: test
+              service: kaspa-watchtower
+              severity: warning
+            exp_annotations:
+              summary: "Kaspa watchtower multi-node lag detected"
+              description: "1 multi-node history nodes are lagging for watchtower node test."
+
+  - interval: 1m
+    input_series:
+      - series: 'kaspa_watchtower_multi_node_flag{job="kaspa-watchtower",node="test",history_node="mainnet-b",network="mainnet",flag="no_peers"}'
+        values: '1+0x5'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: KaspaWatchtowerMultiNodeNoPeers
+        exp_alerts:
+          - exp_labels:
+              alertname: KaspaWatchtowerMultiNodeNoPeers
+              flag: no_peers
+              history_node: mainnet-b
+              job: kaspa-watchtower
+              network: mainnet
+              node: test
+              service: kaspa-watchtower
+              severity: critical
+            exp_annotations:
+              summary: "Kaspa multi-node comparison found a node with no peers"
+              description: "History node mainnet-b on mainnet has no peers."
+
+  - interval: 1m
+    input_series:
+      - series: 'kaspa_watchtower_multi_node_flag{job="kaspa-watchtower",node="test",history_node="mainnet-b",network="mainnet",flag="stale_node"}'
+        values: '1+0x15'
+    alert_rule_test:
+      - eval_time: 12m
+        alertname: KaspaWatchtowerMultiNodeStale
+        exp_alerts:
+          - exp_labels:
+              alertname: KaspaWatchtowerMultiNodeStale
+              flag: stale_node
+              history_node: mainnet-b
+              job: kaspa-watchtower
+              network: mainnet
+              node: test
+              service: kaspa-watchtower
+              severity: warning
+            exp_annotations:
+              summary: "Kaspa multi-node comparison found stale node history"
+              description: "History node mainnet-b on mainnet has stale check history."
+
+  - interval: 1m
+    input_series:
+      - series: 'kaspa_watchtower_multi_node_flag{job="kaspa-watchtower",node="test",history_node="mainnet-b",network="mainnet",flag="daa_lag"}'
+        values: '1+0x10'
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: KaspaWatchtowerMultiNodeChainLag
+        exp_alerts:
+          - exp_labels:
+              alertname: KaspaWatchtowerMultiNodeChainLag
+              flag: daa_lag
+              history_node: mainnet-b
+              job: kaspa-watchtower
+              network: mainnet
+              node: test
+              service: kaspa-watchtower
+              severity: warning
+            exp_annotations:
+              summary: "Kaspa multi-node comparison found DAA or block lag"
+              description: "History node mainnet-b on mainnet is lagging by flag daa_lag."

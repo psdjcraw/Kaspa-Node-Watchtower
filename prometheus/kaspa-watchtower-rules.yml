@@ -104,3 +104,73 @@ groups:
         annotations:
           summary: "Kaspa watchtower recovery command failed"
           description: "The latest recovery command returned a non-zero exit code for node {{ $labels.node }}."
+
+      - alert: KaspaWatchtowerMultiNodeCritical
+        expr: kaspa_watchtower_multi_node_verdict_value{job="kaspa-watchtower"} >= 2
+        for: 2m
+        labels:
+          severity: critical
+          service: kaspa-watchtower
+        annotations:
+          summary: "Kaspa watchtower multi-node verdict is critical"
+          description: "Multi-node comparison is critical for watchtower node {{ $labels.node }}."
+
+      - alert: KaspaWatchtowerMultiNodeWarning
+        expr: kaspa_watchtower_multi_node_verdict_value{job="kaspa-watchtower"} == 1
+        for: 5m
+        labels:
+          severity: warning
+          service: kaspa-watchtower
+        annotations:
+          summary: "Kaspa watchtower multi-node verdict is warning"
+          description: "Multi-node comparison is warning for watchtower node {{ $labels.node }}."
+
+      - alert: KaspaWatchtowerMultiNodeRiskNodes
+        expr: kaspa_watchtower_multi_node_risk_nodes{job="kaspa-watchtower"} > 0
+        for: 5m
+        labels:
+          severity: warning
+          service: kaspa-watchtower
+        annotations:
+          summary: "Kaspa watchtower multi-node risk nodes detected"
+          description: "{{ $value }} multi-node history nodes have risk flags for watchtower node {{ $labels.node }}."
+
+      - alert: KaspaWatchtowerMultiNodeLagging
+        expr: kaspa_watchtower_multi_node_lagging_nodes{job="kaspa-watchtower"} > 0
+        for: 5m
+        labels:
+          severity: warning
+          service: kaspa-watchtower
+        annotations:
+          summary: "Kaspa watchtower multi-node lag detected"
+          description: "{{ $value }} multi-node history nodes are lagging for watchtower node {{ $labels.node }}."
+
+      - alert: KaspaWatchtowerMultiNodeNoPeers
+        expr: kaspa_watchtower_multi_node_flag{job="kaspa-watchtower",flag="no_peers"} > 0
+        for: 2m
+        labels:
+          severity: critical
+          service: kaspa-watchtower
+        annotations:
+          summary: "Kaspa multi-node comparison found a node with no peers"
+          description: "History node {{ $labels.history_node }} on {{ $labels.network }} has no peers."
+
+      - alert: KaspaWatchtowerMultiNodeStale
+        expr: kaspa_watchtower_multi_node_flag{job="kaspa-watchtower",flag="stale_node"} > 0
+        for: 10m
+        labels:
+          severity: warning
+          service: kaspa-watchtower
+        annotations:
+          summary: "Kaspa multi-node comparison found stale node history"
+          description: "History node {{ $labels.history_node }} on {{ $labels.network }} has stale check history."
+
+      - alert: KaspaWatchtowerMultiNodeChainLag
+        expr: kaspa_watchtower_multi_node_flag{job="kaspa-watchtower",flag=~"daa_lag|block_lag"} > 0
+        for: 5m
+        labels:
+          severity: warning
+          service: kaspa-watchtower
+        annotations:
+          summary: "Kaspa multi-node comparison found DAA or block lag"
+          description: "History node {{ $labels.history_node }} on {{ $labels.network }} is lagging by flag {{ $labels.flag }}."

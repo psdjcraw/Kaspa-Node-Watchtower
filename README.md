@@ -245,7 +245,9 @@ the SQLite history. Thresholds can be tuned with
 The HTML status page and `scripts/ops_snapshot.sh` surface the same multi-node
 verdict for quick operator review.
 Prometheus metrics expose the multi-node verdict and per-node lag values, and
-the Grafana dashboard includes multi-node verdict and lag panels.
+the Grafana dashboard includes multi-node verdict and lag panels. Prometheus
+alert rules cover multi-node warning/critical verdicts, risk nodes, lagging
+nodes, stale-node flags, no-peer flags, and DAA/block lag flags.
 
 Copy or upload an archive:
 
