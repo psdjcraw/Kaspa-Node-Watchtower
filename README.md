@@ -278,6 +278,11 @@ The package is generated from tracked repository files only and excludes local
 `config.json`, `state/`, virtualenvs, diagnostics, and other host-specific
 operator data.
 
+The Homebrew formula draft is in
+`packaging/homebrew/kaspa-node-watchtower.rb`. It installs the stable CLI and
+prints post-install validation guidance; use a source checkout for full
+`make onboard`, `make smoke`, launchd, Prometheus, and Grafana workflows.
+
 Apply retention limits to state files:
 
 ```bash

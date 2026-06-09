@@ -27,7 +27,8 @@ The next operator work should prioritize distribution and host handoff:
 - Keep `scripts/ops_snapshot.sh` as the final release-readiness snapshot because
   it checks live node health, exporter metrics, Prometheus queries, active
   alerts, Grafana reachability, and GitHub Actions status in one command.
-- Finish v0.8 with Homebrew formula updates and post-install smoke guidance.
+- Finish v0.8 with release notes, package verification, and final smoke
+  guidance.
 
 ## v0.8 - Distribution and Onboarding
 

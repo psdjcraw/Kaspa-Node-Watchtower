@@ -21,6 +21,9 @@ All notable changes to Kaspa Node Watchtower are tracked here.
 - `docs/release-install-guide-v0.8.md` documents the fresh macOS host
   install, launchd services, multi-node naming/history checks,
   Prometheus/Grafana setup, alert bridge verification, and handoff checklist.
+- Homebrew formula now points to the v0.7.0 commit archive and includes
+  post-install guidance for CLI validation plus source-checkout smoke,
+  launchd, Prometheus, and Grafana workflows.
 
 ## 0.7.0 - 2026-06-09
 

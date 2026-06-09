@@ -102,15 +102,23 @@ Cons:
 - less useful for Linux nodes
 - still needs config bootstrap
 
-Current draft:
+Current formula:
 
 ```text
 packaging/homebrew/kaspa-node-watchtower.rb
 ```
 
-The draft formula installs the release tarball, exposes `kaspa-watchtower`, and
-keeps source checkout as the recommended path for launchd, Prometheus, Grafana,
-and recovery-wrapper workflows until service installation conventions settle.
+The formula installs the v0.7.0 source archive at commit `26adcb9`, exposes
+`kaspa-watchtower`, and prints post-install checks for `--version` and
+`--validate-config`. A source checkout remains the recommended path for full
+operator smoke, launchd service management, Prometheus/Grafana files, and
+wrapper scripts.
+
+Formula syntax check:
+
+```bash
+ruby -c packaging/homebrew/kaspa-node-watchtower.rb
+```
 
 ## Candidate: Container Image
 

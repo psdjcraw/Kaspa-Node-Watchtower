@@ -200,6 +200,31 @@ Expected healthy baseline:
 The `alerts` LaunchAgent runs the same bridge every 5 minutes after
 `make launchd-install`.
 
+## Homebrew Formula
+
+The draft Homebrew formula installs the stable v0.7.0 CLI archive and exposes:
+
+```bash
+kaspa-watchtower --version
+kaspa-watchtower -c ./config.json --validate-config
+```
+
+Formula path:
+
+```text
+packaging/homebrew/kaspa-node-watchtower.rb
+```
+
+Validate formula syntax after edits:
+
+```bash
+ruby -c packaging/homebrew/kaspa-node-watchtower.rb
+```
+
+Use a source checkout for v0.8 handoff workflows that need `make onboard`,
+`make smoke`, `scripts/manage_launchd.sh`, Prometheus/Grafana file copying, or
+wrapper scripts.
+
 ## Handoff Checklist
 
 Before handing the host to routine operation, confirm:

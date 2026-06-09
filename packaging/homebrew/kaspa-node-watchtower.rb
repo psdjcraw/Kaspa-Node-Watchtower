@@ -1,9 +1,12 @@
+# frozen_string_literal: true
+
+# Homebrew formula for Kaspa Node Watchtower.
 class KaspaNodeWatchtower < Formula
   desc "Local-first operator toolkit for monitoring self-hosted Kaspa nodes"
   homepage "https://github.com/psdjcraw/Kaspa-Node-Watchtower"
-  url "https://github.com/psdjcraw/Kaspa-Node-Watchtower/releases/download/v0.6.1/kaspa-node-watchtower-0.6.1-a67e715.tar.gz"
-  version "0.6.1"
-  sha256 "85dc641896378e47dfc5308cd406a16369ae445d36c31047ce0af5b43d6e7036"
+  url "https://github.com/psdjcraw/Kaspa-Node-Watchtower/archive/26adcb98698f84012486b355783a67bfb740b17f.tar.gz"
+  version "0.7.0"
+  sha256 "8c43939ae8f238d7a40942668f09b0358a538bea079e054fc93c86e44b7d75dc"
   license "Apache-2.0"
 
   depends_on "python@3.12"
@@ -19,12 +22,21 @@ class KaspaNodeWatchtower < Formula
 
   def caveats
     <<~EOS
+      Check the installed CLI:
+        kaspa-watchtower --version
+
       Create a local config before running the watchtower:
         cp #{libexec}/config.example.json ./config.json
         kaspa-watchtower -c ./config.json --validate-config
 
-      Source checkout remains recommended when using bundled launchd,
-      Prometheus, Grafana, or recovery wrapper scripts directly.
+      For full operator smoke, launchd service management, Prometheus/Grafana
+      files, and wrapper scripts, use a source checkout:
+        git clone #{homepage}
+        cd Kaspa-Node-Watchtower
+        make bootstrap
+        make onboard
+        make validate
+        make smoke
     EOS
   end
 
