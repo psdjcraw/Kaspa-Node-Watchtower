@@ -18,6 +18,9 @@ All notable changes to Kaspa Node Watchtower are tracked here.
   settings, including `sqlite_history_path`, node-name format and network
   hints, distinct state/history/metrics paths, bundled Prometheus/Grafana
   files, and optional `MULTI_NODE_*` threshold overrides.
+- `docs/release-install-guide-v0.8.md` documents the fresh macOS host
+  install, launchd services, multi-node naming/history checks,
+  Prometheus/Grafana setup, alert bridge verification, and handoff checklist.
 
 ## 0.7.0 - 2026-06-09
 

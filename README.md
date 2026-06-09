@@ -95,6 +95,7 @@ Current target environment:
 ## Documentation
 
 - [Install guide](docs/install.md)
+- [v0.8 release install guide](docs/release-install-guide-v0.8.md)
 - [Operations guide](docs/operations.md)
 - [Prometheus/Grafana integrations](docs/integrations.md)
 - [Compatibility guide](docs/compatibility.md)

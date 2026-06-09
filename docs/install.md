@@ -3,6 +3,9 @@
 Kaspa Node Watchtower is local-first. Install it on the same host that can read
 the local `kaspad` process, logs, data directory, and RPC/gRPC endpoint.
 
+For the current v0.8 fresh-host handoff path, use
+`docs/release-install-guide-v0.8.md` after this base install guide.
+
 ## Requirements
 
 - Python 3.12 or newer

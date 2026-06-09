@@ -27,8 +27,7 @@ The next operator work should prioritize distribution and host handoff:
 - Keep `scripts/ops_snapshot.sh` as the final release-readiness snapshot because
   it checks live node health, exporter metrics, Prometheus queries, active
   alerts, Grafana reachability, and GitHub Actions status in one command.
-- Finish v0.8 with config migration checks, a release install guide, and
-  Homebrew formula updates.
+- Finish v0.8 with Homebrew formula updates and post-install smoke guidance.
 
 ## v0.8 - Distribution and Onboarding
 
@@ -39,8 +38,8 @@ The next operator work should prioritize distribution and host handoff:
   smoke-test jobs.
 - Tighten config migration validation around SQLite history paths, multi-node
   naming, thresholds, and Prometheus/Grafana paths.
-- Publish a release install guide for a fresh macOS host, multi-node operation,
-  Prometheus/Grafana wiring, and alert bridge verification.
+- Document the release install guide for a fresh macOS host, multi-node
+  operation, Prometheus/Grafana wiring, and alert bridge verification.
 - Refresh the Homebrew formula and post-install smoke guidance for the current
   release asset.
 

@@ -111,6 +111,12 @@ Sanitized status examples:
 docs/sample-status-reports.md
 ```
 
+Fresh-host v0.8 handoff guide:
+
+```text
+docs/release-install-guide-v0.8.md
+```
+
 Diagnostic bundle:
 
 ```bash

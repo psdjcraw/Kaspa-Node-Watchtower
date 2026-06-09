@@ -1,0 +1,229 @@
+# v0.8 Release Install Guide
+
+This guide is the fresh-host handoff path for Kaspa Node Watchtower v0.8 work.
+Use it when setting up a new macOS node host or moving an existing checkout to
+a more repeatable launchd-based operation.
+
+## Fresh macOS Host
+
+Clone the repository and enter the checkout:
+
+```bash
+git clone https://github.com/psdjcraw/Kaspa-Node-Watchtower.git
+cd Kaspa-Node-Watchtower
+```
+
+Bootstrap Python and generated protobuf files:
+
+```bash
+make bootstrap
+```
+
+Run the guided first-pass check:
+
+```bash
+make onboard
+```
+
+Create a local config if one does not exist:
+
+```bash
+scripts/onboard_local.sh --write-config
+```
+
+Edit `config.json` for the host:
+
+- `node_name`
+- `process_match`
+- `rpc_endpoint`
+- `grpc_endpoint`
+- `log_path`
+- `data_dir`
+- `recovery.restart_command`
+
+Use a lowercase node name that includes a network hint, such as
+`kaspa-mainnet-local`, `kaspa-tn10-local`, or `kaspa-mainnet-macmini`.
+
+Validate before starting services:
+
+```bash
+make validate
+make proto-check
+make summary
+make prometheus
+```
+
+Run a full local smoke pass before handoff:
+
+```bash
+make smoke
+```
+
+## launchd Services
+
+Preview generated plists before applying them:
+
+```bash
+scripts/manage_launchd.sh --service exporter print
+scripts/manage_launchd.sh install
+```
+
+Install or repair the managed service set:
+
+```bash
+make launchd-install
+make launchd-status
+```
+
+Managed services:
+
+- `exporter`: Prometheus HTTP exporter, kept alive
+- `status`: alert-mode watchtower check every 5 minutes
+- `benchmark`: benchmark snapshot every 30 minutes
+- `daily`: daily operator report at 09:10
+- `weekly`: weekly operator report on Monday at 09:30
+- `alerts`: Prometheus alert bridge every 5 minutes
+- `smoke`: daily smoke test at 03:20
+
+Reload or remove services:
+
+```bash
+make launchd-restart
+make launchd-uninstall
+```
+
+Scope manual operations to one service when needed:
+
+```bash
+scripts/manage_launchd.sh --service exporter status
+scripts/manage_launchd.sh --service alerts --apply restart
+```
+
+## Multi-Node Operation
+
+Use stable names that encode network and host role:
+
+- `kaspa-mainnet-local`
+- `kaspa-mainnet-macmini`
+- `kaspa-tn10-local`
+- `kaspa-devnet-lab`
+
+Keep `sqlite_history_path` explicit in every config. Use separate state
+directories per host by default. Share or copy SQLite history only when you
+intentionally want a combined operator comparison window.
+
+Check multi-node history after benchmark history exists:
+
+```bash
+make history-multi-node
+scripts/export_history_sqlite.py --multi-node-summary --days 7
+```
+
+Optional comparison thresholds can be set per command:
+
+```bash
+MULTI_NODE_DAA_LAG_WARNING=120 \
+MULTI_NODE_BLOCK_LAG_WARNING=120 \
+MULTI_NODE_STALE_MINUTES=10 \
+make history-multi-node
+```
+
+Run `make validate` after setting `MULTI_NODE_*` overrides; invalid values are
+reported as `env.MULTI_NODE_*` failures.
+
+## Prometheus and Grafana
+
+Confirm the exporter is serving metrics:
+
+```bash
+curl -fsS http://127.0.0.1:9660/-/healthy
+curl -fsS http://127.0.0.1:9660/metrics | grep kaspa_watchtower_status_ok
+```
+
+Add the scrape job from:
+
+```text
+integrations/asus-traffic-monitor/prometheus-scrape.yml
+```
+
+Copy alert rules into the Prometheus rules mount:
+
+```bash
+mkdir -p /Users/psdjc/.openclaw/workspace/asus-traffic-monitor/prometheus-rules
+cp prometheus/kaspa-watchtower-rules.yml \
+  /Users/psdjc/.openclaw/workspace/asus-traffic-monitor/prometheus-rules/kaspa-watchtower-rules.yml
+```
+
+Validate Prometheus rules:
+
+```bash
+prometheus/run_rule_tests.sh
+```
+
+For the local Docker stack, validate inside the Prometheus container:
+
+```bash
+cd /Users/psdjc/.openclaw/workspace/asus-traffic-monitor
+docker compose exec -T prometheus promtool check config /etc/prometheus/prometheus.yml
+docker compose exec -T prometheus promtool check rules /etc/prometheus/rules/kaspa-watchtower-rules.yml
+```
+
+Install or refresh the Grafana dashboard:
+
+```bash
+cp grafana/kaspa-watchtower.json \
+  /Users/psdjc/.openclaw/workspace/asus-traffic-monitor/grafana/dashboards/kaspa-watchtower.json
+cd /Users/psdjc/.openclaw/workspace/asus-traffic-monitor
+docker compose restart grafana
+```
+
+Run the integration check when the local stack is available:
+
+```bash
+make integrations
+```
+
+## Alert Bridge
+
+Check Prometheus alerts directly:
+
+```bash
+scripts/check_prometheus_alerts.sh
+```
+
+Expected healthy baseline:
+
+- command exits `0`
+- no active watchtower alerts
+- `state/prometheus-alert-state.json` updates or remains valid
+
+The `alerts` LaunchAgent runs the same bridge every 5 minutes after
+`make launchd-install`.
+
+## Handoff Checklist
+
+Before handing the host to routine operation, confirm:
+
+- `make validate` passes
+- `make summary` returns the expected node and network
+- `make prometheus` writes `state/watchtower.prom`
+- `make smoke` passes
+- `make launchd-status` shows the expected services
+- exporter health endpoint returns OK
+- Prometheus target is up
+- Grafana dashboard loads with current node data
+- `prometheus/run_rule_tests.sh` passes
+- `scripts/check_prometheus_alerts.sh` reports no active alerts
+- `make history-multi-node` works after history exists
+- `scripts/ops_snapshot.sh` is clean enough for release-readiness review
+
+## Rollback
+
+Remove managed LaunchAgents:
+
+```bash
+make launchd-uninstall
+```
+
+Keep `config.json` and `state/` for later inspection unless the operator has
+explicitly decided to discard local history.
