@@ -4,8 +4,35 @@ All notable changes to Kaspa Node Watchtower are tracked here.
 
 ## Unreleased
 
+## 0.7.0 - 2026-06-09
+
+### Added
+
+- `make history-multi-node` now prints an operator verdict with per-network
+  baselines, lagging nodes, risky nodes, latest DAA/block lag, check lag,
+  peer lag, processed-age lag, and concise risk flags.
+- Multi-node comparison thresholds can be tuned with
+  `MULTI_NODE_DAA_LAG_WARNING`, `MULTI_NODE_BLOCK_LAG_WARNING`,
+  `MULTI_NODE_STALE_MINUTES`, `MULTI_NODE_PEER_LAG_WARNING`, and
+  `MULTI_NODE_PROCESSED_AGE_LAG_WARNING`.
+- Daily and weekly operator reports now include multi-node comparison sections.
+- `scripts/ops_snapshot.sh` now includes the multi-node history verdict in the
+  release-readiness snapshot.
+- Generated `status.html` now includes a Multi-Node History panel in the
+  History tab.
+- Prometheus textfile metrics now expose multi-node availability, verdict,
+  risk-node counts, lagging-node counts, per-node lag values, flag counts, and
+  individual risk flags.
+- Bundled Grafana dashboard now includes multi-node verdict, risk-node, and
+  node-lag panels.
+- Prometheus alert rules and rule tests now cover multi-node warning/critical
+  verdicts, risk nodes, lagging nodes, stale nodes, no-peer flags, and
+  DAA/block lag flags.
+- `config.example.json` now documents `sqlite_history_path`.
+
 ### Changed
 
+- Version now reports `0.7.0` for the v0.7.0 release.
 - Homebrew formula now points to the v0.6.1 release tarball and checksum.
 - Generated `status.html` now separates dense operator data into Market,
   Futures, Network, Ops, and History tabs, with timeframe and liquidation-map

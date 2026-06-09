@@ -103,6 +103,7 @@ Current target environment:
 - [Sample status reports](docs/sample-status-reports.md)
 - [Long-lived storage options](docs/storage-options.md)
 - [Packaging options](docs/packaging-options.md)
+- [v0.7.0 release notes](docs/release-notes-v0.7.0.md)
 - [v0.6.1 release notes](docs/release-notes-v0.6.1.md)
 - [v0.6.0 release notes](docs/release-notes-v0.6.0.md)
 - [v0.5.0 release notes](docs/release-notes-v0.5.0.md)
