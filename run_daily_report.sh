@@ -92,6 +92,17 @@ section "Benchmark Trend"
 section "Market Snapshot"
 "$PYTHON_BIN" watchtower.py -c config.json --market-snapshot --market-timeout 5
 
+section "Whale Watch"
+"$PYTHON_BIN" - <<'PY'
+from pathlib import Path
+
+import watchtower
+
+config = watchtower.load_config(Path("config.json"))
+report, _state = watchtower.build_stateful_report(config)
+print(watchtower.format_whale_daily_report(report))
+PY
+
 section "Recovery History"
 "$PYTHON_BIN" - <<'PY'
 import json

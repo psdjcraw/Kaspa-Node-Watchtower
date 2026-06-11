@@ -1246,6 +1246,7 @@ class WatchtowerUnitTests(unittest.TestCase):
             **config["whale_watch"],
             "enabled": True,
             "min_amount_sompi": 100_000_000_000_000,
+            "explorer_base_url": "https://explorer.example",
         }
         mempool = {
             "ok": True,
@@ -1271,6 +1272,8 @@ class WatchtowerUnitTests(unittest.TestCase):
         self.assertEqual(events[0]["type"], "whale_tx_pending")
         self.assertEqual(events[0]["amount_sompi"], 100_000_000_000_000)
         self.assertEqual(events[0]["amount_kas"], 1_000_000)
+        self.assertEqual(events[0]["tx_url"], "https://explorer.example/txs/abc123")
+        self.assertTrue(events[0]["address_url"].startswith("https://explorer.example/addresses/kaspa:"))
 
     def test_whale_events_from_confirmed_detects_single_large_output(self):
         config = copy.deepcopy(watchtower.DEFAULT_CONFIG)
@@ -1302,6 +1305,15 @@ class WatchtowerUnitTests(unittest.TestCase):
         self.assertEqual(events[0]["type"], "whale_tx_confirmed")
         self.assertEqual(events[0]["source"], "confirmed")
         self.assertEqual(events[0]["accepting_block_hash"], "block123")
+
+    def test_whale_explorer_url_requires_http_base(self):
+        config = copy.deepcopy(watchtower.DEFAULT_CONFIG)
+        config["whale_watch"] = {
+            **config["whale_watch"],
+            "explorer_base_url": "ftp://explorer.example",
+        }
+
+        self.assertEqual(watchtower.whale_explorer_url(config, "tx", "abc123"), "")
 
     def test_update_whale_event_state_dedupes_repeated_events(self):
         config = copy.deepcopy(watchtower.DEFAULT_CONFIG)
@@ -1518,6 +1530,7 @@ class WatchtowerUnitTests(unittest.TestCase):
                         "source": "mempool",
                         "tx_id": "abcdef1234567890",
                         "amount_sompi": 125_000_000_000_000,
+                        "tx_url": "https://explorer.example/txs/abcdef1234567890",
                     }
                 ],
             },
@@ -1529,6 +1542,40 @@ class WatchtowerUnitTests(unittest.TestCase):
         self.assertIn("threshold=1000000.00000000 KAS", text)
         self.assertIn("24h_count=1", text)
         self.assertIn("amount=1250000.00000000 KAS", text)
+        self.assertIn("link=https://explorer.example/txs/abcdef1234567890", text)
+
+    def test_format_whale_daily_report_includes_counts_and_link(self):
+        report = {
+            "whale_watch": {
+                "enabled": True,
+                "ok": True,
+                "min_amount_sompi": 100_000_000_000_000,
+                "mempool_entries": 4,
+                "candidates": [],
+                "confirmed_candidates": [],
+                "detail": "mempool read ok",
+                "confirmed_detail": "no virtual chain movement",
+                "explorer_base_url": "https://explorer.example",
+                "events": [
+                    {
+                        "observed_at": dt.datetime.now().astimezone().isoformat(),
+                        "type": "whale_tx_confirmed",
+                        "source": "confirmed",
+                        "status": "new",
+                        "tx_id": "abcdef1234567890",
+                        "amount_sompi": 125_000_000_000_000,
+                        "tx_url": "https://explorer.example/txs/abcdef1234567890",
+                    }
+                ],
+            },
+        }
+
+        text = watchtower.format_whale_daily_report(report)
+
+        self.assertIn("24h_count=1", text)
+        self.assertIn("confirmed_24h=1", text)
+        self.assertIn("24h_volume=1250000.00000000 KAS", text)
+        self.assertIn("link=https://explorer.example/txs/abcdef1234567890", text)
 
     def test_format_discord_incidents_includes_current_and_recovery(self):
         report = {

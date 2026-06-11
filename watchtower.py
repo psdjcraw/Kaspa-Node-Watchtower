@@ -16,6 +16,7 @@ import sqlite3
 import subprocess
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from contextlib import closing
 from dataclasses import dataclass
@@ -83,6 +84,9 @@ DEFAULT_CONFIG = {
         "min_amount_sompi": 100_000_000_000_000,
         "alert_enabled": True,
         "event_history_entries": 100,
+        "explorer_base_url": "",
+        "explorer_tx_path": "/txs/{tx_id}",
+        "explorer_address_path": "/addresses/{address}",
     },
     "thresholds": {
         "alert_repeat_minutes": 60,
@@ -536,6 +540,41 @@ def whale_watch_config(config: dict[str, Any]) -> dict[str, Any]:
     return {**DEFAULT_CONFIG["whale_watch"], **raw}
 
 
+def whale_explorer_url(config: dict[str, Any], kind: str, value: Any) -> str:
+    whale_config = whale_watch_config(config)
+    base = str(whale_config.get("explorer_base_url") or "").strip().rstrip("/")
+    raw_value = str(value or "").strip()
+    if not base or not raw_value:
+        return ""
+    if not re.fullmatch(r"https?://[^/\s]+.*", base):
+        return ""
+    if kind == "tx":
+        template = str(whale_config.get("explorer_tx_path") or DEFAULT_CONFIG["whale_watch"]["explorer_tx_path"])
+        replacements = {"tx_id": urllib.parse.quote(raw_value, safe=""), "address": ""}
+    elif kind == "address":
+        template = str(whale_config.get("explorer_address_path") or DEFAULT_CONFIG["whale_watch"]["explorer_address_path"])
+        replacements = {"tx_id": "", "address": urllib.parse.quote(raw_value, safe=":")}
+    else:
+        return ""
+    try:
+        path = template.format(**replacements)
+    except (KeyError, ValueError):
+        return ""
+    if re.fullmatch(r"https?://[^\s]+", path):
+        return path
+    return f"{base}/{path.lstrip('/')}"
+
+
+def enrich_whale_event_links(event: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
+    tx_url = whale_explorer_url(config, "tx", event.get("tx_id"))
+    address_url = whale_explorer_url(config, "address", event.get("address"))
+    if tx_url:
+        event["tx_url"] = tx_url
+    if address_url:
+        event["address_url"] = address_url
+    return event
+
+
 def whale_event_key(source: Any, tx_id: Any, amount_sompi: Any, address: Any = "") -> str:
     return f"{source or ''}|{tx_id or ''}|{int(amount_sompi or 0)}|{address or ''}"
 
@@ -553,23 +592,26 @@ def whale_events_from_mempool(mempool: dict[str, Any], config: dict[str, Any], c
                 continue
             address = str(output.get("address") or "")
             events.append(
-                {
-                    "event_key": whale_event_key("mempool", tx_id, amount, address),
-                    "observed_at": checked_at,
-                    "type": "whale_tx_pending",
-                    "source": "mempool",
-                    "tx_id": tx_id,
-                    "address": address,
-                    "amount_sompi": amount,
-                    "amount_kas": kas_from_sompi(amount),
-                    "threshold_sompi": threshold,
-                    "threshold_kas": kas_from_sompi(threshold),
-                    "fee_sompi": entry.get("fee_sompi"),
-                    "total_output_sompi": entry.get("total_output_sompi"),
-                    "largest_output_sompi": entry.get("largest_output_sompi"),
-                    "input_count": entry.get("input_count"),
-                    "output_count": entry.get("output_count"),
-                }
+                enrich_whale_event_links(
+                    {
+                        "event_key": whale_event_key("mempool", tx_id, amount, address),
+                        "observed_at": checked_at,
+                        "type": "whale_tx_pending",
+                        "source": "mempool",
+                        "tx_id": tx_id,
+                        "address": address,
+                        "amount_sompi": amount,
+                        "amount_kas": kas_from_sompi(amount),
+                        "threshold_sompi": threshold,
+                        "threshold_kas": kas_from_sompi(threshold),
+                        "fee_sompi": entry.get("fee_sompi"),
+                        "total_output_sompi": entry.get("total_output_sompi"),
+                        "largest_output_sompi": entry.get("largest_output_sompi"),
+                        "input_count": entry.get("input_count"),
+                        "output_count": entry.get("output_count"),
+                    },
+                    config,
+                )
             )
     events.sort(key=lambda item: int(item.get("amount_sompi") or 0), reverse=True)
     return events
@@ -587,23 +629,26 @@ def whale_events_from_confirmed(chain: dict[str, Any], config: dict[str, Any], c
                 continue
             address = str(output.get("address") or "")
             events.append(
-                {
-                    "event_key": whale_event_key("confirmed", tx_id, amount, address),
-                    "observed_at": checked_at,
-                    "type": "whale_tx_confirmed",
-                    "source": "confirmed",
-                    "tx_id": tx_id,
-                    "address": address,
-                    "amount_sompi": amount,
-                    "amount_kas": kas_from_sompi(amount),
-                    "threshold_sompi": threshold,
-                    "threshold_kas": kas_from_sompi(threshold),
-                    "accepting_block_hash": entry.get("accepting_block_hash") or "",
-                    "total_output_sompi": entry.get("total_output_sompi"),
-                    "largest_output_sompi": entry.get("largest_output_sompi"),
-                    "input_count": entry.get("input_count"),
-                    "output_count": entry.get("output_count"),
-                }
+                enrich_whale_event_links(
+                    {
+                        "event_key": whale_event_key("confirmed", tx_id, amount, address),
+                        "observed_at": checked_at,
+                        "type": "whale_tx_confirmed",
+                        "source": "confirmed",
+                        "tx_id": tx_id,
+                        "address": address,
+                        "amount_sompi": amount,
+                        "amount_kas": kas_from_sompi(amount),
+                        "threshold_sompi": threshold,
+                        "threshold_kas": kas_from_sompi(threshold),
+                        "accepting_block_hash": entry.get("accepting_block_hash") or "",
+                        "total_output_sompi": entry.get("total_output_sompi"),
+                        "largest_output_sompi": entry.get("largest_output_sompi"),
+                        "input_count": entry.get("input_count"),
+                        "output_count": entry.get("output_count"),
+                    },
+                    config,
+                )
             )
     events.sort(key=lambda item: int(item.get("amount_sompi") or 0), reverse=True)
     return events
@@ -620,6 +665,9 @@ def fetch_optional_whale_watch(config: dict[str, Any], endpoint: str) -> dict[st
         "min_amount_kas": kas_from_sompi(whale_config.get("min_amount_sompi") or DEFAULT_CONFIG["whale_watch"]["min_amount_sompi"]),
         "alert_enabled": bool(whale_config.get("alert_enabled", True)),
         "event_history_entries": positive_int(whale_config.get("event_history_entries"), DEFAULT_CONFIG["whale_watch"]["event_history_entries"]),
+        "explorer_base_url": str(whale_config.get("explorer_base_url") or ""),
+        "explorer_tx_path": str(whale_config.get("explorer_tx_path") or DEFAULT_CONFIG["whale_watch"]["explorer_tx_path"]),
+        "explorer_address_path": str(whale_config.get("explorer_address_path") or DEFAULT_CONFIG["whale_watch"]["explorer_address_path"]),
         "mempool_entries": 0,
         "candidates": [],
         "detail": "disabled",
@@ -692,14 +740,15 @@ def update_whale_event_state(state: dict[str, Any], report: dict[str, Any], conf
     whale = report.get("whale_watch") or {}
     candidates = list(whale.get("candidates") or [])
     if not candidates:
-        whale["events"] = list(state.get("whale_events") or [])
+        whale["events"] = [enrich_whale_event_links(dict(event), config) for event in list(state.get("whale_events") or [])]
         return []
     whale_config = whale_watch_config(config)
     limit = positive_int(whale_config.get("event_history_entries"), DEFAULT_CONFIG["whale_watch"]["event_history_entries"])
-    events = list(state.get("whale_events") or [])
+    events = [enrich_whale_event_links(dict(event), config) for event in list(state.get("whale_events") or [])]
     seen = {str(event.get("event_key") or whale_event_key(event.get("source"), event.get("tx_id"), event.get("amount_sompi"), event.get("address"))) for event in events}
     new_events = []
     for event in candidates:
+        enrich_whale_event_links(event, config)
         key = str(event.get("event_key") or whale_event_key(event.get("source"), event.get("tx_id"), event.get("amount_sompi"), event.get("address")))
         if key in seen:
             continue
@@ -735,6 +784,8 @@ def whale_watch_summary(events: list[dict[str, Any]], *, now: dt.datetime | None
     return {
         "total_events": len(events),
         "count_24h": len(recent),
+        "pending_24h": sum(1 for event in recent if event.get("source") == "mempool"),
+        "confirmed_24h": sum(1 for event in recent if event.get("source") == "confirmed"),
         "volume_24h_sompi": sum(int(event.get("amount_sompi") or 0) for event in recent),
         "volume_24h_kas": kas_from_sompi(sum(int(event.get("amount_sompi") or 0) for event in recent)) or 0.0,
         "latest_amount_sompi": latest.get("amount_sompi"),
@@ -2015,6 +2066,14 @@ def recovery_plan(config: dict, severity: str) -> dict[str, Any]:
 
 def html_row(cells: list[Any], tag: str = "td") -> str:
     return "<tr>" + "".join(f"<{tag}>{html.escape(str(cell))}</{tag}>" for cell in cells) + "</tr>"
+
+
+def html_link(url: Any, label: Any) -> str:
+    href = str(url or "").strip()
+    text = html.escape(str(label or ""))
+    if not href or not re.fullmatch(r"https?://[^\s]+", href):
+        return text
+    return f'<a href="{html.escape(href, quote=True)}" target="_blank" rel="noopener noreferrer">{text}</a>'
 
 
 def css_percent(value: float | int | None) -> str:
@@ -3754,18 +3813,20 @@ def whale_watch_panel(report: dict[str, Any], state: dict[str, Any]) -> str:
     whale = report.get("whale_watch") or {}
     events = list(whale.get("events") or state.get("whale_events") or [])
     summary = whale_watch_summary(events)
+    def event_row(item: dict[str, Any]) -> str:
+        cells = [
+            html.escape(str(item.get("observed_at", ""))),
+            html.escape(str(item.get("type", ""))),
+            html.escape(format_kas(item.get("amount_sompi"))),
+            html_link(item.get("tx_url"), short_hash(item.get("tx_id"))),
+            html.escape(str(item.get("source", "unknown"))),
+            html.escape(str(item.get("status", ""))),
+            html_link(item.get("address_url"), item.get("address") or ""),
+        ]
+        return "<tr>" + "".join(f"<td>{cell}</td>" for cell in cells) + "</tr>"
+
     event_rows = "\n".join(
-        html_row(
-            [
-                item.get("observed_at", ""),
-                item.get("type", ""),
-                format_kas(item.get("amount_sompi")),
-                short_hash(item.get("tx_id")),
-                item.get("source", "unknown"),
-                item.get("status", ""),
-                item.get("address") or "",
-            ]
-        )
+        event_row(item)
         for item in reversed(events[-20:])
     ) or html_row(["none", "no whale events recorded", "", "", "", "", ""])
     return f"""
@@ -3788,6 +3849,7 @@ def whale_watch_panel(report: dict[str, Any], state: dict[str, Any]) -> str:
           <div class="context-item"><div class="context-label">Latest Observed</div><div class="context-value">{html.escape(str(summary.get('latest_observed_at') or 'none'))}</div></div>
           <div class="context-item"><div class="context-label">Detail</div><div class="context-value">{html.escape(str(whale.get('detail', 'unknown')))}</div></div>
           <div class="context-item"><div class="context-label">Confirmed Detail</div><div class="context-value">{html.escape(str(whale.get('confirmed_detail', 'unknown')))}</div></div>
+          <div class="context-item"><div class="context-label">Explorer</div><div class="context-value">{html.escape(str(whale.get('explorer_base_url') or 'off'))}</div></div>
         </div>
       </section>
       <section class="panel">
@@ -7089,10 +7151,13 @@ def format_alert(
             short_tx = tx_id if len(tx_id) <= 18 else f"{tx_id[:10]}...{tx_id[-6:]}"
             address = str(item.get("address") or "")
             short_address = address if len(address) <= 24 else f"{address[:12]}...{address[-8:]}"
-            lines.append(
+            line = (
                 f"- amount={format_kas(item.get('amount_sompi'))} "
                 f"tx={short_tx} address={short_address or 'unknown'} source={item.get('source', 'unknown')}"
             )
+            if item.get("tx_url"):
+                line += f" link={item.get('tx_url')}"
+            lines.append(line)
     elif event in {"wallet_changed", "wallet_large_outgoing"}:
         wallet = report.get("wallet") or {}
         change = wallet.get("change") or {}
@@ -7562,14 +7627,60 @@ def format_discord_whales(report: dict[str, Any]) -> str:
     for event in reversed(events[-8:]):
         tx_id = str(event.get("tx_id") or "unknown")
         short_tx = tx_id if len(tx_id) <= 18 else f"{tx_id[:10]}...{tx_id[-6:]}"
-        lines.append(
+        line = (
             f"- {event.get('observed_at', 'unknown')} "
             f"type={event.get('type', 'unknown')} "
             f"amount={format_kas(event.get('amount_sompi'))} "
             f"tx={short_tx} source={event.get('source', 'unknown')} status={event.get('status', 'new')}"
         )
+        if event.get("tx_url"):
+            line += f" link={event.get('tx_url')}"
+        lines.append(line)
     if not events:
         lines.append("no whale events recorded")
+    return "\n".join(lines)
+
+
+def format_whale_daily_report(report: dict[str, Any]) -> str:
+    whale = report.get("whale_watch") or {}
+    events = list(whale.get("events") or [])
+    summary = whale_watch_summary(events)
+    lines = [
+        f"enabled={whale.get('enabled', False)} ok={whale.get('ok', False)} threshold={format_kas(whale.get('min_amount_sompi'))}",
+        (
+            f"24h_count={summary.get('count_24h', 0)} "
+            f"pending_24h={summary.get('pending_24h', 0)} "
+            f"confirmed_24h={summary.get('confirmed_24h', 0)} "
+            f"24h_volume={format_kas(summary.get('volume_24h_sompi'))}"
+        ),
+        (
+            f"total_events={summary.get('total_events', 0)} "
+            f"latest_amount={format_kas(summary.get('latest_amount_sompi'))} "
+            f"latest_tx={short_hash(summary.get('latest_tx_id'))} "
+            f"latest_observed={summary.get('latest_observed_at') or 'none'}"
+        ),
+        f"mempool_entries={whale.get('mempool_entries', 0)} candidates={len(whale.get('candidates') or [])} confirmed_candidates={len(whale.get('confirmed_candidates') or [])}",
+        f"detail={whale.get('detail', 'unknown')} confirmed_detail={whale.get('confirmed_detail', 'unknown')}",
+        f"explorer={whale.get('explorer_base_url') or 'off'}",
+    ]
+    if events:
+        lines.append("recent_events:")
+        for event in reversed(events[-5:]):
+            tx_id = str(event.get("tx_id") or "unknown")
+            short_tx = tx_id if len(tx_id) <= 18 else f"{tx_id[:10]}...{tx_id[-6:]}"
+            line = (
+                f"- {event.get('observed_at', 'unknown')} "
+                f"type={event.get('type', 'unknown')} "
+                f"source={event.get('source', 'unknown')} "
+                f"status={event.get('status', 'new')} "
+                f"amount={format_kas(event.get('amount_sompi'))} "
+                f"tx={short_tx}"
+            )
+            if event.get("tx_url"):
+                line += f" link={event.get('tx_url')}"
+            lines.append(line)
+    else:
+        lines.append("recent_events=none")
     return "\n".join(lines)
 
 
@@ -9129,6 +9240,9 @@ def config_validation_checks(config: dict) -> list[Check]:
         ("min_amount_sompi", positive_int_config, "integer > 0"),
         ("alert_enabled", lambda value: isinstance(value, bool), "boolean"),
         ("event_history_entries", positive_int_config, "integer > 0"),
+        ("explorer_base_url", lambda value: value in (None, "") or bool(re.fullmatch(r"https?://[^/\s]+.*", str(value))), "empty or http(s) URL"),
+        ("explorer_tx_path", lambda value: isinstance(value, str) and "{tx_id}" in value, "string containing {tx_id}"),
+        ("explorer_address_path", lambda value: isinstance(value, str) and "{address}" in value, "string containing {address}"),
     ]
     for key, validator, expected in whale_specs:
         value = whale.get(key, DEFAULT_CONFIG["whale_watch"].get(key))

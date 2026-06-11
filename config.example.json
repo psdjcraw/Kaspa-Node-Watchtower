@@ -58,7 +58,10 @@
     "confirmed_enabled": true,
     "min_amount_sompi": 100000000000000,
     "alert_enabled": true,
-    "event_history_entries": 100
+    "event_history_entries": 100,
+    "explorer_base_url": "",
+    "explorer_tx_path": "/txs/{tx_id}",
+    "explorer_address_path": "/addresses/{address}"
   },
   "thresholds": {
     "alert_repeat_minutes": 60,

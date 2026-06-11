@@ -244,7 +244,10 @@ Enable 1M+ KAS whale detection from the local mempool snapshot:
   "confirmed_enabled": true,
   "min_amount_sompi": 100000000000000,
   "alert_enabled": true,
-  "event_history_entries": 100
+  "event_history_entries": 100,
+  "explorer_base_url": "",
+  "explorer_tx_path": "/txs/{tx_id}",
+  "explorer_address_path": "/addresses/{address}"
 }
 ```
 
@@ -254,6 +257,9 @@ dedupes by source, tx id, amount, and address, tracks pending mempool events,
 then uses `GetVirtualChainFromBlockV2` to record confirmed events after the
 first chain-hash baseline is established. It emits a `whale_tx_detected` alert
 for new pending or confirmed events.
+Set `explorer_base_url` only when you want optional tx/address links in the
+Whales tab, Discord output, alerts, and daily report; Watchtower still does not
+call that explorer API.
 
 Print the watchtower version:
 
@@ -513,8 +519,9 @@ make weekly-archive
 The daily report includes an operator verdict, node health, incident duration,
 maintenance mute state, latest recovery context, processed transaction
 freshness, mainnet sync progress, benchmark stability, optional KAS/USDT market
-context, recent SQLite history summary, multi-node comparison verdict,
-integration status, and smoke/CodeQL workflow status.
+context, 1M+ KAS whale-watch counts and volume, recent SQLite history summary,
+multi-node comparison verdict, integration status, and smoke/CodeQL workflow
+status.
 The weekly report focuses on diagnostics summary, 7-day and 30-day SQLite
 history, multi-node comparison windows, benchmark trend, optional KAS/USDT
 market context, recovery attempts, and upgrade checkpoints.
