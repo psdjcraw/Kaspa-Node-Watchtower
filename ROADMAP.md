@@ -62,6 +62,30 @@ The next operator work should prioritize distribution and host handoff:
 - Use the comparison output to decide which node needs attention before adding
   broader dashboard surface area.
 
+## 2026-06-10 Execution Status
+
+- Continued the goal-tracked roadmap from the operator thread.
+- Strengthened the observation baseline by adding an `active_peer_count`
+  health check with configurable `thresholds.min_active_peer_count`.
+- Classified active-peer loss as a critical health failure, separate from total
+  peer count, so alerting can catch connected-but-inactive node states.
+- Connected the active-peer signal to Prometheus alerting with
+  `KaspaNodeActivePeerCountLow` and rule-test coverage.
+- Moved the roadmap into the alert-to-recovery handoff by marking failed
+  recovery commands and still-unhealthy post-recovery checks as
+  `operator_required=true` in recovery history.
+- Surfaced the latest `operator_required` recovery state in `status.html` so
+  the dashboard shows when automatic recovery must stop and a human should
+  inspect the node.
+- Documented the stop-and-inspect rule for recovery attempts that do not return
+  the node to healthy status.
+- Added the first alert-system pass for operator-facing cause guesses, health
+  score, incident duration tracking, and maintenance mute behavior.
+- Exposed the new operator fields in alert/summary output, status dashboard
+  facts, and Prometheus textfile metrics.
+- Verified `config.example.json` validation and the watchtower unit test suite
+  after the change.
+
 ## 2026-06-08 Execution Status
 
 - Completed the single-node stability pass with live `scripts/ops_snapshot.sh`

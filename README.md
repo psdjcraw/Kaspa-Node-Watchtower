@@ -38,7 +38,8 @@ which supports a more resilient decentralized network.
 - Direct rusty-kaspa gRPC metrics: sync status, peers, network id, DAA score,
   block/header counts, mempool, DAG tips, pruning point, difficulty, estimated
   network hashrate, and process metrics
-- Alert severity, repeat suppression, history, and polished local HTML status page generation
+- Alert severity, repeat suppression, maintenance mute, incident duration
+  tracking, health score, and polished local HTML status page generation
 - Tabbed `status.html` layout that separates Market, Futures, Network, Ops,
   and History views so dense operator data is not shown all at once
 - Concise `--summary` output for quick Discord/operator status checks
@@ -78,6 +79,18 @@ which supports a more resilient decentralized network.
   the bundled Grafana dashboard
 - Prometheus textfile metrics for local scraping or textfile collectors
 - Long-lived SQLite history export and operator summary reporting
+- Watch-only wallet balance monitoring through the local Kaspa gRPC endpoint;
+  no private keys, signing, or transaction sending are handled by Watchtower
+- Wallet balance-change alerts and Grafana panels for total balance, balance
+  delta, and address-level balances
+- Wallet transaction view with address-related mempool entries and a local
+  balance-change event timeline
+- Mining reward summary cards for wallet events labeled `mining`, including
+  today/7-day/30-day KAS and USD estimates from the latest market snapshot
+- Mining tab scaffold for external miner monitoring on macOS experiments,
+  including process state, parsed hashrate, share counts, and Prometheus metrics
+- Whale watch for 1M+ KAS single-output mempool transactions, with event
+  history, Discord alerts, dashboard tab, and Prometheus metrics
 
 ## Planned Features
 
@@ -148,6 +161,100 @@ For a concise operator summary:
 make diagnostics-summary
 ```
 
+For a planned restart or upgrade window:
+
+```bash
+make maintenance-status
+make mute MUTE_MINUTES=30 MUTE_REASON="kaspad upgrade"
+make unmute
+```
+
+Discord/OpenClaw command bridge targets:
+
+```bash
+make discord-status
+make discord-incidents
+make discord-wallet
+make discord-wallet-txs
+make discord-mining
+make discord-whales
+make mining-set-address MINING_ADDRESS="kaspa:q..."
+make mining-clear-address
+make discord-mute MUTE_MINUTES=30 MUTE_REASON="kaspad upgrade"
+make discord-unmute
+```
+
+Enable watch-only wallet monitoring by adding address labels to `config.json`:
+
+```json
+"wallet": {
+  "enabled": true,
+  "alert_on_change": true,
+  "alert_min_delta_sompi": 1,
+  "alert_directions": "all",
+  "large_outgoing_alert_sompi": 0,
+  "mining_reward_stale_hours": 0,
+  "event_history_entries": 50,
+  "watch_addresses": [
+    {
+      "label": "mining",
+      "address": "kaspa:q...",
+      "alert_enabled": true,
+      "alert_min_delta_sompi": 1,
+      "alert_directions": "incoming"
+    }
+  ]
+}
+```
+
+Enable the first macOS mining monitor scaffold by pointing Watchtower at an
+external miner process/log. This does not start or stop a miner; it only
+monitors the process, parsed hashrate, shares, and pool context for the Mining
+tab and Prometheus metrics.
+
+Store the mining payout address with the helper command so the miner monitor,
+Mining tab, and future miner command templates all read the same public payout
+address. Never put private keys, seed phrases, or wallet files in Watchtower
+config.
+
+```bash
+make mining-set-address MINING_ADDRESS="kaspa:q..."
+make mining-clear-address
+```
+
+```json
+"mining": {
+  "enabled": true,
+  "mode": "macos-gpu-experimental",
+  "process_match": "kaspa-miner",
+  "log_path": "state/miner.log",
+  "pool_url": "stratum+tcp://pool.example:port",
+  "wallet_address": "kaspa:q...",
+  "worker_name": "macos-gpu-test",
+  "expected_hashrate_min_hs": 0,
+  "stale_share_minutes": 0
+}
+```
+
+Enable 1M+ KAS whale detection from the local mempool snapshot:
+
+```json
+"whale_watch": {
+  "enabled": true,
+  "confirmed_enabled": true,
+  "min_amount_sompi": 100000000000000,
+  "alert_enabled": true,
+  "event_history_entries": 100
+}
+```
+
+`min_amount_sompi=100000000000000` is exactly 1,000,000 KAS. When enabled,
+Watchtower records each single transaction output at or above the threshold,
+dedupes by source, tx id, amount, and address, tracks pending mempool events,
+then uses `GetVirtualChainFromBlockV2` to record confirmed events after the
+first chain-hash baseline is established. It emits a `whale_tx_detected` alert
+for new pending or confirmed events.
+
 Print the watchtower version:
 
 ```bash
@@ -202,6 +309,7 @@ make smoke
 make daily-report
 make weekly-report
 make weekly-archive
+make recover-dry-run
 make ensure-exporter
 make diagnostics-archive
 make history-report
@@ -402,10 +510,11 @@ make weekly-report
 make weekly-archive
 ```
 
-The daily report includes an operator verdict, node health, processed
-transaction freshness, mainnet sync progress, benchmark stability, optional
-KAS/USDT market context, recent SQLite history summary, multi-node comparison
-verdict, integration status, and smoke/CodeQL workflow status.
+The daily report includes an operator verdict, node health, incident duration,
+maintenance mute state, latest recovery context, processed transaction
+freshness, mainnet sync progress, benchmark stability, optional KAS/USDT market
+context, recent SQLite history summary, multi-node comparison verdict,
+integration status, and smoke/CodeQL workflow status.
 The weekly report focuses on diagnostics summary, 7-day and 30-day SQLite
 history, multi-node comparison windows, benchmark trend, optional KAS/USDT
 market context, recovery attempts, and upgrade checkpoints.

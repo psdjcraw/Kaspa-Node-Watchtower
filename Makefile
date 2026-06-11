@@ -7,8 +7,11 @@ MULTI_NODE_BLOCK_LAG_WARNING ?= 120
 MULTI_NODE_STALE_MINUTES ?= 10
 MULTI_NODE_PEER_LAG_WARNING ?= 2
 MULTI_NODE_PROCESSED_AGE_LAG_WARNING ?= 60
+MUTE_MINUTES ?= 30
+MUTE_REASON ?= planned maintenance
+MINING_ADDRESS ?=
 
-.PHONY: help onboard bootstrap proto-check version status stream summary sync-report diagnostics-summary incident-report json alert smoke ci integrations simulate-exporter-failure ensure-exporter launchd-status launchd-install launchd-restart launchd-uninstall diagnostics diagnostics-archive daily-report weekly-report weekly-archive benchmark benchmark-report prometheus export-history history-report history-multi-node history-archive upload-archive package prune validate recover-dry-run recover force-recover-dry-run
+.PHONY: help onboard bootstrap proto-check version status stream summary sync-report diagnostics-summary incident-report json alert discord-status discord-incidents discord-wallet discord-wallet-txs discord-mining discord-whales mining-set-address mining-clear-address discord-maintenance discord-mute discord-mute-all discord-unmute maintenance-status mute mute-all unmute smoke ci integrations simulate-exporter-failure ensure-exporter launchd-status launchd-install launchd-restart launchd-uninstall diagnostics diagnostics-archive daily-report weekly-report weekly-archive benchmark benchmark-report prometheus export-history history-report history-multi-node history-archive upload-archive package prune validate recover-dry-run recover force-recover-dry-run
 
 help:
 	@printf 'Kaspa Node Watchtower operator commands\n'
@@ -24,6 +27,19 @@ help:
 	@printf '  make diagnostics-summary Print sanitized incident summary\n'
 	@printf '  make incident-report     Print sanitized Markdown incident report\n'
 	@printf '  make json                Print the raw JSON health report\n'
+	@printf '  make discord-status      Print Discord-friendly node status\n'
+	@printf '  make discord-incidents   Print Discord-friendly incident state\n'
+	@printf '  make discord-wallet      Print Discord-friendly watch-only wallet balances\n'
+	@printf '  make discord-wallet-txs  Print pending wallet txs and recorded wallet events\n'
+	@printf '  make discord-mining      Print Discord-friendly miner monitor state\n'
+	@printf '  make discord-whales      Print Discord-friendly 1M+ KAS whale events\n'
+	@printf '  make mining-set-address  Store payout address; set MINING_ADDRESS=kaspa:...\n'
+	@printf '  make mining-clear-address Clear stored mining payout address\n'
+	@printf '  make discord-mute        Discord bridge mute; set MUTE_MINUTES/REASON\n'
+	@printf '  make maintenance-status  Print alert mute state\n'
+	@printf '  make mute                Mute non-critical alerts; set MUTE_MINUTES/REASON\n'
+	@printf '  make mute-all            Mute all alerts; set MUTE_MINUTES/REASON\n'
+	@printf '  make unmute              Clear alert mute state\n'
 	@printf '  make smoke               Run the local smoke test suite\n'
 	@printf '  make ci                  Check latest GitHub Actions smoke run\n'
 	@printf '  make integrations        Check exporter, Prometheus, Grafana, and CI\n'
@@ -87,6 +103,55 @@ json:
 
 alert:
 	@$(PYTHON) watchtower.py -c $(CONFIG) --alert
+
+discord-status:
+	@$(PYTHON) scripts/discord_command_handler.py -c $(CONFIG) status
+
+discord-incidents:
+	@$(PYTHON) scripts/discord_command_handler.py -c $(CONFIG) incidents
+
+discord-wallet:
+	@$(PYTHON) scripts/discord_command_handler.py -c $(CONFIG) wallet
+
+discord-wallet-txs:
+	@$(PYTHON) scripts/discord_command_handler.py -c $(CONFIG) wallet-txs
+
+discord-mining:
+	@$(PYTHON) scripts/discord_command_handler.py -c $(CONFIG) mining
+
+discord-whales:
+	@$(PYTHON) scripts/discord_command_handler.py -c $(CONFIG) whales
+
+mining-set-address:
+	@test -n "$(MINING_ADDRESS)" || (printf 'MINING_ADDRESS is required\n' >&2; exit 2)
+	@$(PYTHON) watchtower.py -c $(CONFIG) --set-mining-address "$(MINING_ADDRESS)"
+
+mining-clear-address:
+	@$(PYTHON) watchtower.py -c $(CONFIG) --clear-mining-address
+
+discord-maintenance:
+	@$(PYTHON) scripts/discord_command_handler.py -c $(CONFIG) maintenance
+
+discord-mute:
+	@$(PYTHON) scripts/discord_command_handler.py -c $(CONFIG) mute --minutes "$(MUTE_MINUTES)" --reason "$(MUTE_REASON)"
+
+discord-mute-all:
+	@$(PYTHON) scripts/discord_command_handler.py -c $(CONFIG) mute-all --minutes "$(MUTE_MINUTES)" --reason "$(MUTE_REASON)"
+
+discord-unmute:
+	@$(PYTHON) scripts/discord_command_handler.py -c $(CONFIG) unmute
+
+maintenance-status:
+	@$(PYTHON) watchtower.py -c $(CONFIG) --maintenance-status
+
+mute:
+	@$(PYTHON) watchtower.py -c $(CONFIG) --mute-for "$(MUTE_MINUTES)" --maintenance-reason "$(MUTE_REASON)"
+
+mute-all:
+	@$(PYTHON) watchtower.py -c $(CONFIG) --mute-for "$(MUTE_MINUTES)" --maintenance-reason "$(MUTE_REASON)" --mute-all
+
+unmute:
+	@$(PYTHON) watchtower.py -c $(CONFIG) --unmute
 
 smoke:
 	@scripts/smoke_test.sh

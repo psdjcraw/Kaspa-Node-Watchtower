@@ -12,6 +12,8 @@ tests:
         values: '0+0x20'
       - series: 'kaspa_watchtower_peer_count{job="kaspa-watchtower",node="test"}'
         values: '8+0x20'
+      - series: 'kaspa_watchtower_active_peer_count{job="kaspa-watchtower",node="test"}'
+        values: '8+0x20'
       - series: 'kaspa_watchtower_relay_blocks_window{job="kaspa-watchtower",node="test"}'
         values: '100+0x20'
       - series: 'kaspa_watchtower_synced{job="kaspa-watchtower",node="test"}'
@@ -22,6 +24,9 @@ tests:
         exp_alerts: []
       - eval_time: 5m
         alertname: KaspaNodePeerCountLow
+        exp_alerts: []
+      - eval_time: 5m
+        alertname: KaspaNodeActivePeerCountLow
         exp_alerts: []
       - eval_time: 20m
         alertname: KaspaRelayProgressStalled
@@ -62,6 +67,24 @@ tests:
             exp_annotations:
               summary: "Kaspa node has no connected peers"
               description: "Peer count is below 1 for node test."
+
+  - interval: 1m
+    input_series:
+      - series: 'kaspa_watchtower_active_peer_count{job="kaspa-watchtower",node="test"}'
+        values: '0+0x5'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: KaspaNodeActivePeerCountLow
+        exp_alerts:
+          - exp_labels:
+              alertname: KaspaNodeActivePeerCountLow
+              job: kaspa-watchtower
+              node: test
+              service: kaspa-watchtower
+              severity: critical
+            exp_annotations:
+              summary: "Kaspa node has no active peers"
+              description: "Active peer count is below 1 for node test."
 
   - interval: 1m
     input_series:

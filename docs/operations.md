@@ -399,13 +399,20 @@ Manual recovery dry-run:
 
 Dry-run output starts with a recovery decision block that shows the node status,
 severity, failed checks, recovery mode, force/dry-run flags, whether the restart
-command is configured, and the recommended next action.
+command is configured, the recovery policy verdict, and the recommended next
+action.
 
 Manual recovery when an alert requires it:
 
 ```bash
 .venv/bin/python watchtower.py -c config.json --recover
 ```
+
+`--recover` only executes the configured restart command when the recovery
+policy is satisfied. By default the policy requires a critical alert, at least
+three consecutive matching failed-check samples in `state/watchtower-state.json`,
+an active incident duration of at least five minutes, and no active maintenance
+mute. Use `--force-recover` only for deliberate operator override.
 
 Recovery attempts, skips, dry-runs, command exit codes, and post-recovery
 checks are recorded in `state/recovery-history.jsonl`.
@@ -414,6 +421,43 @@ timestamps for Grafana or alerting use.
 
 `--alert` writes state to `state/watchtower-state.json`. It emits output when
 status changes, and keeps emitting while the status remains `alert`.
+Alert output includes a cause guess, health score, and active incident duration.
+Set `maintenance.enabled=true` or an ISO timestamp in `maintenance.mute_until`
+to mute planned-maintenance alerts while status, dashboards, and Prometheus
+metrics continue to update. With `maintenance.critical_only=true`, critical
+alerts still break through the mute window.
+
+For planned restarts or upgrades, prefer the operator commands so the mute
+window is explicit and reversible:
+
+```bash
+make maintenance-status
+make mute MUTE_MINUTES=30 MUTE_REASON="kaspad upgrade"
+make unmute
+```
+
+`make mute` suppresses non-critical alert output during the window while
+critical alerts still break through. Use `make mute-all` only for maintenance
+windows where every alert should stay quiet.
+
+Discord or OpenClaw slash-command handlers should call the stable bridge
+commands instead of reformatting watchtower output themselves:
+
+```bash
+make discord-status
+make discord-incidents
+make discord-maintenance
+make discord-mute MUTE_MINUTES=30 MUTE_REASON="kaspad upgrade"
+make discord-unmute
+```
+
+Suggested Discord mapping:
+
+- `/kaspa status` -> `make discord-status`
+- `/kaspa incidents` -> `make discord-incidents`
+- `/kaspa maintenance` -> `make discord-maintenance`
+- `/kaspa mute minutes:30 reason:kaspad upgrade` -> `make discord-mute`
+- `/kaspa unmute` -> `make discord-unmute`
 
 The cron wrapper prefers `.venv/bin/python` so the gRPC dependencies can stay
 local to this repository.
@@ -433,7 +477,8 @@ Daily report:
 ./run_daily_report.sh
 ```
 
-The daily report prints an operator verdict, the current node summary,
+The daily report prints an operator verdict, the current node summary, incident
+duration, health score, maintenance mute state, latest recovery context,
 processed transaction freshness, mainnet sync progress, benchmark trend,
 optional KAS/USDT spot/futures market context, recent SQLite history summary,
 integration status, GitHub Actions status, recovery attempts, and dashboard

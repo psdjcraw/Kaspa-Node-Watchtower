@@ -25,8 +25,8 @@ Actions:
 Options:
   --apply         Run launchctl/copy/remove changes. Without this, install,
                   uninstall, and restart are dry-runs.
-  --service NAME  One of: all, exporter, status, benchmark, daily, weekly,
-                  alerts, smoke
+  --service NAME  One of: all, exporter, status, bps, benchmark, daily,
+                  weekly, alerts, smoke
 EOF
 }
 
@@ -68,9 +68,9 @@ fi
 service_names() {
   case "$SERVICE" in
     all)
-      printf '%s\n' exporter status benchmark daily weekly alerts smoke
+      printf '%s\n' exporter status bps benchmark daily weekly alerts smoke
       ;;
-    exporter|status|benchmark|daily|weekly|alerts|smoke)
+    exporter|status|bps|benchmark|daily|weekly|alerts|smoke)
       printf '%s\n' "$SERVICE"
       ;;
     *)
@@ -84,6 +84,7 @@ label_for() {
   case "$1" in
     exporter) printf 'com.openclaw.kaspa-watchtower-prometheus' ;;
     status) printf 'com.openclaw.kaspa-watchtower-status' ;;
+    bps) printf 'com.openclaw.kaspa-watchtower-bps' ;;
     benchmark) printf 'com.openclaw.kaspa-watchtower-benchmark' ;;
     daily) printf 'com.openclaw.kaspa-watchtower-daily-report' ;;
     weekly) printf 'com.openclaw.kaspa-watchtower-weekly-report' ;;
@@ -96,6 +97,7 @@ program_for() {
   case "$1" in
     exporter) printf '%s/run_prometheus_exporter.sh' "$PWD" ;;
     status) printf '%s/run_watchtower.sh' "$PWD" ;;
+    bps) printf '%s/run_bps_highway_loop.sh' "$PWD" ;;
     benchmark) printf '%s/run_benchmark_snapshot.sh' "$PWD" ;;
     daily) printf '%s/run_daily_report.sh' "$PWD" ;;
     weekly) printf '%s/run_weekly_report.sh' "$PWD" ;;
@@ -108,6 +110,7 @@ stdout_log_for() {
   case "$1" in
     exporter) printf '%s/state/prometheus-exporter.out.log' "$PWD" ;;
     status) printf '%s/state/watchtower-status.out.log' "$PWD" ;;
+    bps) printf '%s/state/bps-highway.out.log' "$PWD" ;;
     benchmark) printf '%s/state/benchmark-snapshot.out.log' "$PWD" ;;
     daily) printf '%s/state/daily-report.out.log' "$PWD" ;;
     weekly) printf '%s/state/weekly-report.out.log' "$PWD" ;;
@@ -120,6 +123,7 @@ stderr_log_for() {
   case "$1" in
     exporter) printf '%s/state/prometheus-exporter.err.log' "$PWD" ;;
     status) printf '%s/state/watchtower-status.err.log' "$PWD" ;;
+    bps) printf '%s/state/bps-highway.err.log' "$PWD" ;;
     benchmark) printf '%s/state/benchmark-snapshot.err.log' "$PWD" ;;
     daily) printf '%s/state/daily-report.err.log' "$PWD" ;;
     weekly) printf '%s/state/weekly-report.err.log' "$PWD" ;;
@@ -144,6 +148,14 @@ EOF
   <true/>
   <key>StartInterval</key>
   <integer>300</integer>
+EOF
+      ;;
+    bps)
+      cat <<'EOF'
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
 EOF
       ;;
     benchmark)

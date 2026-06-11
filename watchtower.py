@@ -7,6 +7,7 @@ import argparse
 import datetime as dt
 import html
 import json
+import math
 import os
 import re
 import shutil
@@ -29,6 +30,7 @@ DEFAULT_CONFIG = {
     "node_name": "kaspa-local",
     "process_match": "kaspad",
     "log_scan_bytes": 100_000_000,
+    "bps_highway_log_scan_bytes": 5_000_000,
     "log_path": "",
     "data_dir": "",
     "rpc_endpoint": "",
@@ -38,6 +40,7 @@ DEFAULT_CONFIG = {
     "canvas_status_page_path": "",
     "stream_page_path": "state/stream.html",
     "canvas_stream_page_path": "",
+    "bps_highway_snapshot_path": "state/bps-highway.json",
     "benchmark_path": "state/benchmarks.jsonl",
     "sqlite_history_path": "state/watchtower-history.sqlite",
     "market_snapshot_path": "state/market-snapshots.jsonl",
@@ -47,6 +50,40 @@ DEFAULT_CONFIG = {
         "state_history_entries": 100,
         "benchmark_entries": 1000,
     },
+    "maintenance": {
+        "enabled": False,
+        "mute_until": "",
+        "critical_only": True,
+        "reason": "",
+    },
+    "wallet": {
+        "enabled": False,
+        "alert_on_change": True,
+        "alert_min_delta_sompi": 1,
+        "alert_directions": "all",
+        "large_outgoing_alert_sompi": 0,
+        "mining_reward_stale_hours": 0,
+        "event_history_entries": 50,
+        "watch_addresses": [],
+    },
+    "mining": {
+        "enabled": False,
+        "mode": "macos-gpu-experimental",
+        "process_match": "",
+        "log_path": "",
+        "pool_url": "",
+        "wallet_address": "",
+        "worker_name": "",
+        "expected_hashrate_min_hs": 0,
+        "stale_share_minutes": 0,
+    },
+    "whale_watch": {
+        "enabled": False,
+        "confirmed_enabled": True,
+        "min_amount_sompi": 100_000_000_000_000,
+        "alert_enabled": True,
+        "event_history_entries": 100,
+    },
     "thresholds": {
         "alert_repeat_minutes": 60,
         "stale_log_minutes": 15,
@@ -54,6 +91,7 @@ DEFAULT_CONFIG = {
         "progress_window_minutes": 10,
         "min_relay_blocks_in_window": 1,
         "min_peer_count": 1,
+        "min_active_peer_count": 1,
         "require_grpc_metrics": True,
         "require_synced": True,
         "require_relay_progress_when_unsynced": False,
@@ -70,6 +108,13 @@ DEFAULT_CONFIG = {
         "mode": "manual",
         "restart_command": [],
         "post_recovery_wait_seconds": 20,
+        "policy": {
+            "require_critical": True,
+            "min_consecutive_failures": 3,
+            "min_incident_minutes": 5,
+            "require_same_failed_checks": True,
+            "allow_during_maintenance": False,
+        },
     },
 }
 
@@ -124,6 +169,7 @@ CRITICAL_CHECKS = {
     "grpc_metrics",
     "sync_status",
     "peer_count",
+    "active_peer_count",
     "log_file",
 }
 
@@ -155,6 +201,21 @@ def load_config(path: Path | None) -> dict:
     with path.open("r", encoding="utf-8") as handle:
         config.update(json.load(handle))
     return config
+
+
+def load_raw_config(path: Path) -> dict[str, Any]:
+    with path.open("r", encoding="utf-8") as handle:
+        loaded = json.load(handle)
+    if not isinstance(loaded, dict):
+        raise ValueError("config root must be a JSON object")
+    return loaded
+
+
+def save_config(path: Path, config: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as handle:
+        json.dump(config, handle, indent=2, sort_keys=False)
+        handle.write("\n")
 
 
 def run_command(args: list[str]) -> str:
@@ -275,6 +336,790 @@ def fetch_optional_grpc_metrics(endpoint: str) -> dict[str, Any]:
     return metrics
 
 
+def kas_from_sompi(value: Any) -> float | None:
+    parsed = numeric(value)
+    if parsed is None:
+        return None
+    return parsed / 100_000_000
+
+
+def format_kas(value: Any) -> str:
+    parsed = numeric(value)
+    if parsed is None:
+        return "unknown"
+    return f"{parsed / 100_000_000:.8f} KAS"
+
+
+def mining_config(config: dict[str, Any]) -> dict[str, Any]:
+    raw = config.get("mining") if isinstance(config.get("mining"), dict) else {}
+    return {**DEFAULT_CONFIG["mining"], **raw}
+
+
+def looks_like_kaspa_address(value: Any) -> bool:
+    address = str(value or "").strip()
+    return bool(re.fullmatch(r"kaspa[a-z]*:[a-z0-9]{20,}", address))
+
+
+def mining_wallet_address(config: dict[str, Any]) -> tuple[str, str]:
+    mining = mining_config(config)
+    address = str(mining.get("wallet_address") or "").strip()
+    if address:
+        return address, "mining.wallet_address"
+    for entry in wallet_watch_entries(config):
+        if "mining" in str(entry.get("label") or "").lower():
+            fallback = str(entry.get("address") or "").strip()
+            if fallback:
+                return fallback, "wallet.watch_addresses"
+    return "", "none"
+
+
+def hashrate_to_hs(value: float, unit: str) -> float:
+    multipliers = {
+        "h": 1,
+        "kh": 1_000,
+        "mh": 1_000_000,
+        "gh": 1_000_000_000,
+        "th": 1_000_000_000_000,
+    }
+    return value * multipliers.get(unit.lower(), 1)
+
+
+def format_hashrate_local(value: Any) -> str:
+    parsed = numeric(value)
+    if parsed is None:
+        return "unknown"
+    units = [("TH/s", 1_000_000_000_000), ("GH/s", 1_000_000_000), ("MH/s", 1_000_000), ("KH/s", 1_000)]
+    for suffix, divisor in units:
+        if abs(parsed) >= divisor:
+            return f"{parsed / divisor:.2f} {suffix}"
+    return f"{parsed:.2f} H/s"
+
+
+def parse_miner_log(lines: Iterable[str]) -> dict[str, Any]:
+    hashrate_pattern = re.compile(r"([0-9]+(?:\.[0-9]+)?)\s*([KMGT]?H)\s*/?\s*s", re.IGNORECASE)
+    accepted_pattern = re.compile(r"\baccepted\b|\bshare accepted\b", re.IGNORECASE)
+    rejected_pattern = re.compile(r"\brejected\b|\bshare rejected\b", re.IGNORECASE)
+    result: dict[str, Any] = {
+        "hashrate_hs": None,
+        "accepted_shares": 0,
+        "rejected_shares": 0,
+        "last_share_at": "",
+        "last_hashrate_at": "",
+        "latest_line": "",
+    }
+    for line in lines:
+        timestamp = parse_log_timestamp(line)
+        match = hashrate_pattern.search(line)
+        if match:
+            result["hashrate_hs"] = hashrate_to_hs(float(match.group(1)), match.group(2))
+            result["last_hashrate_at"] = timestamp.isoformat() if timestamp else ""
+        if accepted_pattern.search(line):
+            result["accepted_shares"] = int(result.get("accepted_shares") or 0) + 1
+            result["last_share_at"] = timestamp.isoformat() if timestamp else ""
+        if rejected_pattern.search(line):
+            result["rejected_shares"] = int(result.get("rejected_shares") or 0) + 1
+            result["last_share_at"] = timestamp.isoformat() if timestamp else result.get("last_share_at", "")
+        if line.strip():
+            result["latest_line"] = line.strip()[-240:]
+    return result
+
+
+def fetch_optional_mining_status(config: dict[str, Any]) -> dict[str, Any]:
+    mining = mining_config(config)
+    process_match = str(mining.get("process_match") or "").strip()
+    processes = find_processes(process_match) if process_match else []
+    address, address_source = mining_wallet_address(config)
+    status: dict[str, Any] = {
+        "enabled": bool(mining.get("enabled", False)),
+        "mode": mining.get("mode") or "disabled",
+        "configured": bool(process_match or mining.get("log_path")),
+        "ok": False,
+        "running": bool(processes),
+        "process_match": process_match,
+        "processes": processes,
+        "pool_url": mining.get("pool_url") or "",
+        "worker_name": mining.get("worker_name") or "",
+        "wallet_address": address,
+        "wallet_address_source": address_source,
+        "hashrate_hs": None,
+        "accepted_shares": 0,
+        "rejected_shares": 0,
+        "last_share_at": "",
+        "last_share_age_seconds": None,
+        "detail": "disabled",
+    }
+    if not status["enabled"]:
+        return status
+    address_ok = looks_like_kaspa_address(address)
+    if not status["configured"]:
+        status["detail"] = "no miner process_match or log_path configured"
+        return status
+
+    log_path = Path(str(mining.get("log_path") or ""))
+    if log_path.exists():
+        parsed = parse_miner_log(tail_lines(log_path, int(config.get("log_scan_bytes") or DEFAULT_CONFIG["log_scan_bytes"])))
+        status.update(parsed)
+    elif mining.get("log_path"):
+        status["log_error"] = f"missing ({log_path})"
+
+    checked_at = dt.datetime.now().astimezone()
+    latest_share = parse_iso_datetime(str(status.get("last_share_at") or ""))
+    if latest_share is not None:
+        status["last_share_age_seconds"] = max(0.0, (checked_at - latest_share).total_seconds())
+    expected_hashrate = float(mining.get("expected_hashrate_min_hs", 0) or 0)
+    stale_share_minutes = float(mining.get("stale_share_minutes", 0) or 0)
+    hashrate_ok = expected_hashrate <= 0 or float(status.get("hashrate_hs") or 0) >= expected_hashrate
+    share_ok = stale_share_minutes <= 0 or (
+        status.get("last_share_age_seconds") is not None
+        and float(status["last_share_age_seconds"]) <= stale_share_minutes * 60
+    )
+    status["ok"] = bool(status["running"] and hashrate_ok and share_ok and address_ok)
+    detail_parts = [
+        "running" if status["running"] else "not running",
+        "address=set" if address_ok else "address=missing",
+        f"hashrate={format_hashrate_local(status.get('hashrate_hs'))}",
+        f"accepted={status.get('accepted_shares', 0)}",
+        f"rejected={status.get('rejected_shares', 0)}",
+    ]
+    if status.get("log_error"):
+        detail_parts.append(str(status["log_error"]))
+    if expected_hashrate > 0:
+        detail_parts.append(f"min_hashrate={format_hashrate_local(expected_hashrate)}")
+    if stale_share_minutes > 0:
+        age = status.get("last_share_age_seconds")
+        age_text = "unknown" if age is None else f"{float(age) / 60:.1f}m"
+        detail_parts.append(f"share_age={age_text} threshold={stale_share_minutes:g}m")
+    status["detail"] = "; ".join(detail_parts)
+    return status
+
+
+def apply_mining_policy_checks(report: dict[str, Any], config: dict[str, Any]) -> None:
+    mining = report.get("mining") or {}
+    if not mining.get("enabled"):
+        return
+    address = str(mining.get("wallet_address") or "")
+    report["checks"].append(
+        Check(
+            "mining_wallet_address",
+            looks_like_kaspa_address(address),
+            f"source={mining.get('wallet_address_source', 'unknown')} address={'set' if address else 'missing'}",
+        ).as_dict()
+    )
+    report["checks"].append(Check("mining_process", bool(mining.get("running")), mining.get("detail", "unknown")).as_dict())
+    expected_hashrate = float(mining_config(config).get("expected_hashrate_min_hs", 0) or 0)
+    if expected_hashrate > 0:
+        hashrate = float(mining.get("hashrate_hs") or 0)
+        report["checks"].append(
+            Check(
+                "mining_hashrate",
+                hashrate >= expected_hashrate,
+                f"hashrate={format_hashrate_local(hashrate)} threshold={format_hashrate_local(expected_hashrate)}",
+            ).as_dict()
+        )
+    stale_share_minutes = float(mining_config(config).get("stale_share_minutes", 0) or 0)
+    if stale_share_minutes > 0:
+        age = mining.get("last_share_age_seconds")
+        ok = age is not None and float(age) <= stale_share_minutes * 60
+        age_text = "unknown" if age is None else f"{float(age) / 60:.1f}m"
+        report["checks"].append(
+            Check(
+                "mining_share_freshness",
+                ok,
+                f"last share age={age_text} threshold={stale_share_minutes:g}m",
+            ).as_dict()
+        )
+    recalculate_report_health(report, config)
+
+
+def whale_watch_config(config: dict[str, Any]) -> dict[str, Any]:
+    raw = config.get("whale_watch") if isinstance(config.get("whale_watch"), dict) else {}
+    return {**DEFAULT_CONFIG["whale_watch"], **raw}
+
+
+def whale_event_key(source: Any, tx_id: Any, amount_sompi: Any, address: Any = "") -> str:
+    return f"{source or ''}|{tx_id or ''}|{int(amount_sompi or 0)}|{address or ''}"
+
+
+def whale_events_from_mempool(mempool: dict[str, Any], config: dict[str, Any], checked_at: str) -> list[dict[str, Any]]:
+    whale_config = whale_watch_config(config)
+    threshold = int(whale_config.get("min_amount_sompi") or DEFAULT_CONFIG["whale_watch"]["min_amount_sompi"])
+    events = []
+    for entry in mempool.get("entries") or []:
+        tx_id = str(entry.get("tx_id") or "")
+        outputs = entry.get("outputs") or []
+        for output in outputs:
+            amount = int(output.get("amount_sompi") or 0)
+            if amount < threshold:
+                continue
+            address = str(output.get("address") or "")
+            events.append(
+                {
+                    "event_key": whale_event_key("mempool", tx_id, amount, address),
+                    "observed_at": checked_at,
+                    "type": "whale_tx_pending",
+                    "source": "mempool",
+                    "tx_id": tx_id,
+                    "address": address,
+                    "amount_sompi": amount,
+                    "amount_kas": kas_from_sompi(amount),
+                    "threshold_sompi": threshold,
+                    "threshold_kas": kas_from_sompi(threshold),
+                    "fee_sompi": entry.get("fee_sompi"),
+                    "total_output_sompi": entry.get("total_output_sompi"),
+                    "largest_output_sompi": entry.get("largest_output_sompi"),
+                    "input_count": entry.get("input_count"),
+                    "output_count": entry.get("output_count"),
+                }
+            )
+    events.sort(key=lambda item: int(item.get("amount_sompi") or 0), reverse=True)
+    return events
+
+
+def whale_events_from_confirmed(chain: dict[str, Any], config: dict[str, Any], checked_at: str) -> list[dict[str, Any]]:
+    whale_config = whale_watch_config(config)
+    threshold = int(whale_config.get("min_amount_sompi") or DEFAULT_CONFIG["whale_watch"]["min_amount_sompi"])
+    events = []
+    for entry in chain.get("entries") or []:
+        tx_id = str(entry.get("tx_id") or "")
+        for output in entry.get("outputs") or []:
+            amount = int(output.get("amount_sompi") or 0)
+            if amount < threshold:
+                continue
+            address = str(output.get("address") or "")
+            events.append(
+                {
+                    "event_key": whale_event_key("confirmed", tx_id, amount, address),
+                    "observed_at": checked_at,
+                    "type": "whale_tx_confirmed",
+                    "source": "confirmed",
+                    "tx_id": tx_id,
+                    "address": address,
+                    "amount_sompi": amount,
+                    "amount_kas": kas_from_sompi(amount),
+                    "threshold_sompi": threshold,
+                    "threshold_kas": kas_from_sompi(threshold),
+                    "accepting_block_hash": entry.get("accepting_block_hash") or "",
+                    "total_output_sompi": entry.get("total_output_sompi"),
+                    "largest_output_sompi": entry.get("largest_output_sompi"),
+                    "input_count": entry.get("input_count"),
+                    "output_count": entry.get("output_count"),
+                }
+            )
+    events.sort(key=lambda item: int(item.get("amount_sompi") or 0), reverse=True)
+    return events
+
+
+def fetch_optional_whale_watch(config: dict[str, Any], endpoint: str) -> dict[str, Any]:
+    whale_config = whale_watch_config(config)
+    whale: dict[str, Any] = {
+        "enabled": bool(whale_config.get("enabled", False)),
+        "confirmed_enabled": bool(whale_config.get("confirmed_enabled", True)),
+        "ok": False,
+        "configured": bool(endpoint),
+        "min_amount_sompi": int(whale_config.get("min_amount_sompi") or DEFAULT_CONFIG["whale_watch"]["min_amount_sompi"]),
+        "min_amount_kas": kas_from_sompi(whale_config.get("min_amount_sompi") or DEFAULT_CONFIG["whale_watch"]["min_amount_sompi"]),
+        "alert_enabled": bool(whale_config.get("alert_enabled", True)),
+        "event_history_entries": positive_int(whale_config.get("event_history_entries"), DEFAULT_CONFIG["whale_watch"]["event_history_entries"]),
+        "mempool_entries": 0,
+        "candidates": [],
+        "detail": "disabled",
+    }
+    if not whale["enabled"]:
+        return whale
+    if not endpoint:
+        whale["detail"] = "no gRPC endpoint configured"
+        return whale
+    try:
+        from kaspa_grpc_probe import fetch_mempool_entries
+    except Exception as exc:
+        whale["detail"] = f"whale gRPC probe unavailable: {exc}"
+        return whale
+    mempool = fetch_mempool_entries(endpoint)
+    whale["mempool"] = mempool
+    whale["mempool_entries"] = len(mempool.get("entries") or [])
+    whale["ok"] = bool(mempool.get("ok"))
+    whale["detail"] = "mempool read ok" if mempool.get("ok") else mempool.get("detail") or mempool.get("error") or "mempool read failed"
+    checked_at = dt.datetime.now().astimezone().isoformat()
+    whale["candidates"] = whale_events_from_mempool(mempool, config, checked_at)
+    return whale
+
+
+def whale_current_chain_hash(report: dict[str, Any]) -> str:
+    grpc_metrics = report.get("grpc_metrics") or {}
+    return str(grpc_metrics.get("sink") or grpc_metrics.get("virtual_parent_hash") or "")
+
+
+def update_whale_confirmed_candidates(state: dict[str, Any], report: dict[str, Any], config: dict[str, Any]) -> None:
+    whale = report.get("whale_watch") or {}
+    whale_config = whale_watch_config(config)
+    current_hash = whale_current_chain_hash(report)
+    whale["confirmed_start_hash"] = state.get("whale_watch_chain_hash") or ""
+    whale["confirmed_current_hash"] = current_hash
+    if not whale.get("enabled") or not bool(whale_config.get("confirmed_enabled", True)):
+        if current_hash:
+            state["whale_watch_chain_hash"] = current_hash
+        return
+    start_hash = str(state.get("whale_watch_chain_hash") or "")
+    if not start_hash:
+        whale["confirmed_detail"] = "baseline chain hash recorded"
+        if current_hash:
+            state["whale_watch_chain_hash"] = current_hash
+        return
+    if not current_hash:
+        whale["confirmed_detail"] = "no current chain hash available"
+        return
+    if start_hash == current_hash:
+        whale["confirmed_detail"] = "no virtual chain movement"
+        return
+    try:
+        from kaspa_grpc_probe import fetch_virtual_chain_transactions
+    except Exception as exc:
+        whale["confirmed_detail"] = f"confirmed gRPC probe unavailable: {exc}"
+        return
+    endpoint = report.get("grpc_endpoint") or report.get("rpc_endpoint") or ""
+    chain = fetch_virtual_chain_transactions(endpoint, start_hash)
+    whale["confirmed"] = chain
+    whale["confirmed_detail"] = "confirmed scan ok" if chain.get("ok") else chain.get("detail") or chain.get("error") or "confirmed scan failed"
+    checked_at = report.get("checked_at") or dt.datetime.now().astimezone().isoformat()
+    confirmed_candidates = whale_events_from_confirmed(chain, config, checked_at)
+    whale["confirmed_candidates"] = confirmed_candidates
+    whale["candidates"] = list(whale.get("candidates") or []) + confirmed_candidates
+    if current_hash:
+        state["whale_watch_chain_hash"] = current_hash
+
+
+def update_whale_event_state(state: dict[str, Any], report: dict[str, Any], config: dict[str, Any]) -> list[dict[str, Any]]:
+    whale = report.get("whale_watch") or {}
+    candidates = list(whale.get("candidates") or [])
+    if not candidates:
+        whale["events"] = list(state.get("whale_events") or [])
+        return []
+    whale_config = whale_watch_config(config)
+    limit = positive_int(whale_config.get("event_history_entries"), DEFAULT_CONFIG["whale_watch"]["event_history_entries"])
+    events = list(state.get("whale_events") or [])
+    seen = {str(event.get("event_key") or whale_event_key(event.get("source"), event.get("tx_id"), event.get("amount_sompi"), event.get("address"))) for event in events}
+    new_events = []
+    for event in candidates:
+        key = str(event.get("event_key") or whale_event_key(event.get("source"), event.get("tx_id"), event.get("amount_sompi"), event.get("address")))
+        if key in seen:
+            continue
+        event["event_key"] = key
+        if event.get("source") == "confirmed":
+            for existing in events:
+                if existing.get("tx_id") == event.get("tx_id") and existing.get("source") == "mempool":
+                    existing["status"] = "confirmed"
+                    existing["confirmed_at"] = event.get("observed_at")
+                    existing["accepting_block_hash"] = event.get("accepting_block_hash")
+        seen.add(key)
+        new_events.append(event)
+    events.extend(new_events)
+    state["whale_events"] = events[-limit:]
+    whale["events"] = list(state.get("whale_events") or [])
+    whale["new_events"] = new_events
+    return new_events
+
+
+def whale_watch_summary(events: list[dict[str, Any]], *, now: dt.datetime | None = None) -> dict[str, Any]:
+    now = now or dt.datetime.now().astimezone()
+    cutoff = now - dt.timedelta(hours=24)
+    recent = []
+    for event in events:
+        observed = parse_iso_datetime(str(event.get("observed_at") or ""))
+        if observed is not None and observed >= cutoff:
+            recent.append(event)
+    latest = max(
+        (event for event in events if parse_iso_datetime(str(event.get("observed_at") or "")) is not None),
+        key=lambda item: parse_iso_datetime(str(item.get("observed_at") or "")),
+        default={},
+    )
+    return {
+        "total_events": len(events),
+        "count_24h": len(recent),
+        "volume_24h_sompi": sum(int(event.get("amount_sompi") or 0) for event in recent),
+        "volume_24h_kas": kas_from_sompi(sum(int(event.get("amount_sompi") or 0) for event in recent)) or 0.0,
+        "latest_amount_sompi": latest.get("amount_sompi"),
+        "latest_amount_kas": kas_from_sompi(latest.get("amount_sompi")),
+        "latest_tx_id": latest.get("tx_id") or "",
+        "latest_observed_at": latest.get("observed_at") or "",
+    }
+
+
+def wallet_watch_entries(config: dict[str, Any]) -> list[dict[str, Any]]:
+    wallet_config = config.get("wallet") or {}
+    raw_entries = wallet_config.get("watch_addresses") or []
+    entries: list[dict[str, Any]] = []
+    for item in raw_entries:
+        if isinstance(item, str):
+            address = item.strip()
+            label = ""
+        elif isinstance(item, dict):
+            address = str(item.get("address") or "").strip()
+            label = str(item.get("label") or "").strip()
+        else:
+            continue
+        if address:
+            entry = {"address": address, "label": label}
+            if isinstance(item, dict):
+                for key in ("alert_enabled", "alert_min_delta_sompi", "alert_directions"):
+                    if key in item:
+                        entry[key] = item[key]
+            entries.append(entry)
+    return entries
+
+
+def wallet_policy_by_address(config: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    return {entry["address"]: entry for entry in wallet_watch_entries(config)}
+
+
+def wallet_direction_for_delta(delta_sompi: int) -> str:
+    if delta_sompi > 0:
+        return "incoming"
+    if delta_sompi < 0:
+        return "outgoing"
+    return "unchanged"
+
+
+def wallet_direction_allowed(direction: str, allowed: Any) -> bool:
+    if allowed in (None, "", "all"):
+        return True
+    if isinstance(allowed, str):
+        return direction == allowed
+    if isinstance(allowed, list):
+        return direction in {str(item) for item in allowed}
+    return True
+
+
+def fetch_optional_wallet_balances(config: dict[str, Any], endpoint: str) -> dict[str, Any]:
+    wallet_config = config.get("wallet") or {}
+    entries = wallet_watch_entries(config)
+    wallet: dict[str, Any] = {
+        "enabled": bool(wallet_config.get("enabled", False)),
+        "configured": bool(entries),
+        "ok": False,
+        "entries": [],
+        "total_sompi": 0,
+        "total_kas": 0.0,
+        "detail": "disabled",
+    }
+    if not wallet["enabled"]:
+        return wallet
+    if not entries:
+        wallet["detail"] = "no watch addresses configured"
+        return wallet
+    if not endpoint:
+        wallet["detail"] = "no gRPC endpoint configured"
+        return wallet
+    try:
+        from kaspa_grpc_probe import fetch_balances_by_addresses, fetch_mempool_entries_by_addresses
+    except Exception as exc:
+        wallet["detail"] = f"wallet gRPC probe unavailable: {exc}"
+        return wallet
+
+    addresses = [entry["address"] for entry in entries]
+    labels = {entry["address"]: entry["label"] for entry in entries}
+    result = fetch_balances_by_addresses(endpoint, addresses)
+    result_entries = {entry.get("address"): entry for entry in result.get("entries", [])}
+    wallet_entries = []
+    entry_errors = []
+    for address in addresses:
+        balance_entry = result_entries.get(address) or {"address": address, "balance_sompi": 0}
+        error = balance_entry.get("error")
+        if error:
+            entry_errors.append(f"{address}: {error}")
+        balance_sompi = int(balance_entry.get("balance_sompi") or 0)
+        wallet_entries.append(
+            {
+                "address": address,
+                "label": labels.get(address) or "",
+                "balance_sompi": balance_sompi,
+                "balance_kas": kas_from_sompi(balance_sompi),
+                "error": error,
+            }
+        )
+
+    total_sompi = sum(entry["balance_sompi"] for entry in wallet_entries)
+    ok = bool(result.get("ok")) and not entry_errors
+    detail = "read ok" if ok else result.get("detail") or result.get("error") or "; ".join(entry_errors) or "failed"
+    wallet.update(
+        {
+            "ok": ok,
+            "endpoint": endpoint,
+            "entries": wallet_entries,
+            "pending": fetch_mempool_entries_by_addresses(endpoint, addresses),
+            "total_sompi": total_sompi,
+            "total_kas": kas_from_sompi(total_sompi),
+            "detail": detail,
+        }
+    )
+    return wallet
+
+
+def wallet_entry_map(wallet: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    return {
+        str(entry.get("address")): entry
+        for entry in wallet.get("entries") or []
+        if entry.get("address")
+    }
+
+
+def wallet_change_summary(
+    current_wallet: dict[str, Any],
+    previous_wallet: dict[str, Any] | None,
+    *,
+    min_delta_sompi: int = 1,
+) -> dict[str, Any]:
+    previous_wallet = previous_wallet or {}
+    current_entries = wallet_entry_map(current_wallet)
+    previous_entries = wallet_entry_map(previous_wallet)
+    addresses = sorted(set(current_entries) | set(previous_entries))
+    entry_changes = []
+    for address in addresses:
+        current_entry = current_entries.get(address) or {}
+        previous_entry = previous_entries.get(address) or {}
+        current_balance = int(current_entry.get("balance_sompi") or 0)
+        previous_balance = int(previous_entry.get("balance_sompi") or 0)
+        delta = current_balance - previous_balance
+        if abs(delta) < min_delta_sompi:
+            continue
+        entry_changes.append(
+            {
+                "address": address,
+                "label": current_entry.get("label") or previous_entry.get("label") or "",
+                "previous_sompi": previous_balance,
+                "current_sompi": current_balance,
+                "delta_sompi": delta,
+                "delta_kas": kas_from_sompi(delta),
+            }
+        )
+
+    current_total = int(current_wallet.get("total_sompi") or 0)
+    previous_total = int(previous_wallet.get("total_sompi") or 0)
+    total_delta = current_total - previous_total
+    changed = bool(entry_changes) or abs(total_delta) >= min_delta_sompi
+    return {
+        "changed": changed,
+        "previous_total_sompi": previous_total,
+        "current_total_sompi": current_total,
+        "total_delta_sompi": total_delta,
+        "total_delta_kas": kas_from_sompi(total_delta),
+        "entries": entry_changes,
+    }
+
+
+def apply_wallet_change_detection(report: dict[str, Any], state: dict[str, Any], config: dict) -> str | None:
+    wallet = report.get("wallet") or {}
+    wallet_change = wallet.get("change") or {}
+    wallet_config = config.get("wallet") or {}
+    if not wallet.get("enabled") or not wallet.get("ok"):
+        wallet["change"] = {"changed": False, "detail": wallet.get("detail", "wallet unavailable")}
+        return None
+    previous_wallet = (state.get("last_report") or {}).get("wallet") or {}
+    if not previous_wallet.get("enabled") or not previous_wallet.get("ok"):
+        wallet["change"] = {
+            "changed": False,
+            "previous_total_sompi": wallet.get("total_sompi"),
+            "current_total_sompi": wallet.get("total_sompi"),
+            "total_delta_sompi": 0,
+            "total_delta_kas": 0.0,
+            "entries": [],
+            "detail": "baseline recorded",
+        }
+        return None
+    min_delta = int(wallet_config.get("alert_min_delta_sompi", 1) or 1)
+    change = wallet_change_summary(wallet, previous_wallet, min_delta_sompi=max(1, min_delta))
+    address_policies = wallet_policy_by_address(config)
+    alert_entries = []
+    large_outgoing_entries = []
+    large_outgoing_min = int(wallet_config.get("large_outgoing_alert_sompi", 0) or 0)
+    for item in change.get("entries") or []:
+        delta = int(item.get("delta_sompi") or 0)
+        direction = wallet_direction_for_delta(delta)
+        policy = address_policies.get(str(item.get("address") or ""), {})
+        if policy.get("alert_enabled", True) is False:
+            continue
+        item_min_delta = int(policy.get("alert_min_delta_sompi", min_delta) or min_delta)
+        if abs(delta) < max(1, item_min_delta):
+            continue
+        if not wallet_direction_allowed(direction, policy.get("alert_directions", wallet_config.get("alert_directions", "all"))):
+            continue
+        alert_entries.append({**item, "direction": direction})
+        if direction == "outgoing" and large_outgoing_min > 0 and abs(delta) >= large_outgoing_min:
+            large_outgoing_entries.append({**item, "direction": direction})
+    change["alert_entries"] = alert_entries
+    change["large_outgoing_entries"] = large_outgoing_entries
+    wallet["change"] = change
+    if not bool(wallet_config.get("alert_on_change", True)):
+        return None
+    if large_outgoing_entries:
+        return "wallet_large_outgoing"
+    if alert_entries:
+        return "wallet_changed"
+    return None
+
+
+def wallet_events_from_change(report: dict[str, Any]) -> list[dict[str, Any]]:
+    wallet = report.get("wallet") or {}
+    change = wallet.get("change") or {}
+    if not change.get("changed"):
+        return []
+    checked_at = report.get("checked_at")
+    events = []
+    for item in change.get("entries") or []:
+        delta = int(item.get("delta_sompi") or 0)
+        direction = "incoming" if delta > 0 else "outgoing" if delta < 0 else "unchanged"
+        events.append(
+            {
+                "event_key": wallet_event_key(checked_at, item.get("address"), delta),
+                "observed_at": checked_at,
+                "type": "balance_change",
+                "direction": direction,
+                "address": item.get("address"),
+                "label": item.get("label") or "",
+                "delta_sompi": delta,
+                "delta_kas": kas_from_sompi(delta),
+                "previous_sompi": item.get("previous_sompi"),
+                "current_sompi": item.get("current_sompi"),
+            }
+        )
+    if not events and change.get("total_delta_sompi"):
+        delta = int(change.get("total_delta_sompi") or 0)
+        events.append(
+            {
+                "event_key": wallet_event_key(checked_at, "total", delta),
+                "observed_at": checked_at,
+                "type": "balance_change",
+                "direction": "incoming" if delta > 0 else "outgoing",
+                "address": "",
+                "label": "total",
+                "delta_sompi": delta,
+                "delta_kas": kas_from_sompi(delta),
+                "previous_sompi": change.get("previous_total_sompi"),
+                "current_sompi": change.get("current_total_sompi"),
+            }
+        )
+    return events
+
+
+def wallet_event_key(observed_at: Any, address: Any, delta_sompi: Any) -> str:
+    return f"{observed_at}|{address or ''}|{int(delta_sompi or 0)}"
+
+
+def update_wallet_event_state(state: dict[str, Any], report: dict[str, Any], config: dict) -> list[dict[str, Any]]:
+    new_events = wallet_events_from_change(report)
+    if not new_events:
+        return []
+    wallet_config = config.get("wallet") or {}
+    limit = positive_int(wallet_config.get("event_history_entries"), 50)
+    events = list(state.get("wallet_events") or [])
+    seen = {str(event.get("event_key") or wallet_event_key(event.get("observed_at"), event.get("address"), event.get("delta_sompi"))) for event in events}
+    deduped = []
+    for event in new_events:
+        key = str(event.get("event_key") or wallet_event_key(event.get("observed_at"), event.get("address"), event.get("delta_sompi")))
+        if key in seen:
+            continue
+        event["event_key"] = key
+        seen.add(key)
+        deduped.append(event)
+    events.extend(deduped)
+    state["wallet_events"] = events[-limit:]
+    return deduped
+
+
+def format_usd_amount(value: Any) -> str:
+    parsed = numeric(value)
+    if parsed is None:
+        return "unknown"
+    return f"${parsed:,.2f}"
+
+
+def mining_reward_summary(
+    events: list[dict[str, Any]],
+    *,
+    price_usdt: Any = None,
+    now: dt.datetime | None = None,
+) -> dict[str, Any]:
+    now = now or dt.datetime.now().astimezone()
+    today = now.date()
+    price = numeric(price_usdt)
+    rewards = []
+    for event in events:
+        if event.get("direction") != "incoming":
+            continue
+        label = str(event.get("label") or "").lower()
+        if "mining" not in label:
+            continue
+        delta = int(event.get("delta_sompi") or 0)
+        if delta <= 0:
+            continue
+        observed = parse_iso_datetime(str(event.get("observed_at") or ""))
+        rewards.append({**event, "observed": observed, "delta_sompi": delta})
+
+    def in_window(days: int | None) -> list[dict[str, Any]]:
+        if days is None:
+            return [event for event in rewards if event.get("observed") is not None and event["observed"].date() == today]
+        cutoff = now - dt.timedelta(days=days)
+        return [event for event in rewards if event.get("observed") is not None and event["observed"] >= cutoff]
+
+    today_events = in_window(None)
+    seven_day_events = in_window(7)
+    thirty_day_events = in_window(30)
+
+    def total_sompi(items: list[dict[str, Any]]) -> int:
+        return sum(int(item.get("delta_sompi") or 0) for item in items)
+
+    today_sompi = total_sompi(today_events)
+    seven_day_sompi = total_sompi(seven_day_events)
+    thirty_day_sompi = total_sompi(thirty_day_events)
+    latest = max((event for event in rewards if event.get("observed") is not None), key=lambda item: item["observed"], default={})
+    latest_age_hours = None
+    if latest.get("observed") is not None:
+        latest_age_hours = max(0.0, (now - latest["observed"]).total_seconds() / 3600)
+    today_kas = kas_from_sompi(today_sompi) or 0.0
+    seven_day_kas = kas_from_sompi(seven_day_sompi) or 0.0
+    thirty_day_kas = kas_from_sompi(thirty_day_sompi) or 0.0
+    return {
+        "candidate_events": len(rewards),
+        "today_sompi": today_sompi,
+        "today_kas": today_kas,
+        "seven_day_sompi": seven_day_sompi,
+        "seven_day_kas": seven_day_kas,
+        "thirty_day_sompi": thirty_day_sompi,
+        "thirty_day_kas": thirty_day_kas,
+        "average_daily_7d_kas": seven_day_kas / 7,
+        "average_daily_30d_kas": thirty_day_kas / 30,
+        "today_usd": None if price is None else today_kas * price,
+        "seven_day_usd": None if price is None else seven_day_kas * price,
+        "thirty_day_usd": None if price is None else thirty_day_kas * price,
+        "projected_monthly_kas": (seven_day_kas / 7) * 30,
+        "projected_monthly_usd": None if price is None else (seven_day_kas / 7) * 30 * price,
+        "latest_reward_at": latest.get("observed_at") or "",
+        "latest_reward_age_hours": latest_age_hours,
+        "price_usdt": price,
+    }
+
+
+def apply_wallet_policy_checks(report: dict[str, Any], config: dict) -> None:
+    wallet_config = config.get("wallet") or {}
+    stale_hours = float(wallet_config.get("mining_reward_stale_hours", 0) or 0)
+    if stale_hours <= 0:
+        return
+    wallet = report.get("wallet") or {}
+    if not wallet.get("enabled"):
+        return
+    checked_at = parse_iso_datetime(report.get("checked_at")) or dt.datetime.now().astimezone()
+    mining = mining_reward_summary(list(wallet.get("events") or []), now=checked_at)
+    latest_at = parse_iso_datetime(str(mining.get("latest_reward_at") or ""))
+    if latest_at is None:
+        ok = False
+        detail = f"no mining reward events observed; threshold={stale_hours:g}h"
+    else:
+        age_hours = max(0.0, (checked_at - latest_at).total_seconds() / 3600)
+        ok = age_hours <= stale_hours
+        detail = f"latest mining reward age={age_hours:.2f}h threshold={stale_hours:g}h"
+    report["checks"].append(Check("mining_reward_freshness", ok, detail).as_dict())
+    recalculate_report_health(report, config)
+
+
 def parse_trusted_blocks(lines: Iterable[str]) -> int:
     pattern = re.compile(r"Starting to process (\d+) trusted blocks")
     total = 0
@@ -345,6 +1190,9 @@ def build_report(config: dict) -> dict[str, Any]:
     disk = disk_usage(config.get("data_dir", ""))
     rpc = check_tcp_endpoint(config.get("rpc_endpoint") or "")
     grpc_metrics = fetch_optional_grpc_metrics(grpc_endpoint)
+    wallet = fetch_optional_wallet_balances(config, grpc_endpoint)
+    mining = fetch_optional_mining_status(config)
+    whale_watch = fetch_optional_whale_watch(config, grpc_endpoint)
 
     checks = [
         Check("process", bool(processes), "running" if processes else "not running"),
@@ -381,7 +1229,18 @@ def build_report(config: dict) -> dict[str, Any]:
                 int(grpc_metrics.get("peer_count") or 0) >= min_peer_count,
                 (
                     f"{int(grpc_metrics.get('peer_count') or 0)} peers "
-                    f"(active={grpc_metrics.get('active_peers')})"
+                    f"(threshold={min_peer_count}, active={grpc_metrics.get('active_peers')})"
+                ),
+            )
+        )
+        min_active_peer_count = int(thresholds.get("min_active_peer_count", 1))
+        checks.append(
+            Check(
+                "active_peer_count",
+                int(grpc_metrics.get("active_peers") or 0) >= min_active_peer_count,
+                (
+                    f"{int(grpc_metrics.get('active_peers') or 0)} active peers "
+                    f"(threshold={min_active_peer_count}, total={grpc_metrics.get('peer_count')})"
                 ),
             )
         )
@@ -559,6 +1418,9 @@ def build_report(config: dict) -> dict[str, Any]:
         "rpc": rpc,
         "grpc_endpoint": grpc_endpoint,
         "grpc_metrics": grpc_metrics,
+        "wallet": wallet,
+        "mining": mining,
+        "whale_watch": whale_watch,
         "data_dir": config.get("data_dir") or "",
         "data_dir_size": dir_size(config.get("data_dir", "")),
         "disk": disk,
@@ -591,6 +1453,13 @@ def build_stateful_report(config: dict) -> tuple[dict[str, Any], dict[str, Any]]
     state_path = Path(config.get("state_path") or DEFAULT_CONFIG["state_path"])
     state = load_state(state_path)
     apply_stateful_checks(report, state, config)
+    apply_mining_policy_checks(report, config)
+    apply_wallet_change_detection(report, state, config)
+    (report.get("wallet") or {})["events"] = list(state.get("wallet_events") or [])
+    update_whale_confirmed_candidates(state, report, config)
+    update_whale_event_state(state, report, config)
+    apply_wallet_policy_checks(report, config)
+    enrich_operational_fields(report, config, state)
     return report, state
 
 
@@ -644,6 +1513,15 @@ def status(config: dict) -> int:
             f"tips={grpc_metrics.get('tip_count')} "
             f"pruning={short_hash(grpc_metrics.get('pruning_point_hash'))}"
         )
+    wallet = report.get("wallet") or {}
+    if wallet.get("enabled"):
+        print(
+            "Wallet watch: "
+            f"ok={wallet.get('ok')} "
+            f"addresses={len(wallet.get('entries') or [])} "
+            f"total={format_kas(wallet.get('total_sompi'))} "
+            f"detail={wallet.get('detail', 'unknown')}"
+        )
     progress = report["progress"]
     print(
         "Relay progress: "
@@ -689,6 +1567,213 @@ def parse_iso_datetime(value: str | None) -> dt.datetime | None:
 
 def failed_check_names(report: dict[str, Any]) -> list[str]:
     return [check["name"] for check in report["checks"] if not check["ok"]]
+
+
+def failed_check_details(report: dict[str, Any]) -> list[dict[str, str]]:
+    return [
+        {
+            "name": str(check.get("name", "unknown")),
+            "detail": str(check.get("detail", "")),
+        }
+        for check in report.get("checks", [])
+        if not check.get("ok")
+    ]
+
+
+def check_failure_causes(report: dict[str, Any]) -> list[str]:
+    cause_by_check = {
+        "process": "process down",
+        "data_dir": "data directory unavailable",
+        "rpc_tcp": "RPC unreachable",
+        "grpc_metrics": "gRPC metrics unavailable",
+        "sync_status": "sync requirement not met",
+        "peer_count": "peer count below threshold",
+        "active_peer_count": "active peer count below threshold",
+        "log_file": "log file missing",
+        "log_freshness": "log stale",
+        "block_progress": "relay progress stalled",
+        "processed_stats_freshness": "processed stats stale",
+        "sync_progress": "sync progress stalled",
+        "disk_free": "disk free space below threshold",
+        "mining_reward_freshness": "mining reward stale",
+    }
+    causes = []
+    for name in failed_check_names(report):
+        causes.append(cause_by_check.get(name, name.replace("_", " ")))
+    return causes
+
+
+def health_score(report: dict[str, Any]) -> int:
+    score = 100
+    for check in report.get("checks", []):
+        if check.get("ok"):
+            continue
+        name = str(check.get("name", "unknown"))
+        if name in CRITICAL_CHECKS:
+            score -= 30
+        elif name in {"disk_free", "log_freshness", "processed_stats_freshness", "block_progress", "sync_progress"}:
+            score -= 15
+        else:
+            score -= 10
+    return max(0, min(100, score))
+
+
+def maintenance_status(config: dict, now: dt.datetime | None = None) -> dict[str, Any]:
+    maintenance = config.get("maintenance") or {}
+    now = now or dt.datetime.now().astimezone()
+    mute_until = parse_iso_datetime(str(maintenance.get("mute_until") or ""))
+    enabled = bool(maintenance.get("enabled", False))
+    active = enabled
+    if mute_until is not None:
+        active = active or mute_until > now
+    return {
+        "active": active,
+        "enabled": enabled,
+        "mute_until": mute_until.isoformat() if mute_until is not None else "",
+        "critical_only": bool(maintenance.get("critical_only", True)),
+        "reason": str(maintenance.get("reason") or ""),
+    }
+
+
+def format_maintenance_status(config: dict, now: dt.datetime | None = None) -> str:
+    status = maintenance_status(config, now)
+    state = "active" if status["active"] else "off"
+    until = (status["mute_until"] or "manual") if status["active"] else "none"
+    return (
+        "maintenance="
+        f"{state} "
+        f"critical_only={status['critical_only']} "
+        f"until={until} "
+        f"reason={status['reason'] or 'none'}"
+    )
+
+
+def update_maintenance_config(
+    config_path: Path,
+    *,
+    mute_for_minutes: float | None = None,
+    unmute: bool = False,
+    critical_only: bool = True,
+    reason: str = "",
+    now: dt.datetime | None = None,
+) -> dict[str, Any]:
+    raw_config = load_raw_config(config_path)
+    maintenance = dict(DEFAULT_CONFIG["maintenance"])
+    configured = raw_config.get("maintenance") or {}
+    if isinstance(configured, dict):
+        maintenance.update(configured)
+
+    if unmute:
+        maintenance.update(
+            {
+                "enabled": False,
+                "mute_until": "",
+                "reason": "",
+            }
+        )
+    elif mute_for_minutes is not None:
+        if mute_for_minutes <= 0:
+            raise ValueError("mute minutes must be greater than 0")
+        now = now or dt.datetime.now().astimezone()
+        mute_until = now + dt.timedelta(minutes=float(mute_for_minutes))
+        maintenance.update(
+            {
+                "enabled": False,
+                "mute_until": mute_until.isoformat(timespec="seconds"),
+                "critical_only": bool(critical_only),
+                "reason": reason,
+            }
+        )
+
+    raw_config["maintenance"] = maintenance
+    save_config(config_path, raw_config)
+    merged = dict(DEFAULT_CONFIG)
+    merged.update(raw_config)
+    return maintenance_status(merged, now)
+
+
+def update_mining_address_config(
+    config_path: Path,
+    *,
+    address: str | None = None,
+    clear: bool = False,
+) -> dict[str, Any]:
+    if clear:
+        address = ""
+    elif not looks_like_kaspa_address(address):
+        raise ValueError("mining address must look like a Kaspa address, for example kaspa:q...")
+    raw_config = load_raw_config(config_path)
+    mining = dict(DEFAULT_CONFIG["mining"])
+    configured = raw_config.get("mining") or {}
+    if isinstance(configured, dict):
+        mining.update(configured)
+    mining["wallet_address"] = str(address or "").strip()
+    raw_config["mining"] = mining
+    save_config(config_path, raw_config)
+    return mining
+
+
+def enrich_operational_fields(report: dict[str, Any], config: dict, state: dict[str, Any] | None = None) -> None:
+    checked_at = parse_iso_datetime(report.get("checked_at")) or dt.datetime.now().astimezone()
+    current_incident = (state or {}).get("current_incident") or {}
+    started_at = parse_iso_datetime(current_incident.get("started_at"))
+    incident: dict[str, Any] = {
+        "active": report.get("status") != "ok",
+        "started_at": started_at.isoformat() if started_at is not None else "",
+        "duration_seconds": None,
+        "failed_checks": failed_check_names(report),
+        "causes": check_failure_causes(report),
+    }
+    if incident["active"]:
+        if started_at is None:
+            started_at = checked_at
+            incident["started_at"] = started_at.isoformat()
+        incident["duration_seconds"] = max(0.0, (checked_at - started_at).total_seconds())
+    report["incident"] = incident
+    report["health_score"] = health_score(report)
+    report["failure_causes"] = incident["causes"]
+    report["maintenance"] = maintenance_status(config, checked_at)
+
+
+def update_incident_state(state: dict[str, Any], report: dict[str, Any]) -> str | None:
+    checked_at = report.get("checked_at")
+    active = report.get("status") != "ok"
+    current = state.get("current_incident") or {}
+    if active:
+        if not current.get("started_at"):
+            current = {
+                "started_at": checked_at,
+                "first_severity": report.get("severity"),
+                "first_failed_checks": failed_check_names(report),
+            }
+        current.update(
+            {
+                "last_seen_at": checked_at,
+                "last_severity": report.get("severity"),
+                "last_failed_checks": failed_check_names(report),
+                "last_causes": check_failure_causes(report),
+            }
+        )
+        state["current_incident"] = current
+        return "incident_opened" if current.get("started_at") == checked_at else "incident_continues"
+    if current.get("started_at"):
+        state["last_incident"] = {
+            **current,
+            "resolved_at": checked_at,
+            "resolved_severity": report.get("severity"),
+        }
+        state.pop("current_incident", None)
+        return "incident_resolved"
+    return None
+
+
+def alert_muted_by_maintenance(report: dict[str, Any]) -> bool:
+    maintenance = report.get("maintenance") or {}
+    if not maintenance.get("active"):
+        return False
+    if maintenance.get("critical_only", True) and report.get("severity") == "critical":
+        return False
+    return report.get("status") != "ok"
 
 
 def numeric(value: Any) -> float | None:
@@ -778,6 +1863,8 @@ def history_item(report: dict[str, Any]) -> dict[str, Any]:
     grpc_metrics = report.get("grpc_metrics") or {}
     progress = report.get("progress") or {}
     latest_processed = progress.get("latest_processed") or {}
+    wallet = report.get("wallet") or {}
+    wallet_change = wallet.get("change") or {}
     return {
         "checked_at": report["checked_at"],
         "status": report["status"],
@@ -797,6 +1884,11 @@ def history_item(report: dict[str, Any]) -> dict[str, Any]:
         "latest_processed_transactions": latest_processed.get("transactions"),
         "latest_processed_blocks": latest_processed.get("blocks"),
         "latest_processed_seconds": latest_processed.get("seconds"),
+        "wallet_ok": wallet.get("ok"),
+        "wallet_total_sompi": wallet.get("total_sompi"),
+        "wallet_total_kas": wallet.get("total_kas"),
+        "wallet_delta_sompi": wallet_change.get("total_delta_sompi"),
+        "wallet_delta_kas": wallet_change.get("total_delta_kas"),
     }
 
 
@@ -1412,6 +2504,406 @@ def transaction_rate_chart(samples: list[dict[str, Any]]) -> str:
     )
 
 
+BPS_HIGHWAY_THREE_SCRIPT = """
+<script type="module">
+function renderKaspaCanvasFallback(canvas, payload) {
+  const highway = canvas.closest(".bps-highway");
+  const ctx = canvas.getContext("2d");
+  const laneCount = Math.max(1, Number(payload.laneCount || 20));
+  const initialUsage = Math.max(0, Math.min(1, Number(payload.usage || 0)));
+  const palette = payload.tone === "critical"
+    ? ["#ef4444", "#f97316", "#facc15", "#fb7185"]
+    : payload.tone === "warn"
+      ? ["#f59e0b", "#fbbf24", "#f97316", "#38bdf8"]
+      : ["#34d399", "#67e8f9", "#fbbf24", "#93c5fd"];
+  const cars = [];
+  for (let lane = 0; lane < laneCount; lane += 1) {
+    const lanePressure = 0.65 + (((lane * 7) % laneCount) / laneCount) * 0.7;
+    const count = Math.max(1, Math.min(5, 1 + Math.round(initialUsage * 4 * lanePressure)));
+    for (let index = 0; index < count; index += 1) {
+      cars.push({
+        lane,
+        z: (index / count + ((lane * 0.037) % 1)) % 1,
+        speed: 0.055 + initialUsage * 0.12 + (lane % 4) * 0.004,
+        color: palette[(lane + index) % palette.length],
+      });
+    }
+  }
+
+  function resizeCanvas() {
+    const rect = canvas.getBoundingClientRect();
+    const ratio = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = Math.max(320, Math.floor(rect.width * ratio));
+    canvas.height = Math.max(210, Math.floor(rect.height * ratio));
+    ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+  }
+
+  function project(lane, depth, width, height) {
+    const horizon = height * 0.02;
+    const bottom = height * 1.06;
+    const y = horizon + (bottom - horizon) * Math.pow(depth, 1.34);
+    const roadTop = width * 0.34;
+    const roadBottom = width * 1.18;
+    const roadWidth = roadTop + (roadBottom - roadTop) * depth;
+    const center = width * 0.64 - width * 0.24 * depth;
+    const laneWidth = roadWidth / laneCount;
+    const x = center - roadWidth / 2 + laneWidth * (lane + 0.5);
+    return { x, y, laneWidth };
+  }
+
+  function drawCar(car, width, height) {
+    const depth = Math.max(0.03, Math.min(0.99, car.z));
+    const p = project(car.lane, depth, width, height);
+    const carWidth = Math.max(5, p.laneWidth * 0.72);
+    const carHeight = Math.max(8, carWidth * 1.62);
+    ctx.save();
+    ctx.translate(p.x, p.y);
+    ctx.rotate(-0.23);
+    ctx.shadowColor = car.color;
+    ctx.shadowBlur = 10 + depth * 18;
+    ctx.fillStyle = car.color;
+    ctx.beginPath();
+    ctx.roundRect(-carWidth / 2, -carHeight / 2, carWidth, carHeight, Math.max(3, carWidth * 0.18));
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = "rgba(219, 234, 254, 0.88)";
+    ctx.beginPath();
+    ctx.roundRect(-carWidth * 0.32, -carHeight * 0.24, carWidth * 0.64, carHeight * 0.28, Math.max(2, carWidth * 0.12));
+    ctx.fill();
+    ctx.fillStyle = "rgba(2, 6, 23, 0.72)";
+    ctx.fillRect(-carWidth * 0.58, -carHeight * 0.28, carWidth * 0.12, carHeight * 0.18);
+    ctx.fillRect(carWidth * 0.46, -carHeight * 0.28, carWidth * 0.12, carHeight * 0.18);
+    ctx.fillRect(-carWidth * 0.58, carHeight * 0.12, carWidth * 0.12, carHeight * 0.18);
+    ctx.fillRect(carWidth * 0.46, carHeight * 0.12, carWidth * 0.12, carHeight * 0.18);
+    ctx.restore();
+  }
+
+  resizeCanvas();
+  highway.classList.add("three-ready", "canvas-fallback");
+  if (window.ResizeObserver) {
+    new ResizeObserver(resizeCanvas).observe(canvas);
+  } else {
+    window.addEventListener("resize", resizeCanvas);
+  }
+
+  let last = performance.now();
+  function frame(now) {
+    let currentPayload = payload;
+    try {
+      currentPayload = JSON.parse(canvas.dataset.highwayPayload || "{}");
+    } catch (_error) {
+      currentPayload = payload;
+    }
+    const currentUsage = Math.max(0, Math.min(1, Number(currentPayload.usage || 0)));
+    const rect = canvas.getBoundingClientRect();
+    const width = rect.width;
+    const height = rect.height;
+    const delta = Math.min(0.05, (now - last) / 1000);
+    last = now;
+    ctx.clearRect(0, 0, width, height);
+    const gradient = ctx.createLinearGradient(0, 0, 0, height);
+    gradient.addColorStop(0, "#111827");
+    gradient.addColorStop(1, "#020617");
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, width, height);
+
+    const horizon = height * 0.02;
+    const bottom = height * 1.05;
+    ctx.fillStyle = "#1f2937";
+    ctx.beginPath();
+    ctx.moveTo(width * 0.64 - width * 0.17, horizon);
+    ctx.lineTo(width * 0.64 + width * 0.17, horizon);
+    ctx.lineTo(width * 1.02, bottom);
+    ctx.lineTo(width * -0.18, bottom);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.strokeStyle = "rgba(148, 163, 184, 0.28)";
+    ctx.lineWidth = 1;
+    for (let lane = 1; lane < laneCount; lane += 1) {
+      ctx.beginPath();
+      for (let step = 0; step <= 34; step += 1) {
+        const depth = step / 34;
+        const left = project(lane - 0.5, depth, width, height);
+        const right = project(lane + 0.5, depth, width, height);
+        const x = (left.x + right.x) / 2;
+        const y = left.y;
+        if (step === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+    }
+
+    cars.forEach((car) => {
+      car.speed = 0.055 + currentUsage * 0.12 + (car.lane % 4) * 0.004;
+      car.z += car.speed * delta;
+      if (car.z > 1) car.z = 0.02;
+    });
+    cars.slice().sort((a, b) => a.z - b.z).forEach((car) => drawCar(car, width, height));
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+}
+
+async function renderKaspaBpsHighways() {
+  let THREE;
+  try {
+    if (!window.__kaspaBpsHighwayThreePromise) {
+      window.__kaspaBpsHighwayThreePromise = import("https://cdn.jsdelivr.net/npm/three@0.184.0/build/three.module.js");
+    }
+    THREE = await window.__kaspaBpsHighwayThreePromise;
+  } catch (_error) {
+    document.querySelectorAll("canvas.bps-highway-canvas").forEach((canvas) => {
+      if (canvas.dataset.bpsHighwayInitialized === "1") return;
+      canvas.dataset.bpsHighwayInitialized = "1";
+      let payload = {};
+      try {
+        payload = JSON.parse(canvas.dataset.highwayPayload || "{}");
+      } catch (_parseError) {
+        payload = {};
+      }
+      renderKaspaCanvasFallback(canvas, payload);
+    });
+    return;
+  }
+
+  document.querySelectorAll("canvas.bps-highway-canvas").forEach((canvas) => {
+    if (canvas.dataset.bpsHighwayInitialized === "1") return;
+    canvas.dataset.bpsHighwayInitialized = "1";
+    const highway = canvas.closest(".bps-highway");
+    let payload = {};
+    try {
+      payload = JSON.parse(canvas.dataset.highwayPayload || "{}");
+    } catch (_error) {
+      payload = {};
+    }
+    const laneCount = Math.max(1, Number(payload.laneCount || 20));
+    const usage = Math.max(0, Math.min(1, Number(payload.usage || 0)));
+    const laneWidth = 1.32;
+    const roadWidth = laneCount * laneWidth;
+    const roadLength = 92;
+    const scene = new THREE.Scene();
+    scene.fog = new THREE.Fog(0x07111f, 42, 120);
+
+    const camera = new THREE.PerspectiveCamera(34, 16 / 9, 0.1, 190);
+    camera.position.set(8.6, 5.4, 3.8);
+    camera.lookAt(-4.4, -3.4, -22);
+
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.setClearColor(0x000000, 0);
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+    scene.add(new THREE.HemisphereLight(0xe0f2fe, 0x0f172a, 1.45));
+    const key = new THREE.DirectionalLight(0xffffff, 2.0);
+    key.position.set(-8, 18, 16);
+    key.castShadow = true;
+    scene.add(key);
+
+    const roadMaterial = new THREE.MeshStandardMaterial({ color: 0x182230, roughness: 0.82, metalness: 0.05 });
+    const road = new THREE.Mesh(new THREE.BoxGeometry(roadWidth + 2.4, 0.18, roadLength), roadMaterial);
+    road.position.set(0, -0.12, -27);
+    road.receiveShadow = true;
+    scene.add(road);
+
+    const shoulderMaterial = new THREE.MeshStandardMaterial({ color: 0x0f766e, roughness: 0.72, metalness: 0.05 });
+    [-1, 1].forEach((side) => {
+      const shoulder = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.05, roadLength), shoulderMaterial);
+      shoulder.position.set(side * (roadWidth / 2 + 0.72), 0.03, -27);
+      shoulder.receiveShadow = true;
+      scene.add(shoulder);
+    });
+
+    const lineMaterial = new THREE.MeshStandardMaterial({ color: 0xe5edf6, emissive: 0x334155, roughness: 0.45 });
+    for (let lane = 1; lane < laneCount; lane += 1) {
+      const x = -roadWidth / 2 + lane * laneWidth;
+      for (let index = 0; index < 22; index += 1) {
+        const dash = new THREE.Mesh(new THREE.BoxGeometry(0.052, 0.045, 2.05), lineMaterial);
+        dash.position.set(x, 0.04, -70 + index * 4.25);
+        scene.add(dash);
+      }
+    }
+
+    const colorByTone = {
+      ok: [0x39d98a, 0x67e8f9, 0xfbbf24, 0x93c5fd],
+      warn: [0xf59e0b, 0xfbbf24, 0xf97316, 0x38bdf8],
+      critical: [0xef4444, 0xf97316, 0xfacc15, 0xfb7185],
+    };
+    const palette = colorByTone[payload.tone] || colorByTone.ok;
+    const bodyGeometry = new THREE.BoxGeometry(0.86, 0.32, 1.58);
+    const cabinGeometry = new THREE.BoxGeometry(0.58, 0.27, 0.66);
+    const wheelGeometry = new THREE.CylinderGeometry(0.13, 0.13, 0.12, 10);
+    const wheelMaterial = new THREE.MeshStandardMaterial({ color: 0x05070a, roughness: 0.56 });
+    const cars = [];
+
+    function makeCar(color) {
+      const car = new THREE.Group();
+      const bodyMaterial = new THREE.MeshStandardMaterial({ color, roughness: 0.36, metalness: 0.12 });
+      const glassMaterial = new THREE.MeshStandardMaterial({ color: 0xbae6fd, emissive: 0x0e7490, emissiveIntensity: 0.18, roughness: 0.18, metalness: 0.05 });
+      const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
+      body.position.y = 0.28;
+      body.castShadow = true;
+      car.add(body);
+      const cabin = new THREE.Mesh(cabinGeometry, glassMaterial);
+      cabin.position.set(0, 0.55, -0.16);
+      cabin.castShadow = true;
+      car.add(cabin);
+      [[-0.42, -0.43], [0.42, -0.43], [-0.42, 0.43], [0.42, 0.43]].forEach(([x, z]) => {
+        const wheel = new THREE.Mesh(wheelGeometry, wheelMaterial);
+        wheel.rotation.z = Math.PI / 2;
+        wheel.position.set(x, 0.18, z);
+        wheel.castShadow = true;
+        car.add(wheel);
+      });
+      return car;
+    }
+
+    for (let lane = 0; lane < laneCount; lane += 1) {
+      const lanePressure = 0.65 + (((lane * 7) % laneCount) / laneCount) * 0.7;
+      const count = Math.max(1, Math.min(5, 1 + Math.round(usage * 4 * lanePressure)));
+      const x = -roadWidth / 2 + laneWidth / 2 + lane * laneWidth;
+      for (let index = 0; index < count; index += 1) {
+        const car = makeCar(palette[(lane + index) % palette.length]);
+        const spread = roadLength / count;
+        car.position.set(x, 0.08, 22 - index * spread - ((lane * 2.7) % 11));
+        car.userData.speed = 9.5 + usage * 19 + (lane % 4) * 0.7;
+        scene.add(car);
+        cars.push(car);
+      }
+    }
+
+    function resize() {
+      const rect = canvas.getBoundingClientRect();
+      const width = Math.max(320, Math.floor(rect.width));
+      const height = Math.max(210, Math.floor(rect.height));
+      renderer.setSize(width, height, false);
+      camera.aspect = width / height;
+      camera.updateProjectionMatrix();
+    }
+    resize();
+    highway.classList.add("three-ready");
+    if (window.ResizeObserver) {
+      new ResizeObserver(resize).observe(canvas);
+    } else {
+      window.addEventListener("resize", resize);
+    }
+
+    let last = performance.now();
+    function animate(now) {
+      let currentPayload = payload;
+      try {
+        currentPayload = JSON.parse(canvas.dataset.highwayPayload || "{}");
+      } catch (_error) {
+        currentPayload = payload;
+      }
+      const currentUsage = Math.max(0, Math.min(1, Number(currentPayload.usage || 0)));
+      const delta = Math.min(0.05, (now - last) / 1000);
+      last = now;
+      cars.forEach((car) => {
+        car.userData.speed = 9.5 + currentUsage * 19 + (Math.abs(car.position.x / laneWidth) % 4) * 0.7;
+        car.position.z += car.userData.speed * delta;
+        if (car.position.z > 31) {
+          car.position.z = -72 - Math.random() * 16;
+        }
+      });
+      renderer.render(scene, camera);
+      requestAnimationFrame(animate);
+    }
+    requestAnimationFrame(animate);
+  });
+}
+
+renderKaspaBpsHighways();
+window.renderKaspaBpsHighways = renderKaspaBpsHighways;
+</script>
+"""
+
+
+def bps_highway_visual(
+    blocks_per_second: Any,
+    *,
+    transactions_per_second: Any = None,
+    sample_age_seconds: Any = None,
+    sample_window_seconds: Any = None,
+    transaction_count: Any = None,
+    lane_count: int = 20,
+    capacity_bps: float = 20.0,
+) -> str:
+    rate = numeric(blocks_per_second) or 0.0
+    tx_rate = numeric(transactions_per_second)
+    sample_age = numeric(sample_age_seconds)
+    usage = max(0.0, min(1.0, rate / capacity_bps if capacity_bps > 0 else 0.0))
+    if usage >= 0.9:
+        tone = "critical"
+        state = "near capacity"
+    elif usage >= 0.7:
+        tone = "warn"
+        state = "heavy flow"
+    else:
+        tone = "ok"
+        state = "clear flow"
+
+    active_lanes = lane_count if rate > 0 else 0
+    speed_seconds = max(1.8, 8.0 - usage * 5.2)
+    lanes = []
+    for lane in range(lane_count):
+        lane_active = lane < active_lanes
+        car_count = 0
+        if lane_active:
+            lane_pressure = 0.65 + (((lane * 7) % lane_count) / max(1, lane_count)) * 0.7
+            car_count = 1 + int(round(usage * 4 * lane_pressure))
+            car_count = max(1, min(5, car_count))
+        cars = []
+        for car in range(car_count):
+            delay = -1 * ((lane * 0.37) + (car * speed_seconds / max(1, car_count)))
+            width = 22 + ((lane + car) % 3) * 5
+            cars.append(
+                '<span class="bps-car" '
+                f'style="--delay: {delay:.2f}s; --speed: {speed_seconds + (lane % 4) * 0.18:.2f}s; '
+                f'--car-width: {width}px;"></span>'
+            )
+        lanes.append(
+            '<div class="bps-lane'
+            + (" active" if lane_active else "")
+            + f'" aria-label="lane {lane + 1}">'
+            + "".join(cars)
+            + "</div>"
+        )
+
+    tx_text = "unknown tx/s" if tx_rate is None else f"{tx_rate:.1f} tx/s"
+    age_text = "unknown age" if sample_age is None else f"{sample_age:g}s old"
+    window_text = "unknown window" if sample_window_seconds is None else f"{sample_window_seconds}s window"
+    tx_count_text = "unknown tx" if transaction_count is None else f"{transaction_count} tx"
+    payload = html.escape(
+        json.dumps(
+            {
+                "rate": rate,
+                "usage": usage,
+                "laneCount": lane_count,
+                "tone": tone,
+            },
+            separators=(",", ":"),
+        ),
+        quote=True,
+    )
+
+    return f"""
+<div class="bps-highway {html.escape(tone)}" data-bps-highway role="img" aria-label="20 lane BPS highway showing block throughput">
+  <div class="bps-highway-head">
+    <div>
+      <div class="bps-kicker">20-Lane BPS Highway</div>
+      <div class="bps-rate" data-bps-rate>{html.escape(f"{rate:.1f} BPS")}</div>
+    </div>
+    <div class="bps-state"><span data-bps-state>{html.escape(state)} · {usage * 100:.0f}%</span><br><span data-bps-tx-rate>{html.escape(tx_text)}</span></div>
+  </div>
+  <canvas class="bps-highway-canvas" data-highway-payload="{payload}" aria-label="3D highway with cars flowing by BPS"></canvas>
+  <div class="bps-road">{''.join(lanes)}</div>
+  <div class="bps-caption" data-bps-caption>{html.escape(str(active_lanes))}/{lane_count} lanes open · rusty-kaspa processed-stats log · {html.escape(age_text)} · {html.escape(tx_count_text)} / {html.escape(window_text)}</div>
+</div>
+""" + BPS_HIGHWAY_THREE_SCRIPT
+
+
 def relay_intake_chart(samples: list[dict[str, Any]]) -> str:
     points = [
         {
@@ -1517,6 +3009,7 @@ def triage_queue(checks: list[dict[str, Any]]) -> str:
         "grpc_metrics": "Inspect gRPC endpoint reachability and protobuf compatibility.",
         "sync_status": "Confirm sync progress before considering recovery.",
         "peer_count": "Check peer connectivity and network reachability.",
+        "active_peer_count": "Treat inactive peers as connectivity loss; inspect firewall, NAT, and kaspad peer state.",
         "block_progress": "Compare relay freshness with sync and peer state.",
         "processed_stats_freshness": "Inspect kaspad processed-stats log output and transaction throughput freshness.",
         "disk_free": "Free disk space or move data before restart attempts.",
@@ -1599,6 +3092,11 @@ def write_stream_page(
     progress = report.get("progress") or {}
     sync_progress = report.get("sync_progress") or {}
     disk = report.get("disk") or {}
+    wallet = report.get("wallet") or {}
+    mining_status = report.get("mining") or {}
+    whale = report.get("whale_watch") or {}
+    incident = report.get("incident") or {}
+    maintenance = report.get("maintenance") or {}
     history_items = state.get("history", [])[-80:]
     latest_processed = progress.get("latest_processed") or {}
     latest_processed_age = progress.get("latest_processed_age_seconds")
@@ -1616,6 +3114,13 @@ def write_stream_page(
     mempool_chart = mempool_10s_chart(mempool_history)
     transaction_chart = transaction_rate_chart(progress.get("processed_samples") or [])
     processed_chart = processed_rate_chart(progress.get("processed_samples") or [])
+    bps_highway = bps_highway_visual(
+        processed_rate,
+        transactions_per_second=transaction_rate,
+        sample_age_seconds=latest_processed_age,
+        sample_window_seconds=latest_processed.get("seconds"),
+        transaction_count=latest_processed.get("transactions"),
+    )
     relay_chart = relay_intake_chart(progress.get("relay_samples") or [])
     peer_chart = sparkline_svg(
         history_items + [{"peer_count": grpc_metrics.get("peer_count")}],
@@ -1736,6 +3241,23 @@ def write_stream_page(
     .chart-title {{ margin-bottom: 14px; color: #d6e2ef; font-size: 22px; font-weight: 900; }}
     .processed-chart, .sparkline {{ width: 100%; height: 270px; display: block; background: rgba(2, 6, 23, 0.55); border-radius: 8px; }}
     .sparkline {{ height: 178px; }}
+    .bps-highway {{ display: grid; grid-template-rows: auto 1fr auto; gap: 16px; min-height: 360px; padding: 22px; border: 1px solid rgba(148, 163, 184, 0.24); border-radius: 8px; background: rgba(2, 6, 23, 0.62); overflow: hidden; }}
+    .bps-highway-head {{ display: flex; align-items: flex-start; justify-content: space-between; gap: 22px; }}
+    .bps-kicker {{ color: #8bd8c2; font-size: 18px; font-weight: 900; text-transform: uppercase; }}
+    .bps-rate {{ margin-top: 4px; color: #f8fafc; font-size: 54px; line-height: 0.95; font-weight: 950; }}
+    .bps-state {{ color: #d6e2ef; font-size: 20px; font-weight: 900; text-align: right; }}
+    .bps-state span {{ color: #a6b7c8; font-size: 17px; font-weight: 800; }}
+    .bps-highway-canvas {{ width: 100%; height: 420px; display: block; border-radius: 8px; background: linear-gradient(180deg, rgba(15, 23, 42, 0.96), rgba(2, 6, 23, 0.98)); }}
+    .bps-highway.three-ready .bps-road {{ display: none; }}
+    .bps-highway.three-fallback .bps-highway-canvas {{ display: none; }}
+    .bps-road {{ display: grid; grid-template-rows: repeat(20, 1fr); gap: 4px; min-height: 0; padding: 10px 0; }}
+    .bps-lane {{ position: relative; overflow: hidden; border-top: 1px dashed rgba(148, 163, 184, 0.22); background: linear-gradient(90deg, rgba(15, 23, 42, 0.18), rgba(15, 23, 42, 0.58)); border-radius: 3px; }}
+    .bps-lane.active {{ background: linear-gradient(90deg, rgba(20, 125, 100, 0.20), rgba(15, 23, 42, 0.68)); }}
+    .bps-car {{ position: absolute; top: 50%; left: -46px; width: var(--car-width); height: 8px; border-radius: 999px; background: #6ee7b7; box-shadow: 0 0 12px rgba(110, 231, 183, 0.55); transform: translateY(-50%); animation: bps-drive var(--speed) linear infinite; animation-delay: var(--delay); }}
+    .bps-highway.warn .bps-car {{ background: #fbbf24; box-shadow: 0 0 12px rgba(251, 191, 36, 0.55); }}
+    .bps-highway.critical .bps-car {{ background: #f87171; box-shadow: 0 0 12px rgba(248, 113, 113, 0.60); }}
+    .bps-caption {{ color: #a6b7c8; font-size: 18px; font-weight: 800; }}
+    @keyframes bps-drive {{ from {{ transform: translate(-50px, -50%); }} to {{ transform: translate(1980px, -50%); }} }}
     .empty-chart {{ display: grid; place-items: center; min-height: 178px; color: #93a4b8; border: 1px dashed rgba(148, 163, 184, 0.32); border-radius: 8px; font-size: 22px; font-weight: 800; }}
     .severity-timeline {{ height: 62px; display: flex; gap: 6px; align-items: stretch; }}
     .severity-segment {{ flex: 1; border-radius: 3px; background: #64748b; }}
@@ -1768,7 +3290,7 @@ def write_stream_page(
     </section>
     <section class="stream-scene" data-scene="throughput">
       <header class="scene-head"><div><div class="scene-kicker">Throughput</div><h1>Transaction Throughput</h1></div><div class="scene-meta">processed stats<br>{html.escape(latest_processed_age_text)}</div></header>
-      <div class="scene-body grid-main"><div class="hero-value"><div class="label">Live Tx Rate</div><div class="value">{html.escape(transaction_rate_text)}</div><div class="detail">{html.escape(str(latest_processed.get('transactions', 'unknown')))} tx over {html.escape(str(latest_processed.get('seconds', 'unknown')))}s</div></div><div class="chart-panel"><div class="chart-title">Transactions Per Second</div>{transaction_chart}</div><div class="metrics-grid compact">{throughput_metrics}</div><div class="chart-panel"><div class="chart-title">Blocks Per Second</div>{processed_chart}</div></div>
+      <div class="scene-body grid-main"><div class="hero-value"><div class="label">Live Tx Rate</div><div class="value">{html.escape(transaction_rate_text)}</div><div class="detail">{html.escape(str(latest_processed.get('transactions', 'unknown')))} tx over {html.escape(str(latest_processed.get('seconds', 'unknown')))}s</div></div><div class="chart-panel"><div class="chart-title">BPS Highway</div>{bps_highway}</div><div class="metrics-grid compact">{throughput_metrics}</div><div class="chart-panel"><div class="chart-title">Blocks Per Second</div>{processed_chart}</div></div>
       <footer class="scene-foot"><span>Processed freshness check: {html.escape('OK' if check_passed(report, 'processed_stats_freshness') else 'FAIL')}</span><span data-scene-label></span></footer>
     </section>
     <section class="stream-scene" data-scene="mempool">
@@ -2070,6 +3592,225 @@ def multi_node_history_panel(db_path: Path | None) -> str:
     """
 
 
+def wallet_status_panel(report: dict[str, Any], state: dict[str, Any], market_snapshot_path: Path | None = None) -> str:
+    wallet = report.get("wallet") or {}
+    change = wallet.get("change") or {}
+    pending = wallet.get("pending") or {}
+    pending_entries = pending.get("entries") or []
+    events = list(wallet.get("events") or state.get("wallet_events") or [])
+    market_metrics = build_market_metrics(market_snapshot_path or Path(DEFAULT_CONFIG["market_snapshot_path"]))
+    latest_market = market_metrics.get("latest_successful") or {}
+    latest_price = latest_market.get("spot_last_price")
+    mining = mining_reward_summary(events, price_usdt=latest_price)
+    address_rows = "\n".join(
+        html_row(
+            [
+                entry.get("label") or "unlabeled",
+                entry.get("address") or "",
+                format_kas(entry.get("balance_sompi")),
+            ]
+        )
+        for entry in wallet.get("entries") or []
+    ) or html_row(["none", "no watch addresses loaded", ""])
+    pending_rows = "\n".join(
+        html_row(
+            [
+                item.get("direction", "unknown"),
+                item.get("address", ""),
+                format_kas(item.get("amount_sompi")) if item.get("amount_sompi") is not None else "unknown",
+                format_kas(item.get("fee_sompi")),
+                item.get("tx_id") or "unknown",
+            ]
+        )
+        for item in pending_entries[:20]
+    ) or html_row(["none", "no pending address txs", "", "", ""])
+    event_rows = "\n".join(
+        html_row(
+            [
+                item.get("observed_at", ""),
+                item.get("direction", "unknown"),
+                item.get("label") or "unlabeled",
+                item.get("address") or "",
+                format_kas(item.get("delta_sompi")),
+            ]
+        )
+        for item in reversed(events[-20:])
+    ) or html_row(["none", "no recorded wallet events", "", "", ""])
+    return f"""
+    <section id="tab-wallet" class="tab-panel">
+    <section class="visual-grid">
+      {visual_card("Wallet Total", format_kas(wallet.get("total_sompi")), f"{len(wallet.get('entries') or [])} watch addresses", "neutral")}
+      {visual_card("Wallet Delta", format_kas(change.get("total_delta_sompi")), "latest detected change", "neutral")}
+      {visual_card("Pending Txs", len(pending_entries), f"mempool ok={pending.get('ok', False)}", "neutral")}
+      {visual_card("Mining Today", format_kas(mining.get("today_sompi")), format_usd_amount(mining.get("today_usd")), "neutral")}
+      {visual_card("Mining 7D", format_kas(mining.get("seven_day_sompi")), format_usd_amount(mining.get("seven_day_usd")), "neutral")}
+      {visual_card("Monthly Run Rate", format_kas((mining.get("projected_monthly_kas") or 0) * 100_000_000), format_usd_amount(mining.get("projected_monthly_usd")), "neutral")}
+      {visual_card("Last Reward Age", format_optional_number(mining.get("latest_reward_age_hours")), "hours since mining reward", "neutral")}
+    </section>
+    <section class="layout">
+      <section class="panel">
+        <h2>Wallet Status</h2>
+        <div class="context-grid">
+          <div class="context-item"><div class="context-label">Enabled</div><div class="context-value">{html.escape(str(wallet.get('enabled', False)))}</div></div>
+          <div class="context-item"><div class="context-label">Read OK</div><div class="context-value">{html.escape(str(wallet.get('ok', False)))}</div></div>
+          <div class="context-item"><div class="context-label">Change</div><div class="context-value">{html.escape(str(change.get('changed', False)))}</div></div>
+          <div class="context-item"><div class="context-label">Detail</div><div class="context-value">{html.escape(str(wallet.get('detail', 'unknown')))}</div></div>
+        </div>
+      </section>
+      <section class="panel">
+        <h2>Mining Rewards</h2>
+        <div class="context-grid">
+          <div class="context-item"><div class="context-label">Candidates</div><div class="context-value">{html.escape(str(mining.get('candidate_events', 0)))}</div></div>
+          <div class="context-item"><div class="context-label">Average 7D</div><div class="context-value">{html.escape(format_kas((mining.get('average_daily_7d_kas') or 0) * 100_000_000))}</div></div>
+          <div class="context-item"><div class="context-label">Average 30D</div><div class="context-value">{html.escape(format_kas((mining.get('average_daily_30d_kas') or 0) * 100_000_000))}</div></div>
+          <div class="context-item"><div class="context-label">Latest Reward</div><div class="context-value">{html.escape(str(mining.get('latest_reward_at') or 'none'))}</div></div>
+          <div class="context-item"><div class="context-label">Reward Age</div><div class="context-value">{html.escape(format_optional_number(mining.get('latest_reward_age_hours')))}h</div></div>
+          <div class="context-item"><div class="context-label">KAS Price</div><div class="context-value">{html.escape(format_market_price(mining.get('price_usdt')))}</div></div>
+          <div class="context-item"><div class="context-label">30D Value</div><div class="context-value">{html.escape(format_usd_amount(mining.get('thirty_day_usd')))}</div></div>
+        </div>
+      </section>
+      <section class="panel">
+        <h2>Address Balances</h2>
+        <table>
+          <thead>{html_row(["Label", "Address", "Balance"], "th")}</thead>
+          <tbody>{address_rows}</tbody>
+        </table>
+      </section>
+    </section>
+    <section class="panel">
+      <h2>Pending Wallet Txs</h2>
+      <table>
+        <thead>{html_row(["Direction", "Address", "Amount", "Fee", "Tx ID"], "th")}</thead>
+        <tbody>{pending_rows}</tbody>
+      </table>
+    </section>
+    <section class="panel">
+      <h2>Wallet Events</h2>
+      <table>
+        <thead>{html_row(["Observed", "Direction", "Label", "Address", "Delta"], "th")}</thead>
+        <tbody>{event_rows}</tbody>
+      </table>
+    </section>
+    </section>
+    """
+
+
+def mining_status_panel(report: dict[str, Any]) -> str:
+    mining = report.get("mining") or {}
+    process_rows = "\n".join(
+        html_row([line])
+        for line in mining.get("processes") or []
+    ) or html_row(["not running"])
+    wallet_address = str(mining.get("wallet_address") or "")
+    short_wallet = wallet_address if len(wallet_address) <= 30 else f"{wallet_address[:14]}...{wallet_address[-10:]}"
+    last_share_age = mining.get("last_share_age_seconds")
+    last_share_text = "unknown" if last_share_age is None else f"{float(last_share_age) / 60:.1f}m"
+    return f"""
+    <section id="tab-mining" class="tab-panel">
+    <section class="visual-grid">
+      {visual_card("Miner Mode", mining.get("mode") or "disabled", f"enabled={mining.get('enabled', False)}", "neutral")}
+      {visual_card("Miner Status", "running" if mining.get("running") else "stopped", f"ok={mining.get('ok', False)}", "neutral")}
+      {visual_card("Hashrate", format_hashrate_local(mining.get("hashrate_hs")), "latest parsed miner log rate", "neutral")}
+      {visual_card("Accepted Shares", mining.get("accepted_shares", 0), f"rejected={mining.get('rejected_shares', 0)}", "neutral")}
+      {visual_card("Last Share", last_share_text, "age since accepted/rejected share", "neutral")}
+    </section>
+    <section class="layout">
+      <section class="panel">
+        <h2>Mining Status</h2>
+        <div class="context-grid">
+          <div class="context-item"><div class="context-label">Enabled</div><div class="context-value">{html.escape(str(mining.get('enabled', False)))}</div></div>
+          <div class="context-item"><div class="context-label">Configured</div><div class="context-value">{html.escape(str(mining.get('configured', False)))}</div></div>
+          <div class="context-item"><div class="context-label">Mode</div><div class="context-value">{html.escape(str(mining.get('mode') or 'disabled'))}</div></div>
+          <div class="context-item"><div class="context-label">Process Match</div><div class="context-value">{html.escape(str(mining.get('process_match') or 'none'))}</div></div>
+          <div class="context-item"><div class="context-label">Pool</div><div class="context-value">{html.escape(str(mining.get('pool_url') or 'none'))}</div></div>
+          <div class="context-item"><div class="context-label">Worker</div><div class="context-value">{html.escape(str(mining.get('worker_name') or 'none'))}</div></div>
+          <div class="context-item"><div class="context-label">Wallet</div><div class="context-value">{html.escape(short_wallet or 'none')}</div></div>
+          <div class="context-item"><div class="context-label">Address Source</div><div class="context-value">{html.escape(str(mining.get('wallet_address_source') or 'none'))}</div></div>
+          <div class="context-item"><div class="context-label">Detail</div><div class="context-value">{html.escape(str(mining.get('detail', 'unknown')))}</div></div>
+        </div>
+      </section>
+      <section class="panel">
+        <h2>macOS GPU Plan</h2>
+        <div class="context-grid">
+          <div class="context-item"><div class="context-label">Phase 1</div><div class="context-value">external miner monitor</div></div>
+          <div class="context-item"><div class="context-label">Phase 2</div><div class="context-value">dummy or CPU miner pipeline</div></div>
+          <div class="context-item"><div class="context-label">Phase 3</div><div class="context-value">Metal kHeavyHash spike</div></div>
+          <div class="context-item"><div class="context-label">Safety</div><div class="context-value">no automatic start/stop in this build</div></div>
+        </div>
+      </section>
+    </section>
+    <section class="panel">
+      <h2>Miner Processes</h2>
+      <table>
+        <thead>{html_row(["Process"], "th")}</thead>
+        <tbody>{process_rows}</tbody>
+      </table>
+    </section>
+    </section>
+    """
+
+
+def whale_watch_panel(report: dict[str, Any], state: dict[str, Any]) -> str:
+    whale = report.get("whale_watch") or {}
+    events = list(whale.get("events") or state.get("whale_events") or [])
+    summary = whale_watch_summary(events)
+    event_rows = "\n".join(
+        html_row(
+            [
+                item.get("observed_at", ""),
+                item.get("type", ""),
+                format_kas(item.get("amount_sompi")),
+                short_hash(item.get("tx_id")),
+                item.get("source", "unknown"),
+                item.get("status", ""),
+                item.get("address") or "",
+            ]
+        )
+        for item in reversed(events[-20:])
+    ) or html_row(["none", "no whale events recorded", "", "", "", "", ""])
+    return f"""
+    <section id="tab-whales" class="tab-panel">
+    <section class="visual-grid">
+      {visual_card("Whale Threshold", format_kas(whale.get("min_amount_sompi")), "single output minimum", "neutral")}
+      {visual_card("24h Whale Count", summary.get("count_24h", 0), "events in last 24h", "neutral")}
+      {visual_card("24h Whale Volume", format_kas(summary.get("volume_24h_sompi")), "detected large outputs", "neutral")}
+      {visual_card("Latest Whale", format_kas(summary.get("latest_amount_sompi")), short_hash(summary.get("latest_tx_id")) or "none", "neutral")}
+      {visual_card("Mempool Scan", whale.get("mempool_entries", 0), f"ok={whale.get('ok', False)}", "neutral")}
+    </section>
+    <section class="layout">
+      <section class="panel">
+        <h2>Whale Watch</h2>
+        <div class="context-grid">
+          <div class="context-item"><div class="context-label">Enabled</div><div class="context-value">{html.escape(str(whale.get('enabled', False)))}</div></div>
+          <div class="context-item"><div class="context-label">Read OK</div><div class="context-value">{html.escape(str(whale.get('ok', False)))}</div></div>
+          <div class="context-item"><div class="context-label">Candidates</div><div class="context-value">{html.escape(str(len(whale.get('candidates') or [])))}</div></div>
+          <div class="context-item"><div class="context-label">Confirmed Candidates</div><div class="context-value">{html.escape(str(len(whale.get('confirmed_candidates') or [])))}</div></div>
+          <div class="context-item"><div class="context-label">Latest Observed</div><div class="context-value">{html.escape(str(summary.get('latest_observed_at') or 'none'))}</div></div>
+          <div class="context-item"><div class="context-label">Detail</div><div class="context-value">{html.escape(str(whale.get('detail', 'unknown')))}</div></div>
+          <div class="context-item"><div class="context-label">Confirmed Detail</div><div class="context-value">{html.escape(str(whale.get('confirmed_detail', 'unknown')))}</div></div>
+        </div>
+      </section>
+      <section class="panel">
+        <h2>Alert Policy</h2>
+        <div class="context-grid">
+          <div class="context-item"><div class="context-label">Alert</div><div class="context-value">{html.escape(str(whale_watch_config({'whale_watch': whale}).get('alert_enabled', True)))}</div></div>
+          <div class="context-item"><div class="context-label">Confirmed Scan</div><div class="context-value">{html.escape(str(whale.get('confirmed_enabled', True)))}</div></div>
+          <div class="context-item"><div class="context-label">History Limit</div><div class="context-value">{html.escape(str(whale_watch_config({'whale_watch': whale}).get('event_history_entries')))}</div></div>
+          <div class="context-item"><div class="context-label">Source</div><div class="context-value">mempool + virtual chain</div></div>
+        </div>
+      </section>
+    </section>
+    <section class="panel">
+      <h2>Whale Events</h2>
+      <table>
+        <thead>{html_row(["Observed", "Type", "Amount", "Tx ID", "Source", "Status", "Address"], "th")}</thead>
+        <tbody>{event_rows}</tbody>
+      </table>
+    </section>
+    </section>
+    """
+
+
 def write_status_page(
     path: Path,
     report: dict[str, Any],
@@ -2077,6 +3818,7 @@ def write_status_page(
     benchmark_path: Path | None = None,
     recovery_records: list[dict[str, Any]] | None = None,
     sqlite_history: Path | None = None,
+    market_snapshot_path: Path | None = None,
 ) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     checks = "\n".join(
@@ -2102,9 +3844,20 @@ def write_status_page(
     progress = report.get("progress") or {}
     sync_progress = report.get("sync_progress") or {}
     recovery = report.get("recovery") or {}
+    incident = report.get("incident") or {}
+    maintenance = report.get("maintenance") or {}
+    wallet_panel = wallet_status_panel(report, state, market_snapshot_path)
+    mining_panel = mining_status_panel(report)
+    whale_panel = whale_watch_panel(report, state)
+    latest_recovery = (recovery_records or [])[-1] if recovery_records else {}
+    operator_required = latest_recovery.get("operator_required")
+    operator_required_text = "Yes" if operator_required is True else "No" if operator_required is False else "Unknown"
+    operator_reason = latest_recovery.get("operator_reason") or latest_recovery.get("reason") or "none"
     failed = failed_check_names(report)
     failure_text = ", ".join(failed) if failed else "None"
     last_alert_at = state.get("last_alert_at") or "None"
+    incident_duration = numeric(incident.get("duration_seconds"))
+    incident_duration_text = "inactive" if incident_duration is None else f"{incident_duration / 60:.1f}m"
     benchmark_summary = build_benchmark_summary(
         benchmark_path or Path(DEFAULT_CONFIG["benchmark_path"]),
         limit=48,
@@ -2134,13 +3887,14 @@ def write_status_page(
                 item.get("severity_before", ""),
                 item.get("severity_after", ""),
                 ",".join(item.get("failed_checks_before") or []),
+                "YES" if item.get("operator_required") is True else "no" if item.get("operator_required") is False else "unknown",
                 item.get("reason", ""),
             ]
         )
         for item in reversed(recovery_records or [])
     )
     if not recovery_rows:
-        recovery_rows = html_row(["No recovery attempts recorded", "", "", "", "", ""])
+        recovery_rows = html_row(["No recovery attempts recorded", "", "", "", "", "", ""])
     disk = report.get("disk") or {}
     checks_total = len(report["checks"])
     checks_ok = sum(1 for check in report["checks"] if check.get("ok"))
@@ -2190,6 +3944,13 @@ def write_status_page(
             f"{latest_processed_age_text}"
         )
     )
+    bps_highway = bps_highway_visual(
+        processed_rate,
+        transactions_per_second=transaction_rate,
+        sample_age_seconds=latest_processed_age,
+        sample_window_seconds=latest_processed.get("seconds"),
+        transaction_count=latest_processed.get("transactions"),
+    )
     relay_samples = progress.get("relay_samples") or []
     relay_intake = relay_intake_chart(relay_samples)
     relay_detail = (
@@ -2237,6 +3998,10 @@ def write_status_page(
         <div><span>Failed</span><strong>{html.escape(failure_text)}</strong></div>
         <div><span>Network</span><strong>{html.escape(str(network_text))}</strong></div>
         <div><span>Recovery</span><strong>{html.escape(str(recovery.get('action', 'unknown')))}</strong></div>
+        <div><span>Health Score</span><strong>{html.escape(str(report.get('health_score', 'unknown')))}</strong></div>
+        <div><span>Incident</span><strong>{html.escape(incident_duration_text)}</strong></div>
+        <div><span>Maintenance</span><strong>{html.escape('active' if maintenance.get('active') else 'off')}</strong></div>
+        <div><span>Operator Required</span><strong>{html.escape(operator_required_text)} · {html.escape(str(operator_reason))}</strong></div>
       </div>
     </section>
     """
@@ -2358,7 +4123,7 @@ def write_status_page(
     .incident p {{ margin: 0; color: var(--muted); line-height: 1.45; }}
     .incident-facts {{
       display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
+      grid-template-columns: repeat(4, minmax(0, 1fr));
       gap: 8px;
     }}
     .incident-facts div {{
@@ -2669,6 +4434,62 @@ def write_status_page(
     .chart-value {{ font-size: 18px; font-weight: 800; overflow-wrap: anywhere; text-align: right; }}
     .sparkline {{ width: 100%; height: 92px; display: block; }}
     .processed-chart {{ width: 100%; height: 164px; display: block; background: #f8fafc; border-radius: 8px; }}
+    .bps-highway {{
+      display: grid;
+      gap: 12px;
+      min-height: 284px;
+      padding: 12px;
+      border: 1px solid #d9e1e8;
+      border-radius: 8px;
+      background: #101923;
+      overflow: hidden;
+    }}
+    .bps-highway-head {{
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+    }}
+    .bps-kicker {{ color: #9fe8d4; font-size: 12px; font-weight: 900; text-transform: uppercase; }}
+    .bps-rate {{ margin-top: 3px; color: #f8fafc; font-size: 30px; line-height: 1; font-weight: 900; }}
+    .bps-state {{ color: #d6e2ef; font-size: 13px; font-weight: 900; text-align: right; }}
+    .bps-state span {{ color: #a6b7c8; font-size: 12px; font-weight: 800; }}
+    .bps-highway-canvas {{
+      width: 100%;
+      height: 310px;
+      display: block;
+      border-radius: 8px;
+      background: linear-gradient(180deg, #111827, #020617);
+    }}
+    .bps-highway.three-ready .bps-road {{ display: none; }}
+    .bps-highway.three-fallback .bps-highway-canvas {{ display: none; }}
+    .bps-road {{ display: grid; grid-template-rows: repeat(20, 1fr); gap: 3px; min-height: 172px; }}
+    .bps-lane {{
+      position: relative;
+      overflow: hidden;
+      min-height: 6px;
+      border-top: 1px dashed rgba(217, 225, 232, 0.22);
+      border-radius: 3px;
+      background: rgba(255, 255, 255, 0.05);
+    }}
+    .bps-lane.active {{ background: rgba(20, 125, 100, 0.22); }}
+    .bps-car {{
+      position: absolute;
+      top: 50%;
+      left: -42px;
+      width: var(--car-width);
+      height: 7px;
+      border-radius: 999px;
+      background: #35c58f;
+      box-shadow: 0 0 10px rgba(53, 197, 143, 0.42);
+      transform: translateY(-50%);
+      animation: bps-drive var(--speed) linear infinite;
+      animation-delay: var(--delay);
+    }}
+    .bps-highway.warn .bps-car {{ background: #f0a000; box-shadow: 0 0 10px rgba(240, 160, 0, 0.45); }}
+    .bps-highway.critical .bps-car {{ background: #ef6b5f; box-shadow: 0 0 10px rgba(239, 107, 95, 0.50); }}
+    .bps-caption {{ color: #a6b7c8; font-size: 12px; font-weight: 800; }}
+    @keyframes bps-drive {{ from {{ transform: translate(-50px, -50%); }} to {{ transform: translate(1220px, -50%); }} }}
     .empty-chart {{ height: 92px; display: grid; place-items: center; color: var(--muted); font-size: 13px; background: #f8fafc; border-radius: 8px; }}
     .severity-timeline {{
       height: 92px;
@@ -2851,6 +4672,8 @@ def write_status_page(
       .futures-panel .market-meta {{ grid-template-columns: 1fr; }}
       .market-source-list {{ grid-template-columns: 1fr; }}
       .panel {{ overflow-x: auto; }}
+      .bps-highway-head {{ display: block; }}
+      .bps-state {{ text-align: left; margin-top: 6px; }}
       .bar-block, .context-item {{ margin-bottom: 10px; }}
       .status-tabs, .subtab-row {{ display: grid; grid-template-columns: 1fr 1fr; }}
     }}
@@ -2862,7 +4685,7 @@ def write_status_page(
       <div class="hero-top">
         <div>
           <h1>Kaspa Node Watchtower</h1>
-          <div class="subtle">{html.escape(report['node_name'])} · checked at <code>{html.escape(report['checked_at'])}</code> · auto-refresh 60s</div>
+          <div class="subtle">{html.escape(report['node_name'])} · checked at <code data-watchtower-checked-at>{html.escape(report['checked_at'])}</code> · BPS live refresh 5s · page refresh 60s</div>
         </div>
         <div class="hero-actions">
           <a class="header-link" href="stream.html">Stream</a>
@@ -2888,6 +4711,9 @@ def write_status_page(
       <button class="tab-button active" type="button" data-tab-target="tab-market">Market</button>
       <button class="tab-button" type="button" data-tab-target="tab-futures">Futures</button>
       <button class="tab-button" type="button" data-tab-target="tab-network">Network</button>
+      <button class="tab-button" type="button" data-tab-target="tab-wallet">Wallet</button>
+      <button class="tab-button" type="button" data-tab-target="tab-mining">Mining</button>
+      <button class="tab-button" type="button" data-tab-target="tab-whales">Whales</button>
       <button class="tab-button" type="button" data-tab-target="tab-ops">Ops</button>
       <button class="tab-button" type="button" data-tab-target="tab-history">History</button>
     </nav>
@@ -3120,6 +4946,14 @@ def write_status_page(
         {severity_chart}
       </section>
     </section>
+    <section class="panel" data-bps-live-panel>
+      <div class="chart-head">
+        <h2>BPS Highway</h2>
+        <div class="chart-value" data-bps-panel-rate>{html.escape(processed_rate_text)}</div>
+      </div>
+      <div class="subtle">20-lane visual flow mapped from current processed blocks per second</div>
+      {bps_highway}
+    </section>
     <section class="panel">
       <div class="chart-head">
         <h2>Relay Intake</h2>
@@ -3153,6 +4987,9 @@ def write_status_page(
       {mempool_chart}
     </section>
     </section>
+    {wallet_panel}
+    {mining_panel}
+    {whale_panel}
     <section id="tab-ops" class="tab-panel">
     <section class="layout">
       <section class="panel">
@@ -3207,7 +5044,7 @@ def write_status_page(
     <section class="panel">
       <h2>Recent Recovery</h2>
       <table>
-        <thead>{html_row(["Started At", "Action", "Before", "After", "Failed Before", "Reason"], "th")}</thead>
+        <thead>{html_row(["Started At", "Action", "Before", "After", "Failed Before", "Operator Required", "Reason"], "th")}</thead>
         <tbody>{recovery_rows}</tbody>
       </table>
     </section>
@@ -3230,23 +5067,206 @@ def write_status_page(
       }});
     }}
 
+    const statusActiveTabKey = "kaspa-watchtower-active-tab";
+    const statusActiveTimeframeKey = "kaspa-watchtower-active-timeframe";
+    const statusActiveLiquidationKey = "kaspa-watchtower-active-liquidation";
+
+    function storeDashboardSelection(key, value) {{
+      if (!value || !window.localStorage) {{
+        return;
+      }}
+      try {{
+        window.localStorage.setItem(key, value);
+      }} catch (_error) {{
+        // Ignore storage failures in private browsing or locked-down WebViews.
+      }}
+    }}
+
+    function loadDashboardSelection(key) {{
+      if (!window.localStorage) {{
+        return "";
+      }}
+      try {{
+        return window.localStorage.getItem(key) || "";
+      }} catch (_error) {{
+        return "";
+      }}
+    }}
+
+    function validDashboardTarget(buttonSelector, attr, target) {{
+      if (!target) {{
+        return "";
+      }}
+      const button = document.querySelector(`${{buttonSelector}}[${{attr}}="${{CSS.escape(target)}}"]`);
+      return button ? target : "";
+    }}
+
+    function restoreDashboardSelection() {{
+      const hashTarget = window.location.hash ? window.location.hash.slice(1) : "";
+      const tabTarget = validDashboardTarget(
+        ".tab-button",
+        "data-tab-target",
+        hashTarget || loadDashboardSelection(statusActiveTabKey),
+      );
+      const timeframeTarget = validDashboardTarget(
+        "[data-timeframe-target]",
+        "data-timeframe-target",
+        loadDashboardSelection(statusActiveTimeframeKey),
+      );
+      const liquidationTarget = validDashboardTarget(
+        "[data-liquidation-target]",
+        "data-liquidation-target",
+        loadDashboardSelection(statusActiveLiquidationKey),
+      );
+      if (tabTarget) {{
+        activateDashboardGroup(".tab-button", ".tab-panel", "data-tab-target", "id", tabTarget);
+      }}
+      if (timeframeTarget) {{
+        activateDashboardGroup("[data-timeframe-target]", "[data-timeframe-panel]", "data-timeframe-target", "data-timeframe-panel", timeframeTarget);
+      }}
+      if (liquidationTarget) {{
+        activateDashboardGroup("[data-liquidation-target]", "[data-liquidation-panel]", "data-liquidation-target", "data-liquidation-panel", liquidationTarget);
+      }}
+    }}
+
     document.querySelectorAll("[data-tab-target]").forEach((button) => {{
       button.addEventListener("click", () => {{
-        activateDashboardGroup(".tab-button", ".tab-panel", "data-tab-target", "id", button.getAttribute("data-tab-target"));
+        const target = button.getAttribute("data-tab-target");
+        activateDashboardGroup(".tab-button", ".tab-panel", "data-tab-target", "id", target);
+        storeDashboardSelection(statusActiveTabKey, target);
+        if (window.history && window.history.replaceState) {{
+          window.history.replaceState(null, "", `#${{target}}`);
+        }}
       }});
     }});
 
     document.querySelectorAll("[data-timeframe-target]").forEach((button) => {{
       button.addEventListener("click", () => {{
-        activateDashboardGroup("[data-timeframe-target]", "[data-timeframe-panel]", "data-timeframe-target", "data-timeframe-panel", button.getAttribute("data-timeframe-target"));
+        const target = button.getAttribute("data-timeframe-target");
+        activateDashboardGroup("[data-timeframe-target]", "[data-timeframe-panel]", "data-timeframe-target", "data-timeframe-panel", target);
+        storeDashboardSelection(statusActiveTimeframeKey, target);
       }});
     }});
 
     document.querySelectorAll("[data-liquidation-target]").forEach((button) => {{
       button.addEventListener("click", () => {{
-        activateDashboardGroup("[data-liquidation-target]", "[data-liquidation-panel]", "data-liquidation-target", "data-liquidation-panel", button.getAttribute("data-liquidation-target"));
+        const target = button.getAttribute("data-liquidation-target");
+        activateDashboardGroup("[data-liquidation-target]", "[data-liquidation-panel]", "data-liquidation-target", "data-liquidation-panel", target);
+        storeDashboardSelection(statusActiveLiquidationKey, target);
       }});
     }});
+
+    restoreDashboardSelection();
+
+    function bpsNumber(value) {{
+      const number = Number(value);
+      return Number.isFinite(number) ? number : null;
+    }}
+
+    function bpsPayloadFromState(state) {{
+      const report = state && state.last_report ? state.last_report : {{}};
+      const progress = report.progress || {{}};
+      const latest = progress.latest_processed || {{}};
+      const rate = bpsNumber(latest.blocks_per_second) || 0;
+      const txRate = bpsNumber(latest.transactions_per_second);
+      const age = bpsNumber(progress.latest_processed_age_seconds);
+      const windowSeconds = bpsNumber(latest.seconds);
+      const transactions = latest.transactions;
+      const laneCount = 20;
+      const capacityBps = 20;
+      const usage = Math.max(0, Math.min(1, rate / capacityBps));
+      let tone = "ok";
+      let flowState = "clear flow";
+      if (usage >= 0.9) {{
+        tone = "critical";
+        flowState = "near capacity";
+      }} else if (usage >= 0.7) {{
+        tone = "warn";
+        flowState = "heavy flow";
+      }}
+      return {{
+        rate,
+        txRate,
+        age,
+        windowSeconds,
+        transactions,
+        laneCount,
+        usage,
+        tone,
+        flowState,
+      }};
+    }}
+
+    function formatBpsRate(value) {{
+      return `${{value.toFixed(1)}} BPS`;
+    }}
+
+    function updateBpsHighwayFromState(state) {{
+      const bps = bpsPayloadFromState(state);
+      const highway = document.querySelector("[data-bps-highway]");
+      if (!highway) {{
+        return;
+      }}
+      const rateText = formatBpsRate(bps.rate);
+      const panelRate = document.querySelector("[data-bps-panel-rate]");
+      if (panelRate) {{
+        panelRate.textContent = bps.rate ? `${{bps.rate.toFixed(1)}}/s` : "unknown";
+      }}
+      const rateElement = highway.querySelector("[data-bps-rate]");
+      if (rateElement) {{
+        rateElement.textContent = rateText;
+      }}
+      const stateElement = highway.querySelector("[data-bps-state]");
+      if (stateElement) {{
+        stateElement.textContent = `${{bps.flowState}} · ${{Math.round(bps.usage * 100)}}%`;
+      }}
+      const txElement = highway.querySelector("[data-bps-tx-rate]");
+      if (txElement) {{
+        txElement.textContent = bps.txRate === null ? "unknown tx/s" : `${{bps.txRate.toFixed(1)}} tx/s`;
+      }}
+      const caption = highway.querySelector("[data-bps-caption]");
+      if (caption) {{
+        const activeLanes = bps.rate > 0 ? bps.laneCount : 0;
+        const ageText = bps.age === null ? "unknown age" : `${{bps.age}}s old`;
+        const txCountText = bps.transactions === undefined || bps.transactions === null ? "unknown tx" : `${{bps.transactions}} tx`;
+        const windowText = bps.windowSeconds === null ? "unknown window" : `${{bps.windowSeconds}}s window`;
+        caption.textContent = `${{activeLanes}}/${{bps.laneCount}} lanes open · rusty-kaspa processed-stats log · ${{ageText}} · ${{txCountText}} / ${{windowText}}`;
+      }}
+      highway.classList.remove("ok", "warn", "critical");
+      highway.classList.add(bps.tone);
+      const canvas = highway.querySelector("canvas.bps-highway-canvas");
+      if (canvas) {{
+        canvas.dataset.highwayPayload = JSON.stringify({{
+          rate: bps.rate,
+          usage: bps.usage,
+          laneCount: bps.laneCount,
+          tone: bps.tone,
+        }});
+      }}
+    }}
+
+    async function pollWatchtowerState() {{
+      try {{
+        let response = await fetch("bps-highway.json?ts=" + Date.now(), {{ cache: "no-store" }});
+        if (!response.ok) {{
+          response = await fetch("watchtower-state.json?ts=" + Date.now(), {{ cache: "no-store" }});
+        }}
+        if (!response.ok) {{
+          return;
+        }}
+        const state = await response.json();
+        const checkedAt = state && state.checked_at ? String(state.checked_at) : "";
+        const checkedElement = document.querySelector("[data-watchtower-checked-at]");
+        if (checkedElement && checkedAt) {{
+          checkedElement.textContent = checkedAt;
+        }}
+        updateBpsHighwayFromState(state);
+      }} catch (error) {{
+        // Local file views can block fetch(); the 60s meta refresh remains the fallback.
+      }}
+    }}
+    pollWatchtowerState();
+    window.setInterval(pollWatchtowerState, 5000);
 
     const marketConfig = {{
       tickerUrl: "https://api.bybit.com/v5/market/tickers?category=spot&symbol=KASUSDT",
@@ -4938,14 +6958,26 @@ def alert(config: dict) -> int:
     state = load_state(state_path)
     report = build_report(config)
     apply_stateful_checks(report, state, config)
+    wallet_event = apply_wallet_change_detection(report, state, config)
+    new_wallet_events = update_wallet_event_state(state, report, config)
+    (report.get("wallet") or {})["events"] = list(state.get("wallet_events") or [])
+    (report.get("wallet") or {})["new_events"] = new_wallet_events
+    update_whale_confirmed_candidates(state, report, config)
+    new_whale_events = update_whale_event_state(state, report, config)
+    whale_event = "whale_tx_detected" if new_whale_events and bool(whale_watch_config(config).get("alert_enabled", True)) else None
+    apply_wallet_policy_checks(report, config)
+    incident_event = update_incident_state(state, report)
+    enrich_operational_fields(report, config, state)
     previous_status = state.get("status")
     previous_severity = state.get("severity")
     previous_report = state.get("last_report") or {}
     previous_synced = (previous_report.get("grpc_metrics") or {}).get("is_synced")
     current_synced = (report.get("grpc_metrics") or {}).get("is_synced")
     sync_completed = previous_synced is False and current_synced is True
-    event = "sync_completed" if sync_completed else None
-    should_emit = should_emit_alert(state, report, repeat_minutes) or sync_completed
+    event = whale_event or wallet_event or ("sync_completed" if sync_completed else incident_event)
+    should_emit = should_emit_alert(state, report, repeat_minutes) or sync_completed or bool(wallet_event) or bool(whale_event)
+    if alert_muted_by_maintenance(report):
+        should_emit = False
     history = state.get("history", [])
     history.append(history_item(report))
     history_limit = positive_int((config.get("retention") or {}).get("state_history_entries"), 100)
@@ -4957,15 +6989,16 @@ def alert(config: dict) -> int:
             "checked_at": report["checked_at"],
             "last_report": report,
             "history": history,
+            "maintenance": report.get("maintenance"),
         }
     )
     if should_emit:
         state["last_alert_at"] = report["checked_at"]
     save_state(state_path, state)
     recovery_records = recent_recovery_records(config)
-    write_status_page(status_page_path, report, state, benchmark_path, recovery_records, history_db_path)
+    write_status_page(status_page_path, report, state, benchmark_path, recovery_records, history_db_path, market_snapshot_path)
     if canvas_status_page:
-        write_status_page(Path(canvas_status_page), report, state, benchmark_path, recovery_records, history_db_path)
+        write_status_page(Path(canvas_status_page), report, state, benchmark_path, recovery_records, history_db_path, market_snapshot_path)
     write_stream_page(stream_page_path, report, state, benchmark_path, market_snapshot_path)
     if canvas_stream_page:
         write_stream_page(Path(canvas_stream_page), report, state, benchmark_path, market_snapshot_path)
@@ -5000,8 +7033,18 @@ def format_alert(
     event: str | None = None,
 ) -> str:
     failed_checks = [check for check in report["checks"] if not check["ok"]]
+    incident = report.get("incident") or {}
+    maintenance = report.get("maintenance") or {}
     if event == "sync_completed":
         title = f"Kaspa watchtower: {report['node_name']} sync completed"
+    elif event == "whale_tx_detected":
+        title = f"Kaspa watchtower: {report['node_name']} whale tx detected"
+    elif event == "wallet_large_outgoing":
+        title = f"Kaspa watchtower: {report['node_name']} large wallet outgoing"
+    elif event == "wallet_changed":
+        title = f"Kaspa watchtower: {report['node_name']} wallet changed"
+    elif event == "incident_resolved":
+        title = f"Kaspa watchtower: {report['node_name']} recovered"
     elif report["severity"] == "ok" and previous_status and previous_status != "ok":
         title = f"Kaspa watchtower: {report['node_name']} recovered"
     elif report["severity"] == "critical":
@@ -5014,6 +7057,7 @@ def format_alert(
     lines = [
         title,
         f"checked_at={report['checked_at']}",
+        f"health_score={report.get('health_score', 'unknown')}",
     ]
     if previous_status:
         lines.append(f"previous_status={previous_status}")
@@ -5021,12 +7065,49 @@ def format_alert(
         lines.append(f"previous_severity={previous_severity}")
 
     if failed_checks:
+        causes = report.get("failure_causes") or check_failure_causes(report)
+        lines.append(f"cause_guess={', '.join(causes) if causes else 'unknown'}")
+        duration = numeric(incident.get("duration_seconds"))
+        if duration is not None:
+            lines.append(f"incident_duration={duration / 60:.1f}m started_at={incident.get('started_at')}")
         lines.append("원인:")
         for check in failed_checks:
             lines.append(f"- {check['name']}: {check['detail']}")
     elif event == "sync_completed":
         lines.append("상태: mainnet sync completed")
         lines.append("Next: set thresholds.require_synced=true for strict production monitoring")
+    elif event == "whale_tx_detected":
+        whale = report.get("whale_watch") or {}
+        new_events = whale.get("new_events") or whale.get("candidates") or []
+        lines.append(
+            "Whale: "
+            f"threshold={format_kas(whale.get('min_amount_sompi'))} "
+            f"new_events={len(new_events)}"
+        )
+        for item in new_events[:5]:
+            tx_id = str(item.get("tx_id") or "unknown")
+            short_tx = tx_id if len(tx_id) <= 18 else f"{tx_id[:10]}...{tx_id[-6:]}"
+            address = str(item.get("address") or "")
+            short_address = address if len(address) <= 24 else f"{address[:12]}...{address[-8:]}"
+            lines.append(
+                f"- amount={format_kas(item.get('amount_sompi'))} "
+                f"tx={short_tx} address={short_address or 'unknown'} source={item.get('source', 'unknown')}"
+            )
+    elif event in {"wallet_changed", "wallet_large_outgoing"}:
+        wallet = report.get("wallet") or {}
+        change = wallet.get("change") or {}
+        alert_items = change.get("large_outgoing_entries") if event == "wallet_large_outgoing" else change.get("alert_entries")
+        alert_items = alert_items or change.get("entries") or []
+        lines.append(
+            "Wallet: "
+            f"total={format_kas(wallet.get('total_sompi'))} "
+            f"delta={format_kas(change.get('total_delta_sompi'))}"
+        )
+        for item in alert_items[:5]:
+            label = item.get("label") or "unlabeled"
+            address = str(item.get("address") or "unknown")
+            short_address = address if len(address) <= 24 else f"{address[:12]}...{address[-8:]}"
+            lines.append(f"- {label}: delta={format_kas(item.get('delta_sompi'))} {short_address}")
     elif report["severity"] == "ok":
         lines.append("상태: 모든 체크 정상")
 
@@ -5064,6 +7145,13 @@ def format_alert(
             f"{recovery.get('action')} "
             f"(mode={recovery.get('mode')}, restart_command_configured={recovery.get('restart_command_configured')})"
         )
+    if maintenance.get("active"):
+        lines.append(
+            "Maintenance: "
+            f"active critical_only={maintenance.get('critical_only')} "
+            f"until={maintenance.get('mute_until') or 'manual'} "
+            f"reason={maintenance.get('reason') or 'none'}"
+        )
     return "\n".join(lines)
 
 
@@ -5072,8 +7160,14 @@ def format_summary(report: dict[str, Any]) -> str:
     progress = report.get("progress") or {}
     sync_progress = report.get("sync_progress") or {}
     disk = report.get("disk") or {}
+    incident = report.get("incident") or {}
+    maintenance = report.get("maintenance") or {}
     failed = failed_check_names(report)
     failed_text = ", ".join(failed) if failed else "none"
+    causes = report.get("failure_causes") or check_failure_causes(report)
+    causes_text = ", ".join(causes) if causes else "none"
+    incident_duration = numeric(incident.get("duration_seconds"))
+    incident_duration_text = "inactive" if incident_duration is None else f"{incident_duration / 60:.1f}m"
     latest_relay_age = progress.get("latest_relay_age_seconds")
     latest_relay_age_text = "unknown" if latest_relay_age is None else f"{latest_relay_age}s"
     disk_text = "unknown"
@@ -5110,6 +7204,14 @@ def format_summary(report: dict[str, Any]) -> str:
         ),
         f"processed={format_processed_progress(progress)}",
         f"disk_free={disk_text}",
+        (
+            "ops="
+            f"health_score={report.get('health_score', 'unknown')} "
+            f"incident_duration={incident_duration_text} "
+            f"maintenance_active={maintenance.get('active', False)} "
+            f"maintenance_until={maintenance.get('mute_until') or 'manual' if maintenance.get('active') else 'none'}"
+        ),
+        f"cause_guess={causes_text}",
         f"failed_checks={failed_text}",
     ]
     sync_progress = report.get("sync_progress") or {}
@@ -5278,6 +7380,329 @@ def incident_report(config: dict) -> int:
     return 0
 
 
+def format_discord_status(report: dict[str, Any]) -> str:
+    grpc_metrics = report.get("grpc_metrics") or {}
+    wallet = report.get("wallet") or {}
+    wallet_change = wallet.get("change") or {}
+    mining = report.get("mining") or {}
+    incident = report.get("incident") or {}
+    maintenance = report.get("maintenance") or {}
+    failed = failed_check_names(report)
+    failed_text = ", ".join(failed) if failed else "none"
+    incident_duration = numeric(incident.get("duration_seconds"))
+    incident_text = "inactive" if incident_duration is None else f"{incident_duration / 60:.1f}m"
+    maintenance_text = "active" if maintenance.get("active") else "off"
+    causes = report.get("failure_causes") or check_failure_causes(report)
+    causes_text = ", ".join(causes) if causes else "none"
+    return "\n".join(
+        [
+            f"Kaspa status: {report.get('node_name', 'unknown')}",
+            (
+                f"status={report.get('status', 'unknown')} "
+                f"severity={report.get('severity', 'unknown')} "
+                f"health_score={report.get('health_score', 'unknown')}"
+            ),
+            (
+                "node="
+                f"network={grpc_metrics.get('network_id', 'unknown')} "
+                f"synced={grpc_metrics.get('is_synced', 'unknown')} "
+                f"peers={grpc_metrics.get('peer_count', 'unknown')} "
+                f"active={grpc_metrics.get('active_peers', 'unknown')} "
+                f"daa={grpc_metrics.get('virtual_daa_score', 'unknown')}"
+            ),
+            (
+                "ops="
+                f"incident={incident_text} "
+                f"maintenance={maintenance_text} "
+                f"maintenance_until={maintenance.get('mute_until') or 'none'}"
+            ),
+            (
+                "wallet="
+                f"enabled={wallet.get('enabled', False)} "
+                f"ok={wallet.get('ok', False)} "
+                f"addresses={len(wallet.get('entries') or [])} "
+                f"total={format_kas(wallet.get('total_sompi'))} "
+                f"delta={format_kas(wallet_change.get('total_delta_sompi'))}"
+            ),
+            (
+                "mining="
+                f"enabled={mining.get('enabled', False)} "
+                f"running={mining.get('running', False)} "
+                f"hashrate={format_hashrate_local(mining.get('hashrate_hs'))}"
+            ),
+            f"cause_guess={causes_text}",
+            f"failed_checks={failed_text}",
+        ]
+    )
+
+
+def format_discord_wallet(report: dict[str, Any]) -> str:
+    wallet = report.get("wallet") or {}
+    change = wallet.get("change") or {}
+    entries = wallet.get("entries") or []
+    lines = [
+        f"Kaspa wallet watch: {report.get('node_name', 'unknown')}",
+        (
+            f"enabled={wallet.get('enabled', False)} "
+            f"configured={wallet.get('configured', False)} "
+            f"ok={wallet.get('ok', False)} "
+            f"addresses={len(entries)} "
+            f"total={format_kas(wallet.get('total_sompi'))}"
+        ),
+        (
+            "change="
+            f"changed={change.get('changed', False)} "
+            f"delta={format_kas(change.get('total_delta_sompi'))}"
+        ),
+        f"detail={wallet.get('detail', 'unknown')}",
+    ]
+    for entry in entries[:10]:
+        label = entry.get("label") or "unlabeled"
+        address = str(entry.get("address") or "unknown")
+        short_address = address if len(address) <= 24 else f"{address[:12]}...{address[-8:]}"
+        error = f" error={entry.get('error')}" if entry.get("error") else ""
+        lines.append(f"- {label}: {format_kas(entry.get('balance_sompi'))} {short_address}{error}")
+    if len(entries) > 10:
+        lines.append(f"- ... {len(entries) - 10} more addresses")
+    return "\n".join(lines)
+
+
+def format_discord_wallet_txs(report: dict[str, Any]) -> str:
+    wallet = report.get("wallet") or {}
+    pending = wallet.get("pending") or {}
+    pending_entries = pending.get("entries") or []
+    events = list(wallet.get("events") or [])
+    lines = [
+        f"Kaspa wallet txs: {report.get('node_name', 'unknown')}",
+        (
+            f"pending_ok={pending.get('ok', False)} "
+            f"pending={len(pending_entries)} "
+            f"events={len(events)}"
+        ),
+    ]
+    if pending.get("detail") or pending.get("error"):
+        lines.append(f"pending_detail={pending.get('detail') or pending.get('error')}")
+    if pending_entries:
+        lines.append("pending:")
+    for entry in pending_entries[:8]:
+        address = str(entry.get("address") or "unknown")
+        short_address = address if len(address) <= 24 else f"{address[:12]}...{address[-8:]}"
+        tx_id = str(entry.get("tx_id") or "unknown")
+        short_tx = tx_id if len(tx_id) <= 18 else f"{tx_id[:10]}...{tx_id[-6:]}"
+        amount = "unknown" if entry.get("amount_sompi") is None else format_kas(entry.get("amount_sompi"))
+        lines.append(
+            f"- {entry.get('direction', 'unknown')}: amount={amount} "
+            f"fee={format_kas(entry.get('fee_sompi'))} tx={short_tx} {short_address}"
+        )
+    if events:
+        lines.append("events:")
+    for event in reversed(events[-8:]):
+        address = str(event.get("address") or "")
+        short_address = address if len(address) <= 24 else f"{address[:12]}...{address[-8:]}"
+        label = event.get("label") or "unlabeled"
+        lines.append(
+            f"- {event.get('observed_at', 'unknown')} {event.get('direction', 'unknown')} "
+            f"{label} delta={format_kas(event.get('delta_sompi'))} {short_address}"
+        )
+    if not pending_entries and not events:
+        lines.append("no pending txs or recorded wallet events")
+    return "\n".join(lines)
+
+
+def format_discord_mining(report: dict[str, Any]) -> str:
+    mining = report.get("mining") or {}
+    lines = [
+        f"Kaspa mining: {report.get('node_name', 'unknown')}",
+        (
+            f"enabled={mining.get('enabled', False)} "
+            f"configured={mining.get('configured', False)} "
+            f"ok={mining.get('ok', False)} "
+            f"running={mining.get('running', False)} "
+            f"mode={mining.get('mode', 'unknown')}"
+        ),
+        (
+            f"hashrate={format_hashrate_local(mining.get('hashrate_hs'))} "
+            f"accepted={mining.get('accepted_shares', 0)} "
+            f"rejected={mining.get('rejected_shares', 0)}"
+        ),
+        f"last_share_at={mining.get('last_share_at') or 'unknown'}",
+        (
+            f"pool={mining.get('pool_url') or 'none'} "
+            f"worker={mining.get('worker_name') or 'none'} "
+            f"address_source={mining.get('wallet_address_source') or 'none'}"
+        ),
+        f"wallet_address={mining.get('wallet_address') or 'missing'}",
+        f"detail={mining.get('detail', 'unknown')}",
+    ]
+    for process in (mining.get("processes") or [])[:5]:
+        lines.append(f"- {process}")
+    return "\n".join(lines)
+
+
+def format_discord_whales(report: dict[str, Any]) -> str:
+    whale = report.get("whale_watch") or {}
+    events = list(whale.get("events") or [])
+    summary = whale_watch_summary(events)
+    lines = [
+        f"Kaspa whales: {report.get('node_name', 'unknown')}",
+        (
+            f"enabled={whale.get('enabled', False)} "
+            f"ok={whale.get('ok', False)} "
+            f"threshold={format_kas(whale.get('min_amount_sompi'))} "
+            f"mempool_entries={whale.get('mempool_entries', 0)} "
+            f"candidates={len(whale.get('candidates') or [])}"
+        ),
+        (
+            f"24h_count={summary.get('count_24h', 0)} "
+            f"24h_volume={format_kas(summary.get('volume_24h_sompi'))} "
+            f"total_events={summary.get('total_events', 0)}"
+        ),
+        f"detail={whale.get('detail', 'unknown')}",
+    ]
+    for event in reversed(events[-8:]):
+        tx_id = str(event.get("tx_id") or "unknown")
+        short_tx = tx_id if len(tx_id) <= 18 else f"{tx_id[:10]}...{tx_id[-6:]}"
+        lines.append(
+            f"- {event.get('observed_at', 'unknown')} "
+            f"type={event.get('type', 'unknown')} "
+            f"amount={format_kas(event.get('amount_sompi'))} "
+            f"tx={short_tx} source={event.get('source', 'unknown')} status={event.get('status', 'new')}"
+        )
+    if not events:
+        lines.append("no whale events recorded")
+    return "\n".join(lines)
+
+
+def format_discord_incidents(
+    report: dict[str, Any],
+    state: dict[str, Any],
+    recovery_records: list[dict[str, Any]] | None = None,
+) -> str:
+    incident = report.get("incident") or {}
+    current = state.get("current_incident") or {}
+    last = state.get("last_incident") or {}
+    latest_recovery = (recovery_records or [])[-1] if recovery_records else {}
+    active = bool(incident.get("active"))
+    duration = numeric(incident.get("duration_seconds"))
+    duration_text = "inactive" if duration is None else f"{duration / 60:.1f}m"
+    failed = incident.get("failed_checks") or failed_check_names(report)
+    causes = incident.get("causes") or check_failure_causes(report)
+    return "\n".join(
+        [
+            f"Kaspa incidents: {report.get('node_name', 'unknown')}",
+            f"current_active={active} duration={duration_text}",
+            f"current_started_at={incident.get('started_at') or current.get('started_at') or 'none'}",
+            f"current_failed_checks={','.join(failed) if failed else 'none'}",
+            f"current_causes={', '.join(causes) if causes else 'none'}",
+            f"last_resolved_at={last.get('resolved_at', 'none')}",
+            (
+                "latest_recovery="
+                f"action={latest_recovery.get('action', 'none')} "
+                f"operator_required={latest_recovery.get('operator_required', 'unknown')} "
+                f"reason={latest_recovery.get('operator_reason') or latest_recovery.get('reason') or 'none'}"
+            ),
+        ]
+    )
+
+
+def format_operator_incident_summary(
+    report: dict[str, Any],
+    state: dict[str, Any],
+    recovery_records: list[dict[str, Any]] | None = None,
+) -> str:
+    incident = report.get("incident") or {}
+    maintenance = report.get("maintenance") or {}
+    last = state.get("last_incident") or {}
+    latest_recovery = (recovery_records or [])[-1] if recovery_records else {}
+    duration = numeric(incident.get("duration_seconds"))
+    duration_text = "inactive" if duration is None else f"{duration / 60:.1f}m"
+    failed = incident.get("failed_checks") or failed_check_names(report)
+    causes = incident.get("causes") or report.get("failure_causes") or check_failure_causes(report)
+    maintenance_until = (maintenance.get("mute_until") or "manual") if maintenance.get("active") else "none"
+    return "\n".join(
+        [
+            f"health_score={report.get('health_score', 'unknown')}",
+            f"incident_active={bool(incident.get('active'))}",
+            f"incident_started_at={incident.get('started_at') or 'none'}",
+            f"incident_duration={duration_text}",
+            f"incident_failed_checks={','.join(failed) if failed else 'none'}",
+            f"incident_causes={', '.join(causes) if causes else 'none'}",
+            f"last_incident_resolved_at={last.get('resolved_at', 'none')}",
+            f"maintenance_active={bool(maintenance.get('active'))}",
+            f"maintenance_critical_only={maintenance.get('critical_only', True)}",
+            f"maintenance_until={maintenance_until}",
+            f"maintenance_reason={maintenance.get('reason') or 'none'}",
+            (
+                "latest_recovery="
+                f"action={latest_recovery.get('action', 'none')} "
+                f"before={latest_recovery.get('severity_before', 'unknown')} "
+                f"after={latest_recovery.get('severity_after', 'unknown')} "
+                f"reason={latest_recovery.get('operator_reason') or latest_recovery.get('reason') or 'none'}"
+            ),
+        ]
+    )
+
+
+def discord_command(
+    config: dict,
+    command: str,
+    *,
+    config_path: Path | None = None,
+    mute_minutes: float = 30,
+    reason: str = "",
+) -> int:
+    if command in {"mute", "mute-all", "unmute"}:
+        if config_path is None:
+            print("discord command failed: mute/unmute requires -c/--config")
+            return 2
+        try:
+            status = update_maintenance_config(
+                config_path,
+                mute_for_minutes=mute_minutes if command in {"mute", "mute-all"} else None,
+                unmute=command == "unmute",
+                critical_only=command != "mute-all",
+                reason=reason,
+            )
+        except (OSError, ValueError, json.JSONDecodeError) as exc:
+            print(f"discord command failed: {exc}")
+            return 2
+        state = "active" if status["active"] else "off"
+        until = (status["mute_until"] or "manual") if status["active"] else "none"
+        print(
+            "Kaspa maintenance: "
+            f"{state} critical_only={status['critical_only']} "
+            f"until={until} reason={status['reason'] or 'none'}"
+        )
+        return 0
+
+    report, state = build_stateful_report(config)
+    if command == "status":
+        print(format_discord_status(report))
+        # Discord query commands should report unhealthy node state in text,
+        # not as a failed shell command that hides the response from handlers.
+        return 0
+    if command == "wallet":
+        print(format_discord_wallet(report))
+        return 0
+    if command == "wallet-txs":
+        print(format_discord_wallet_txs(report))
+        return 0
+    if command == "mining":
+        print(format_discord_mining(report))
+        return 0
+    if command == "whales":
+        print(format_discord_whales(report))
+        return 0
+    if command == "incidents":
+        print(format_discord_incidents(report, state, recent_recovery_records(config)))
+        return 0
+    if command == "maintenance":
+        print(f"Kaspa {format_maintenance_status(config)}")
+        return 0
+    print(f"discord command failed: unsupported command {command}")
+    return 2
+
+
 def sync_report(config: dict, *, limit: int) -> int:
     report, _state = build_stateful_report(config)
     benchmark_path = Path(config.get("benchmark_path") or DEFAULT_CONFIG["benchmark_path"])
@@ -5416,6 +7841,65 @@ def benchmark_snapshot(config: dict) -> int:
     if pruned:
         print(f"Benchmark retention pruned {pruned} old snapshots; limit={benchmark_limit}")
     return 0 if report["status"] == "ok" else 1
+
+
+def bps_highway_snapshot(config: dict) -> int:
+    path = Path(config.get("bps_highway_snapshot_path") or DEFAULT_CONFIG["bps_highway_snapshot_path"])
+    log_path = Path(config.get("log_path") or "")
+    snapshot: dict[str, Any] = {
+        "checked_at": dt.datetime.now().astimezone().isoformat(),
+        "log_path": str(log_path),
+        "ok": False,
+        "progress": {
+            "latest_processed": None,
+            "latest_processed_age_seconds": None,
+        },
+    }
+    if not log_path.exists():
+        snapshot["error"] = "log_path_missing"
+    else:
+        scan_bytes = int(
+            config.get("bps_highway_log_scan_bytes")
+            or min(
+                int(config.get("log_scan_bytes") or DEFAULT_CONFIG["log_scan_bytes"]),
+                DEFAULT_CONFIG["bps_highway_log_scan_bytes"],
+            )
+        )
+        lines = tail_lines(log_path, scan_bytes)
+        processed_stats = parse_processed_stats(lines)
+        if processed_stats:
+            latest = processed_stats[-1]
+            now = dt.datetime.now(latest.timestamp.tzinfo)
+            snapshot["ok"] = True
+            snapshot["progress"] = {
+                "latest_processed": {
+                    "timestamp": latest.timestamp.isoformat(),
+                    "blocks": latest.blocks,
+                    "headers": latest.headers,
+                    "seconds": latest.seconds,
+                    "transactions": latest.transactions,
+                    "blocks_per_second": None if latest.seconds <= 0 else latest.blocks / latest.seconds,
+                    "headers_per_second": None if latest.seconds <= 0 else latest.headers / latest.seconds,
+                    "transactions_per_second": None if latest.seconds <= 0 else latest.transactions / latest.seconds,
+                },
+                "latest_processed_age_seconds": round(
+                    max(0.0, (now - latest.timestamp).total_seconds()),
+                    1,
+                ),
+            }
+        else:
+            snapshot["error"] = "processed_stats_missing"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(snapshot, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    latest_processed = snapshot["progress"].get("latest_processed") or {}
+    print(
+        "BPS highway snapshot: "
+        f"path={path} "
+        f"bps={latest_processed.get('blocks_per_second', 'unknown')} "
+        f"tx_s={latest_processed.get('transactions_per_second', 'unknown')} "
+        f"age={snapshot['progress'].get('latest_processed_age_seconds', 'unknown')}"
+    )
+    return 0 if snapshot.get("ok") else 1
 
 
 def format_rate(delta: float | None, hours: float) -> str:
@@ -5700,6 +8184,11 @@ def format_prometheus_metrics(
     sync_progress = report.get("sync_progress") or {}
     monitoring = report.get("monitoring") or {}
     disk = report.get("disk") or {}
+    wallet = report.get("wallet") or {}
+    mining_status = report.get("mining") or {}
+    whale = report.get("whale_watch") or {}
+    incident = report.get("incident") or {}
+    maintenance = report.get("maintenance") or {}
     recovery_summary = recovery_summary or {}
     market_metrics = market_metrics or {}
     multi_node_metrics = multi_node_metrics or {}
@@ -5726,6 +8215,70 @@ def format_prometheus_metrics(
         len(failed_check_names(report)),
         node_labels,
     )
+    add_prometheus_metric(lines, "kaspa_watchtower_health_score", report.get("health_score"), node_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_incident_active", bool(incident.get("active")), node_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_incident_duration_seconds", incident.get("duration_seconds") or 0, node_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_maintenance_active", bool(maintenance.get("active")), node_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_mining_enabled", bool(mining_status.get("enabled")), node_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_mining_ok", bool(mining_status.get("ok")), node_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_mining_running", bool(mining_status.get("running")), node_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_mining_hashrate_hs", mining_status.get("hashrate_hs"), node_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_mining_accepted_shares", mining_status.get("accepted_shares"), node_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_mining_rejected_shares", mining_status.get("rejected_shares"), node_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_mining_last_share_age_seconds", mining_status.get("last_share_age_seconds"), node_labels)
+    whale_summary = whale_watch_summary(list(whale.get("events") or []))
+    add_prometheus_metric(lines, "kaspa_watchtower_whale_watch_enabled", bool(whale.get("enabled")), node_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_whale_watch_ok", bool(whale.get("ok")), node_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_whale_threshold_kas", whale.get("min_amount_kas"), node_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_whale_mempool_entries", whale.get("mempool_entries"), node_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_whale_candidates", len(whale.get("candidates") or []), node_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_whale_confirmed_candidates", len(whale.get("confirmed_candidates") or []), node_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_whale_confirmed_scan_enabled", bool(whale.get("confirmed_enabled")), node_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_whale_confirmed_baseline_available", bool(whale.get("confirmed_start_hash")), node_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_whale_events_total", whale_summary.get("total_events"), node_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_whale_latest_amount_kas", whale_summary.get("latest_amount_kas"), node_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_whale_24h_count", whale_summary.get("count_24h"), node_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_whale_24h_volume_kas", whale_summary.get("volume_24h_kas"), node_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_wallet_enabled", bool(wallet.get("enabled")), node_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_wallet_ok", bool(wallet.get("ok")), node_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_wallet_watch_addresses", len(wallet.get("entries") or []), node_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_wallet_balance_sompi", wallet.get("total_sompi"), node_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_wallet_balance_kas", wallet.get("total_kas"), node_labels)
+    wallet_change = wallet.get("change") or {}
+    add_prometheus_metric(lines, "kaspa_watchtower_wallet_changed", bool(wallet_change.get("changed")), node_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_wallet_balance_delta_sompi", wallet_change.get("total_delta_sompi"), node_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_wallet_balance_delta_kas", wallet_change.get("total_delta_kas"), node_labels)
+    for entry in wallet.get("entries") or []:
+        wallet_labels = {
+            **node_labels,
+            "address": entry.get("address", "unknown"),
+            "label": entry.get("label") or "unlabeled",
+        }
+        add_prometheus_metric(
+            lines,
+            "kaspa_watchtower_wallet_address_balance_sompi",
+            entry.get("balance_sompi"),
+            wallet_labels,
+        )
+        add_prometheus_metric(
+            lines,
+            "kaspa_watchtower_wallet_address_balance_kas",
+            entry.get("balance_kas"),
+            wallet_labels,
+        )
+    mining = mining_reward_summary(
+        list(wallet.get("events") or []),
+        price_usdt=latest_market.get("spot_last_price"),
+    )
+    add_prometheus_metric(lines, "kaspa_watchtower_wallet_mining_rewards_total", mining.get("candidate_events"), node_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_wallet_mining_today_kas", mining.get("today_kas"), node_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_wallet_mining_7d_kas", mining.get("seven_day_kas"), node_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_wallet_mining_30d_kas", mining.get("thirty_day_kas"), node_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_wallet_mining_projected_monthly_kas", mining.get("projected_monthly_kas"), node_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_wallet_mining_latest_reward_age_hours", mining.get("latest_reward_age_hours"), node_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_wallet_mining_today_usd", mining.get("today_usd"), node_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_wallet_mining_7d_usd", mining.get("seven_day_usd"), node_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_wallet_mining_projected_monthly_usd", mining.get("projected_monthly_usd"), node_labels)
     for check in report["checks"]:
         add_prometheus_metric(
             lines,
@@ -6356,6 +8909,7 @@ def config_validation_checks(config: dict) -> list[Check]:
         recovery = {}
     restart_command = recovery.get("restart_command") or []
     recovery_mode = recovery.get("mode", DEFAULT_CONFIG["recovery"]["mode"])
+    recovery_policy = recovery_policy_config(config)
     config_version = config.get("config_version", DEFAULT_CONFIG["config_version"])
     config_version_ok = isinstance(config_version, int) and 1 <= config_version <= DEFAULT_CONFIG["config_version"]
     node_name = str(config.get("node_name") or "")
@@ -6458,6 +9012,17 @@ def config_validation_checks(config: dict) -> list[Check]:
             ),
         ),
     ]
+    recovery_policy_specs = [
+        ("require_critical", lambda value: isinstance(value, bool), "boolean"),
+        ("min_consecutive_failures", positive_int_config, "integer > 0"),
+        ("min_incident_minutes", lambda value: number_between_config(value, 0), "number >= 0"),
+        ("require_same_failed_checks", lambda value: isinstance(value, bool), "boolean"),
+        ("allow_during_maintenance", lambda value: isinstance(value, bool), "boolean"),
+    ]
+    for key, validator, expected in recovery_policy_specs:
+        value = recovery_policy.get(key)
+        ok = validator(value)
+        checks.append(Check(f"recovery.policy.{key}", ok, validation_detail(value, expected, ok)))
     threshold_specs = [
         ("alert_repeat_minutes", lambda value: number_between_config(value, 1), "number >= 1"),
         ("stale_log_minutes", lambda value: number_between_config(value, 1), "number >= 1"),
@@ -6465,6 +9030,7 @@ def config_validation_checks(config: dict) -> list[Check]:
         ("progress_window_minutes", lambda value: number_between_config(value, 1), "number >= 1"),
         ("min_relay_blocks_in_window", non_negative_int_config, "integer >= 0"),
         ("min_peer_count", non_negative_int_config, "integer >= 0"),
+        ("min_active_peer_count", non_negative_int_config, "integer >= 0"),
         ("disk_free_gb_min", lambda value: number_between_config(value, 0), "number >= 0"),
         ("disk_free_percent_min", lambda value: number_between_config(value, 0, 100), "number between 0 and 100"),
         ("require_rpc", lambda value: isinstance(value, bool), "boolean"),
@@ -6490,6 +9056,84 @@ def config_validation_checks(config: dict) -> list[Check]:
         value = nested_config_value(config, "retention", key)
         ok = validator(value)
         checks.append(Check(f"retention.{key}", ok, validation_detail(value, expected, ok)))
+    maintenance_specs = [
+        ("enabled", lambda value: isinstance(value, bool), "boolean"),
+        ("mute_until", lambda value: value in (None, "") or parse_iso_datetime(str(value)) is not None, "ISO datetime or empty string"),
+        ("critical_only", lambda value: isinstance(value, bool), "boolean"),
+        ("reason", lambda value: value is None or isinstance(value, str), "string"),
+    ]
+    for key, validator, expected in maintenance_specs:
+        value = nested_config_value(config, "maintenance", key)
+        ok = validator(value)
+        checks.append(Check(f"maintenance.{key}", ok, validation_detail(value, expected, ok)))
+
+    wallet = config.get("wallet") if isinstance(config.get("wallet"), dict) else {}
+    wallet_specs = [
+        ("enabled", lambda value: isinstance(value, bool), "boolean"),
+        ("alert_on_change", lambda value: isinstance(value, bool), "boolean"),
+        ("alert_min_delta_sompi", non_negative_int_config, "integer >= 0"),
+        ("alert_directions", lambda value: value in {"all", "incoming", "outgoing"} or isinstance(value, list), "all, incoming, outgoing, or list"),
+        ("large_outgoing_alert_sompi", non_negative_int_config, "integer >= 0"),
+        ("mining_reward_stale_hours", lambda value: number_between_config(value, 0), "number >= 0"),
+        ("event_history_entries", positive_int_config, "integer > 0"),
+    ]
+    for key, validator, expected in wallet_specs:
+        value = wallet.get(key, DEFAULT_CONFIG["wallet"].get(key))
+        ok = validator(value)
+        checks.append(Check(f"wallet.{key}", ok, validation_detail(value, expected, ok)))
+    watch_addresses = wallet.get("watch_addresses", [])
+    watch_addresses_ok = isinstance(watch_addresses, list) and all(
+        isinstance(item, str) or (isinstance(item, dict) and isinstance(item.get("address"), str))
+        for item in watch_addresses
+    )
+    checks.append(
+        Check(
+            "wallet.watch_addresses",
+            watch_addresses_ok,
+            validation_detail(watch_addresses, "list of address strings or {label,address} objects", watch_addresses_ok),
+        )
+    )
+    mining = config.get("mining") if isinstance(config.get("mining"), dict) else {}
+    mining_specs = [
+        ("enabled", lambda value: isinstance(value, bool), "boolean"),
+        ("mode", lambda value: value in {"disabled", "cpu-test", "external-miner", "macos-gpu-experimental"}, "disabled, cpu-test, external-miner, or macos-gpu-experimental"),
+        ("process_match", lambda value: value is None or isinstance(value, str), "string"),
+        ("log_path", lambda value: value is None or isinstance(value, str), "string"),
+        ("pool_url", lambda value: value is None or isinstance(value, str), "string"),
+        ("wallet_address", lambda value: value in (None, "") or looks_like_kaspa_address(value), "empty or Kaspa address"),
+        ("worker_name", lambda value: value is None or isinstance(value, str), "string"),
+        ("expected_hashrate_min_hs", lambda value: number_between_config(value, 0), "number >= 0"),
+        ("stale_share_minutes", lambda value: number_between_config(value, 0), "number >= 0"),
+    ]
+    for key, validator, expected in mining_specs:
+        value = mining.get(key, DEFAULT_CONFIG["mining"].get(key))
+        ok = validator(value)
+        checks.append(Check(f"mining.{key}", ok, validation_detail(value, expected, ok)))
+    resolved_mining_address, resolved_mining_address_source = mining_wallet_address(config)
+    mining_address_ready = (not bool(mining.get("enabled", DEFAULT_CONFIG["mining"]["enabled"]))) or looks_like_kaspa_address(resolved_mining_address)
+    checks.append(
+        Check(
+            "mining.wallet_address_ready",
+            mining_address_ready,
+            validation_detail(
+                f"{resolved_mining_address_source}:{'set' if resolved_mining_address else 'missing'}",
+                "set mining.wallet_address or wallet.watch_addresses label=mining before enabling mining",
+                mining_address_ready,
+            ),
+        )
+    )
+    whale = config.get("whale_watch") if isinstance(config.get("whale_watch"), dict) else {}
+    whale_specs = [
+        ("enabled", lambda value: isinstance(value, bool), "boolean"),
+        ("confirmed_enabled", lambda value: isinstance(value, bool), "boolean"),
+        ("min_amount_sompi", positive_int_config, "integer > 0"),
+        ("alert_enabled", lambda value: isinstance(value, bool), "boolean"),
+        ("event_history_entries", positive_int_config, "integer > 0"),
+    ]
+    for key, validator, expected in whale_specs:
+        value = whale.get(key, DEFAULT_CONFIG["whale_watch"].get(key))
+        ok = validator(value)
+        checks.append(Check(f"whale_watch.{key}", ok, validation_detail(value, expected, ok)))
     history_paths = {
         "state_path": config.get("state_path") or DEFAULT_CONFIG["state_path"],
         "benchmark_path": config.get("benchmark_path") or DEFAULT_CONFIG["benchmark_path"],
@@ -6585,6 +9229,75 @@ def report_recovery_record(config: dict, record: dict[str, Any]) -> None:
     print(f"Recovery record written: {path}")
 
 
+def recovery_policy_config(config: dict) -> dict[str, Any]:
+    recovery = config.get("recovery") or {}
+    if not isinstance(recovery, dict):
+        recovery = {}
+    policy = dict(DEFAULT_CONFIG["recovery"]["policy"])
+    configured = recovery.get("policy") or {}
+    if isinstance(configured, dict):
+        policy.update(configured)
+    return policy
+
+
+def recovery_policy_decision(
+    report: dict[str, Any],
+    state: dict[str, Any],
+    config: dict,
+    *,
+    force: bool = False,
+) -> dict[str, Any]:
+    policy = recovery_policy_config(config)
+    failed = failed_check_names(report)
+    current_failed = set(failed)
+    min_consecutive = positive_int(policy.get("min_consecutive_failures"), 3)
+    min_incident_minutes = float(policy.get("min_incident_minutes") or 0)
+    incident = report.get("incident") or {}
+    maintenance = report.get("maintenance") or {}
+    history = list(state.get("history") or [])
+    history.append(history_item(report))
+
+    consecutive = 0
+    for item in reversed(history):
+        if item.get("status") == "ok" or item.get("severity") == "ok":
+            break
+        item_failed = set(item.get("failed_checks") or [])
+        if policy.get("require_same_failed_checks", True) and item_failed != current_failed:
+            break
+        consecutive += 1
+
+    duration_seconds = numeric(incident.get("duration_seconds"))
+    if duration_seconds is None:
+        duration_seconds = 0.0
+
+    base = {
+        "force": force,
+        "allowed": False,
+        "reason": "",
+        "policy": policy,
+        "consecutive_failures": consecutive,
+        "min_consecutive_failures": min_consecutive,
+        "incident_duration_seconds": duration_seconds,
+        "min_incident_seconds": min_incident_minutes * 60,
+        "failed_checks": failed,
+        "maintenance_active": bool(maintenance.get("active")),
+    }
+
+    if force:
+        return {**base, "allowed": True, "reason": "force_recover"}
+    if report.get("severity") == "ok":
+        return {**base, "reason": "node_healthy"}
+    if policy.get("require_critical", True) and report.get("severity") != "critical":
+        return {**base, "reason": "severity_not_critical"}
+    if maintenance.get("active") and not policy.get("allow_during_maintenance", False):
+        return {**base, "reason": "maintenance_active"}
+    if duration_seconds < min_incident_minutes * 60:
+        return {**base, "reason": "incident_duration_below_policy"}
+    if consecutive < min_consecutive:
+        return {**base, "reason": "consecutive_failures_below_policy"}
+    return {**base, "allowed": True, "reason": "policy_satisfied"}
+
+
 def format_recovery_decision(
     report: dict[str, Any],
     *,
@@ -6592,14 +9305,18 @@ def format_recovery_decision(
     restart_command: list[str],
     force: bool,
     dry_run: bool,
+    policy_decision: dict[str, Any] | None = None,
 ) -> str:
     failed = failed_check_names(report)
     failed_text = ",".join(failed) if failed else "none"
     configured = bool(restart_command)
+    policy_decision = policy_decision or {"allowed": True, "reason": "not_evaluated"}
     if not configured:
         next_action = "configure recovery.restart_command before recovery"
     elif mode != "manual":
         next_action = f"unsupported recovery mode {mode}"
+    elif not policy_decision.get("allowed"):
+        next_action = f"skip recovery; policy blocked: {policy_decision.get('reason')}"
     elif report.get("severity") == "ok" and not force:
         next_action = "skip recovery; node is healthy"
     elif dry_run:
@@ -6618,26 +9335,43 @@ def format_recovery_decision(
             f"  failed_checks={failed_text}",
             f"  mode={mode} force={force} dry_run={dry_run}",
             f"  restart_command_configured={configured}",
+            (
+                "  policy="
+                f"allowed={policy_decision.get('allowed')} "
+                f"reason={policy_decision.get('reason')} "
+                f"consecutive={policy_decision.get('consecutive_failures', 'unknown')}/"
+                f"{policy_decision.get('min_consecutive_failures', 'unknown')} "
+                f"incident={float(policy_decision.get('incident_duration_seconds') or 0) / 60:.1f}m/"
+                f"{float(policy_decision.get('min_incident_seconds') or 0) / 60:.1f}m "
+                f"maintenance_active={policy_decision.get('maintenance_active', False)}"
+            ),
             f"  next={next_action}",
         ]
     )
 
 
 def recover(config: dict, *, force: bool = False, dry_run: bool = False) -> int:
+    state_path = Path(config.get("state_path") or DEFAULT_CONFIG["state_path"])
+    state = load_state(state_path)
     report = build_report(config)
+    apply_stateful_checks(report, state, config)
+    enrich_operational_fields(report, config, state)
     recovery = config.get("recovery", {})
     restart_command = recovery.get("restart_command") or []
     mode = recovery.get("mode", "manual")
+    policy_decision = recovery_policy_decision(report, state, config, force=force)
     record: dict[str, Any] = {
         "started_at": dt.datetime.now().astimezone().isoformat(),
         "node_name": report.get("node_name"),
         "status_before": report.get("status"),
         "severity_before": report.get("severity"),
         "failed_checks_before": failed_check_names(report),
+        "failed_check_details_before": failed_check_details(report),
         "mode": mode,
         "force": force,
         "dry_run": dry_run,
         "restart_command": restart_command,
+        "policy": policy_decision,
     }
     print(
         format_recovery_decision(
@@ -6646,6 +9380,7 @@ def recover(config: dict, *, force: bool = False, dry_run: bool = False) -> int:
             restart_command=restart_command,
             force=force,
             dry_run=dry_run,
+            policy_decision=policy_decision,
         )
     )
 
@@ -6662,6 +9397,11 @@ def recover(config: dict, *, force: bool = False, dry_run: bool = False) -> int:
     if report["severity"] == "ok" and not force:
         record.update({"action": "skipped", "reason": "node is healthy"})
         print("Recovery skipped: node is healthy; use --force-recover to override")
+        report_recovery_record(config, record)
+        return 0
+    if not policy_decision.get("allowed"):
+        record.update({"action": "skipped", "reason": f"policy:{policy_decision.get('reason')}"})
+        print(f"Recovery skipped: policy blocked; reason={policy_decision.get('reason')}")
         report_recovery_record(config, record)
         return 0
 
@@ -6684,7 +9424,14 @@ def recover(config: dict, *, force: bool = False, dry_run: bool = False) -> int:
         print("Recovery command completed")
     else:
         print(f"Recovery command failed with exit code {completed.returncode}")
-        record["completed_at"] = dt.datetime.now().astimezone().isoformat()
+        record.update(
+            {
+                "completed_at": dt.datetime.now().astimezone().isoformat(),
+                "operator_required": True,
+                "operator_reason": "recovery_command_failed",
+            }
+        )
+        print("Operator required: recovery command failed; manual intervention needed")
         report_recovery_record(config, record)
         return completed.returncode
 
@@ -6699,9 +9446,21 @@ def recover(config: dict, *, force: bool = False, dry_run: bool = False) -> int:
             "status_after": after.get("status"),
             "severity_after": after.get("severity"),
             "failed_checks_after": failed_check_names(after),
+            "failed_check_details_after": failed_check_details(after),
         }
     )
     print(f"Post-recovery status: {after['status']} severity={after['severity']}")
+    if after["status"] != "ok":
+        record.update(
+            {
+                "operator_required": True,
+                "operator_reason": "post_recovery_unhealthy",
+            }
+        )
+        failed_after = ",".join(record["failed_checks_after"]) or "none"
+        print(f"Operator required: post-recovery check still unhealthy; failed_checks={failed_after}")
+    else:
+        record["operator_required"] = False
     report_recovery_record(config, record)
     if after["status"] != "ok":
         return 1
@@ -6723,6 +9482,7 @@ def main() -> int:
     parser.add_argument("--force-recover", action="store_true", help="Run recovery even when the current report is healthy.")
     parser.add_argument("--dry-run", action="store_true", help="Show recovery command without executing it.")
     parser.add_argument("--benchmark-snapshot", action="store_true", help="Append a benchmark snapshot to the JSONL benchmark log.")
+    parser.add_argument("--bps-highway-snapshot", action="store_true", help="Write the lightweight BPS highway JSON snapshot.")
     parser.add_argument("--benchmark-report", action="store_true", help="Print a benchmark report from saved snapshots.")
     parser.add_argument("--benchmark-limit", type=int, default=100, help="Number of recent benchmark snapshots to include.")
     parser.add_argument("--market-summary", action="store_true", help="Print an optional public KAS/USDT market snapshot.")
@@ -6731,8 +9491,84 @@ def main() -> int:
     parser.add_argument("--prometheus", action="store_true", help="Write Prometheus textfile metrics.")
     parser.add_argument("--validate-config", action="store_true", help="Validate config paths, endpoints, and commands.")
     parser.add_argument("--prune-state", action="store_true", help="Apply configured retention limits to local state files.")
+    parser.add_argument("--maintenance-status", action="store_true", help="Print current maintenance mute state.")
+    parser.add_argument("--mute-for", type=float, help="Mute non-critical alerts for this many minutes by updating config.")
+    parser.add_argument("--maintenance-reason", default="", help="Reason stored with --mute-for.")
+    parser.add_argument("--set-mining-address", help="Store the mining payout address in config.json.")
+    parser.add_argument("--clear-mining-address", action="store_true", help="Clear the stored mining payout address.")
+    parser.add_argument(
+        "--discord-command",
+        choices=("status", "incidents", "maintenance", "wallet", "wallet-txs", "mining", "whales", "mute", "mute-all", "unmute"),
+        help="Run a Discord-friendly watchtower command.",
+    )
+    parser.add_argument("--discord-mute-minutes", type=float, default=30, help="Mute window for --discord-command mute.")
+    parser.add_argument(
+        "--mute-all",
+        action="store_true",
+        help="Mute all alerts during --mute-for, including critical alerts.",
+    )
+    parser.add_argument("--unmute", action="store_true", help="Clear maintenance mute state in config.")
     args = parser.parse_args()
     config = load_config(args.config)
+    if args.set_mining_address or args.clear_mining_address:
+        if args.config is None:
+            parser.error("--set-mining-address and --clear-mining-address require -c/--config")
+        if args.set_mining_address and args.clear_mining_address:
+            parser.error("--set-mining-address and --clear-mining-address cannot be used together")
+        try:
+            mining_state = update_mining_address_config(
+                args.config,
+                address=args.set_mining_address,
+                clear=args.clear_mining_address,
+            )
+        except (OSError, ValueError, json.JSONDecodeError) as exc:
+            print(f"mining address update failed: {exc}")
+            return 2
+        address_state = "cleared" if not mining_state.get("wallet_address") else "set"
+        print(
+            "mining_address="
+            f"{address_state} "
+            f"source=mining.wallet_address "
+            f"worker={mining_state.get('worker_name') or 'none'}"
+        )
+        return 0
+    if args.mute_for is not None or args.unmute:
+        if args.config is None:
+            parser.error("--mute-for and --unmute require -c/--config")
+        if args.mute_for is not None and args.unmute:
+            parser.error("--mute-for and --unmute cannot be used together")
+        try:
+            maintenance_state = update_maintenance_config(
+                args.config,
+                mute_for_minutes=args.mute_for,
+                unmute=args.unmute,
+                critical_only=not args.mute_all,
+                reason=args.maintenance_reason,
+            )
+        except (OSError, ValueError, json.JSONDecodeError) as exc:
+            print(f"maintenance update failed: {exc}")
+            return 2
+        state = "active" if maintenance_state["active"] else "off"
+        until = (maintenance_state["mute_until"] or "manual") if maintenance_state["active"] else "none"
+        print(
+            "maintenance="
+            f"{state} "
+            f"critical_only={maintenance_state['critical_only']} "
+            f"until={until} "
+            f"reason={maintenance_state['reason'] or 'none'}"
+        )
+        return 0
+    if args.discord_command:
+        return discord_command(
+            config,
+            args.discord_command,
+            config_path=args.config,
+            mute_minutes=args.discord_mute_minutes,
+            reason=args.maintenance_reason,
+        )
+    if args.maintenance_status:
+        print(format_maintenance_status(config))
+        return 0
     if args.json:
         report, _state = build_stateful_report(config)
         print(json.dumps(report, indent=2, sort_keys=True))
@@ -6755,6 +9591,8 @@ def main() -> int:
         return recover(config, force=args.force_recover, dry_run=args.dry_run)
     if args.benchmark_snapshot:
         return benchmark_snapshot(config)
+    if args.bps_highway_snapshot:
+        return bps_highway_snapshot(config)
     if args.benchmark_report:
         return benchmark_report(config, limit=args.benchmark_limit)
     if args.market_summary:

@@ -70,6 +70,11 @@ Read the recovery decision block first. It should list the failed checks, show
 `restart_command_configured=True`, and recommend reviewing the command before
 running without `--dry-run`.
 
+If the recovery command fails, or the post-recovery check is still unhealthy,
+the recovery history record sets `operator_required=true`. Stop automatic
+recovery attempts at that point and inspect the failed checks before trying a
+second restart.
+
 ## `grpc_metrics` or `rpc_tcp` Failed
 
 Confirm the port:
@@ -96,6 +101,24 @@ Check current gRPC status:
 ```
 
 Look for `grpc_metrics.peer_count`, `active_peers`, and `is_synced`.
+
+## `active_peer_count` Failed
+
+This means peers may be listed, but the node reports fewer active peers than
+`thresholds.min_active_peer_count`. Treat this like a connectivity failure
+until proven otherwise.
+
+Check the summary and raw gRPC metrics:
+
+```bash
+.venv/bin/python watchtower.py -c config.json --summary
+.venv/bin/python watchtower.py -c config.json --json | python3 -m json.tool
+```
+
+Look for `grpc_metrics.active_peers`, `peer_count`, `outbound_peer_count`, and
+`inbound_peer_count`. If `peer_count` is nonzero but `active_peers=0`, inspect
+network reachability, firewall/NAT state, and recent kaspad logs before running
+recovery.
 
 ## Mainnet Initial Sync
 

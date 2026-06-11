@@ -21,6 +21,45 @@
     "state_history_entries": 100,
     "benchmark_entries": 1000
   },
+  "maintenance": {
+    "enabled": false,
+    "mute_until": "",
+    "critical_only": true,
+    "reason": ""
+  },
+  "wallet": {
+    "enabled": false,
+    "alert_on_change": true,
+    "alert_min_delta_sompi": 1,
+    "alert_directions": "all",
+    "large_outgoing_alert_sompi": 0,
+    "mining_reward_stale_hours": 0,
+    "event_history_entries": 50,
+    "watch_addresses": [
+      {
+        "label": "mining",
+        "address": "kaspa:q..."
+      }
+    ]
+  },
+  "mining": {
+    "enabled": false,
+    "mode": "macos-gpu-experimental",
+    "process_match": "",
+    "log_path": "",
+    "pool_url": "",
+    "wallet_address": "",
+    "worker_name": "macos-gpu-test",
+    "expected_hashrate_min_hs": 0,
+    "stale_share_minutes": 0
+  },
+  "whale_watch": {
+    "enabled": false,
+    "confirmed_enabled": true,
+    "min_amount_sompi": 100000000000000,
+    "alert_enabled": true,
+    "event_history_entries": 100
+  },
   "thresholds": {
     "alert_repeat_minutes": 60,
     "stale_log_minutes": 15,
@@ -28,6 +67,7 @@
     "progress_window_minutes": 10,
     "min_relay_blocks_in_window": 1,
     "min_peer_count": 1,
+    "min_active_peer_count": 1,
     "require_grpc_metrics": true,
     "require_synced": false,
     "require_relay_progress_when_unsynced": false,
@@ -43,6 +83,13 @@
   "recovery": {
     "mode": "manual",
     "post_recovery_wait_seconds": 20,
+    "policy": {
+      "require_critical": true,
+      "min_consecutive_failures": 3,
+      "min_incident_minutes": 5,
+      "require_same_failed_checks": true,
+      "allow_during_maintenance": false
+    },
     "restart_command": [
       "launchctl",
       "kickstart",

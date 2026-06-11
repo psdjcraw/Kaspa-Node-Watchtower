@@ -67,6 +67,20 @@ class WatchtowerUnitTests(unittest.TestCase):
         self.assertEqual(stats[0].seconds, 10.0)
         self.assertEqual(stats[0].transactions, 1311)
 
+    def test_parse_miner_log_extracts_hashrate_and_shares(self):
+        lines = [
+            "2026-06-11 08:00:00.000+09:00 INFO speed 42.50 MH/s",
+            "2026-06-11 08:01:00.000+09:00 INFO share accepted",
+            "2026-06-11 08:02:00.000+09:00 INFO share rejected",
+        ]
+
+        parsed = watchtower.parse_miner_log(lines)
+
+        self.assertEqual(parsed["hashrate_hs"], 42_500_000)
+        self.assertEqual(parsed["accepted_shares"], 1)
+        self.assertEqual(parsed["rejected_shares"], 1)
+        self.assertEqual(parsed["last_share_at"], "2026-06-11T08:02:00+09:00")
+
     def test_history_item_keeps_mempool_size(self):
         item = watchtower.history_item(
             {
@@ -267,6 +281,34 @@ class WatchtowerUnitTests(unittest.TestCase):
                 "require_sync_progress_when_unsynced": True,
                 "sync_progress_stall_minutes": 30,
             },
+            "mining": {
+                "enabled": True,
+                "ok": True,
+                "running": True,
+                "hashrate_hs": 42_500_000,
+                "accepted_shares": 7,
+                "rejected_shares": 1,
+                "last_share_age_seconds": 12,
+            },
+            "whale_watch": {
+                "enabled": True,
+                "confirmed_enabled": True,
+                "ok": True,
+                "min_amount_sompi": 100_000_000_000_000,
+                "min_amount_kas": 1_000_000,
+                "confirmed_start_hash": "start",
+                "mempool_entries": 3,
+                "candidates": [{"tx_id": "new", "amount_sompi": 125_000_000_000_000}],
+                "confirmed_candidates": [{"tx_id": "confirmed", "amount_sompi": 125_000_000_000_000}],
+                "events": [
+                    {
+                        "observed_at": "2026-06-06T10:00:00+09:00",
+                        "source": "mempool",
+                        "tx_id": "abc123",
+                        "amount_sompi": 125_000_000_000_000,
+                    }
+                ],
+            },
             "disk": {"free_gb": 100, "free_percent": 20},
         }
 
@@ -369,6 +411,15 @@ class WatchtowerUnitTests(unittest.TestCase):
         self.assertIn('kaspa_watchtower_market_spot_price_usdt{node="test-node",source="Bybit KAS/USDT"} 0.0305', metrics)
         self.assertIn("kaspa_watchtower_market_futures_basis_percent", metrics)
         self.assertIn("kaspa_watchtower_market_futures_open_interest_kas", metrics)
+        self.assertIn('kaspa_watchtower_mining_running{node="test-node"} 1', metrics)
+        self.assertIn('kaspa_watchtower_mining_hashrate_hs{node="test-node"} 4.25e+07', metrics)
+        self.assertIn('kaspa_watchtower_mining_accepted_shares{node="test-node"} 7', metrics)
+        self.assertIn('kaspa_watchtower_whale_watch_enabled{node="test-node"} 1', metrics)
+        self.assertIn('kaspa_watchtower_whale_threshold_kas{node="test-node"} 1e+06', metrics)
+        self.assertIn('kaspa_watchtower_whale_events_total{node="test-node"} 1', metrics)
+        self.assertIn('kaspa_watchtower_whale_latest_amount_kas{node="test-node"} 1.25e+06', metrics)
+        self.assertIn('kaspa_watchtower_whale_confirmed_candidates{node="test-node"} 1', metrics)
+        self.assertIn('kaspa_watchtower_whale_confirmed_baseline_available{node="test-node"} 1', metrics)
         self.assertIn("2.3e+08", metrics)
         self.assertIn('kaspa_watchtower_multi_node_available{node="test-node"} 1', metrics)
         self.assertIn('kaspa_watchtower_multi_node_verdict_value{node="test-node"} 1', metrics)
@@ -584,6 +635,207 @@ class WatchtowerUnitTests(unittest.TestCase):
             self.assertIn("inspect kaspad processed-stats log output", checks["processed_stats_freshness"]["detail"])
             self.assertGreaterEqual(report["progress"]["latest_processed_age_seconds"], 260.0)
 
+    def test_active_peer_count_failure_is_critical(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            log_path = tmp_path / "rusty-kaspa.log"
+            latest = dt.datetime.now().astimezone()
+            log_path.write_text(
+                f"{latest.strftime('%Y-%m-%d %H:%M:%S.%f%z')[:-2]}:{latest.strftime('%z')[-2:]} "
+                "[INFO ] Processed 10 blocks and 10 headers in the last 10.00s "
+                "(20 transactions; 10 UTXO-validated blocks)\n",
+                encoding="utf-8",
+            )
+            data_dir = tmp_path / "data"
+            data_dir.mkdir()
+
+            config = copy.deepcopy(watchtower.DEFAULT_CONFIG)
+            config.update(
+                {
+                    "node_name": "mainnet-synced",
+                    "process_match": "kaspad",
+                    "rpc_endpoint": "127.0.0.1:16110",
+                    "grpc_endpoint": "127.0.0.1:16110",
+                    "log_path": str(log_path),
+                    "data_dir": str(data_dir),
+                }
+            )
+            config["thresholds"]["min_relay_blocks_in_window"] = 0
+
+            with (
+                mock.patch.object(watchtower, "find_processes", return_value=["123 kaspad"]),
+                mock.patch.object(watchtower, "disk_usage", return_value={"exists": True, "free_gb": 100, "free_percent": 20}),
+                mock.patch.object(watchtower, "check_tcp_endpoint", return_value={"configured": True, "ok": True, "detail": "ok"}),
+                mock.patch.object(
+                    watchtower,
+                    "fetch_optional_grpc_metrics",
+                    return_value={
+                        "configured": True,
+                        "ok": True,
+                        "is_synced": True,
+                        "peer_count": 8,
+                        "active_peers": 0,
+                    },
+                ),
+                mock.patch.object(watchtower, "dir_size", return_value="1G"),
+            ):
+                report = watchtower.build_report(config)
+
+            checks = {check["name"]: check for check in report["checks"]}
+            self.assertEqual(report["severity"], "critical")
+            self.assertFalse(checks["active_peer_count"]["ok"])
+            self.assertIn("0 active peers", checks["active_peer_count"]["detail"])
+            self.assertIn("threshold=1", checks["active_peer_count"]["detail"])
+
+    def test_operational_enrichment_tracks_health_incident_and_causes(self):
+        report = {
+            "node_name": "test-node",
+            "status": "alert",
+            "severity": "critical",
+            "checked_at": "2026-06-10T09:00:00+09:00",
+            "checks": [
+                {"name": "process", "ok": False, "detail": "not running"},
+                {"name": "disk_free", "ok": False, "detail": "4.00 GiB free"},
+                {"name": "peer_count", "ok": True, "detail": "8 peers"},
+            ],
+            "progress": {},
+            "grpc_metrics": {},
+            "disk": {},
+        }
+        config = copy.deepcopy(watchtower.DEFAULT_CONFIG)
+        state = {"current_incident": {"started_at": "2026-06-10T08:45:00+09:00"}}
+
+        watchtower.enrich_operational_fields(report, config, state)
+
+        self.assertEqual(report["health_score"], 55)
+        self.assertTrue(report["incident"]["active"])
+        self.assertEqual(report["incident"]["duration_seconds"], 900.0)
+        self.assertEqual(report["failure_causes"], ["process down", "disk free space below threshold"])
+
+    def test_maintenance_mutes_warning_but_not_critical_when_configured(self):
+        config = copy.deepcopy(watchtower.DEFAULT_CONFIG)
+        config["maintenance"] = {
+            "enabled": False,
+            "mute_until": "2026-06-10T10:00:00+09:00",
+            "critical_only": True,
+            "reason": "planned restart",
+        }
+        warning_report = {
+            "status": "alert",
+            "severity": "warn",
+            "checked_at": "2026-06-10T09:00:00+09:00",
+            "checks": [],
+        }
+        critical_report = {**warning_report, "severity": "critical"}
+
+        watchtower.enrich_operational_fields(warning_report, config, {})
+        watchtower.enrich_operational_fields(critical_report, config, {})
+
+        self.assertTrue(watchtower.alert_muted_by_maintenance(warning_report))
+        self.assertFalse(watchtower.alert_muted_by_maintenance(critical_report))
+
+    def test_update_maintenance_config_mutes_and_unmutes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "config.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "node_name": "test-node",
+                        "maintenance": {
+                            "enabled": False,
+                            "mute_until": "",
+                            "critical_only": True,
+                            "reason": "",
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            now = dt.datetime(2026, 6, 10, 9, 0, tzinfo=dt.timezone(dt.timedelta(hours=9)))
+
+            status = watchtower.update_maintenance_config(
+                path,
+                mute_for_minutes=30,
+                critical_only=False,
+                reason="node upgrade",
+                now=now,
+            )
+
+            self.assertTrue(status["active"])
+            self.assertFalse(status["critical_only"])
+            self.assertEqual(status["mute_until"], "2026-06-10T09:30:00+09:00")
+            self.assertEqual(status["reason"], "node upgrade")
+
+            saved = json.loads(path.read_text(encoding="utf-8"))
+            self.assertEqual(saved["maintenance"]["mute_until"], "2026-06-10T09:30:00+09:00")
+
+            status = watchtower.update_maintenance_config(path, unmute=True, now=now)
+
+            self.assertFalse(status["active"])
+            saved = json.loads(path.read_text(encoding="utf-8"))
+            self.assertEqual(saved["maintenance"]["mute_until"], "")
+            self.assertEqual(saved["maintenance"]["reason"], "")
+
+    def test_update_mining_address_config_sets_and_clears_address(self):
+        address = "kaspa:" + "q" * 61
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "config.json"
+            path.write_text(json.dumps({"node_name": "test-node"}), encoding="utf-8")
+
+            mining = watchtower.update_mining_address_config(path, address=address)
+
+            self.assertEqual(mining["wallet_address"], address)
+            saved = json.loads(path.read_text(encoding="utf-8"))
+            self.assertEqual(saved["mining"]["wallet_address"], address)
+
+            mining = watchtower.update_mining_address_config(path, clear=True)
+
+            self.assertEqual(mining["wallet_address"], "")
+            saved = json.loads(path.read_text(encoding="utf-8"))
+            self.assertEqual(saved["mining"]["wallet_address"], "")
+
+    def test_update_mining_address_config_rejects_non_kaspa_address(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "config.json"
+            path.write_text(json.dumps({"node_name": "test-node"}), encoding="utf-8")
+
+            with self.assertRaises(ValueError):
+                watchtower.update_mining_address_config(path, address="not-an-address")
+
+    def test_mining_wallet_address_falls_back_to_mining_watch_address(self):
+        config = copy.deepcopy(watchtower.DEFAULT_CONFIG)
+        address = "kaspa:" + "p" * 61
+        config["wallet"]["watch_addresses"] = [
+            {"label": "ops", "address": "kaspa:" + "o" * 61},
+            {"label": "mining", "address": address},
+        ]
+
+        resolved, source = watchtower.mining_wallet_address(config)
+
+        self.assertEqual(resolved, address)
+        self.assertEqual(source, "wallet.watch_addresses")
+
+    def test_update_incident_state_resolves_active_incident(self):
+        state = {
+            "current_incident": {
+                "started_at": "2026-06-10T08:45:00+09:00",
+                "first_severity": "critical",
+                "first_failed_checks": ["process"],
+            }
+        }
+        report = {
+            "checked_at": "2026-06-10T09:10:00+09:00",
+            "status": "ok",
+            "severity": "ok",
+            "checks": [],
+        }
+
+        event = watchtower.update_incident_state(state, report)
+
+        self.assertEqual(event, "incident_resolved")
+        self.assertNotIn("current_incident", state)
+        self.assertEqual(state["last_incident"]["resolved_at"], "2026-06-10T09:10:00+09:00")
+
     def test_unsynced_sync_progress_stall_warns(self):
         config = copy.deepcopy(watchtower.DEFAULT_CONFIG)
         checked_at = "2026-06-05T22:00:00+09:00"
@@ -692,6 +944,677 @@ class WatchtowerUnitTests(unittest.TestCase):
         text = watchtower.format_summary(report)
 
         self.assertIn("processed=tx_rate=131.10/s age=2.5s tx=1311 blocks=92 window=10.0s", text)
+
+    def test_format_discord_status_is_operator_friendly(self):
+        report = {
+            "node_name": "kaspa-mainnet-local",
+            "checked_at": "2026-06-10T10:00:00+09:00",
+            "status": "alert",
+            "severity": "warn",
+            "health_score": 85,
+            "checks": [{"name": "disk_free", "ok": False, "detail": "low"}],
+            "failure_causes": ["disk free space below threshold"],
+            "grpc_metrics": {
+                "network_id": "mainnet",
+                "is_synced": True,
+                "peer_count": 8,
+                "active_peers": 8,
+                "virtual_daa_score": 12345,
+            },
+            "incident": {
+                "active": True,
+                "duration_seconds": 600,
+                "failed_checks": ["disk_free"],
+                "causes": ["disk free space below threshold"],
+            },
+            "maintenance": {
+                "active": True,
+                "mute_until": "2026-06-10T10:30:00+09:00",
+            },
+            "wallet": {
+                "enabled": True,
+                "ok": True,
+                "entries": [{"address": "kaspa:qqqq", "balance_sompi": 123456789}],
+                "total_sompi": 123456789,
+            },
+        }
+
+        text = watchtower.format_discord_status(report)
+
+        self.assertIn("Kaspa status: kaspa-mainnet-local", text)
+        self.assertIn("status=alert severity=warn health_score=85", text)
+        self.assertIn("node=network=mainnet synced=True peers=8 active=8 daa=12345", text)
+        self.assertIn("ops=incident=10.0m maintenance=active", text)
+        self.assertIn("wallet=enabled=True ok=True addresses=1 total=1.23456789 KAS", text)
+        self.assertIn("failed_checks=disk_free", text)
+
+    def test_wallet_balances_are_watch_only_grpc_reads(self):
+        fetch = mock.Mock(
+            return_value={
+                "ok": True,
+                "entries": [
+                    {"address": "kaspa:qqtest1", "balance_sompi": 150000000},
+                    {"address": "kaspa:qqtest2", "balance_sompi": 250000000},
+                ],
+            }
+        )
+        fetch_mempool = mock.Mock(return_value={"ok": True, "entries": []})
+        fake_probe = mock.Mock(
+            fetch_balances_by_addresses=fetch,
+            fetch_mempool_entries_by_addresses=fetch_mempool,
+        )
+        config = copy.deepcopy(watchtower.DEFAULT_CONFIG)
+        config["wallet"] = {
+            "enabled": True,
+            "watch_addresses": [
+                {"label": "mining", "address": "kaspa:qqtest1"},
+                {"label": "ops", "address": "kaspa:qqtest2"},
+            ],
+        }
+
+        with mock.patch.dict(sys.modules, {"kaspa_grpc_probe": fake_probe}):
+            wallet = watchtower.fetch_optional_wallet_balances(config, "127.0.0.1:16110")
+
+        fetch.assert_called_once_with("127.0.0.1:16110", ["kaspa:qqtest1", "kaspa:qqtest2"])
+        fetch_mempool.assert_called_once_with("127.0.0.1:16110", ["kaspa:qqtest1", "kaspa:qqtest2"])
+        self.assertTrue(wallet["ok"])
+        self.assertEqual(wallet["total_sompi"], 400000000)
+        self.assertEqual(wallet["total_kas"], 4.0)
+        self.assertEqual(wallet["entries"][0]["label"], "mining")
+
+    def test_wallet_change_detection_skips_first_baseline(self):
+        config = copy.deepcopy(watchtower.DEFAULT_CONFIG)
+        config["wallet"] = {
+            "enabled": True,
+            "alert_on_change": True,
+            "alert_min_delta_sompi": 1,
+            "watch_addresses": [{"label": "mining", "address": "kaspa:qqtest1"}],
+        }
+        report = {
+            "wallet": {
+                "enabled": True,
+                "ok": True,
+                "total_sompi": 150000000,
+                "entries": [{"label": "mining", "address": "kaspa:qqtest1", "balance_sompi": 150000000}],
+            }
+        }
+
+        event = watchtower.apply_wallet_change_detection(report, {}, config)
+
+        self.assertIsNone(event)
+        self.assertFalse(report["wallet"]["change"]["changed"])
+        self.assertEqual(report["wallet"]["change"]["detail"], "baseline recorded")
+
+    def test_wallet_change_detection_emits_change_event(self):
+        config = copy.deepcopy(watchtower.DEFAULT_CONFIG)
+        config["wallet"] = {
+            "enabled": True,
+            "alert_on_change": True,
+            "alert_min_delta_sompi": 100,
+            "watch_addresses": [{"label": "mining", "address": "kaspa:qqtest1"}],
+        }
+        report = {
+            "wallet": {
+                "enabled": True,
+                "ok": True,
+                "total_sompi": 200000000,
+                "entries": [{"label": "mining", "address": "kaspa:qqtest1", "balance_sompi": 200000000}],
+            }
+        }
+        state = {
+            "last_report": {
+                "wallet": {
+                    "enabled": True,
+                    "ok": True,
+                    "total_sompi": 150000000,
+                    "entries": [{"label": "mining", "address": "kaspa:qqtest1", "balance_sompi": 150000000}],
+                }
+            }
+        }
+
+        event = watchtower.apply_wallet_change_detection(report, state, config)
+
+        self.assertEqual(event, "wallet_changed")
+        self.assertTrue(report["wallet"]["change"]["changed"])
+        self.assertEqual(report["wallet"]["change"]["total_delta_sompi"], 50000000)
+        self.assertEqual(report["wallet"]["change"]["entries"][0]["delta_sompi"], 50000000)
+
+    def test_wallet_change_detection_honors_direction_policy(self):
+        config = copy.deepcopy(watchtower.DEFAULT_CONFIG)
+        config["wallet"] = {
+            "enabled": True,
+            "alert_on_change": True,
+            "alert_min_delta_sompi": 1,
+            "alert_directions": "incoming",
+            "watch_addresses": [{"label": "ops", "address": "kaspa:qqtest1"}],
+        }
+        report = {
+            "wallet": {
+                "enabled": True,
+                "ok": True,
+                "total_sompi": 100000000,
+                "entries": [{"label": "ops", "address": "kaspa:qqtest1", "balance_sompi": 100000000}],
+            }
+        }
+        state = {
+            "last_report": {
+                "wallet": {
+                    "enabled": True,
+                    "ok": True,
+                    "total_sompi": 200000000,
+                    "entries": [{"label": "ops", "address": "kaspa:qqtest1", "balance_sompi": 200000000}],
+                }
+            }
+        }
+
+        event = watchtower.apply_wallet_change_detection(report, state, config)
+
+        self.assertIsNone(event)
+        self.assertEqual(report["wallet"]["change"]["alert_entries"], [])
+
+    def test_wallet_change_detection_flags_large_outgoing(self):
+        config = copy.deepcopy(watchtower.DEFAULT_CONFIG)
+        config["wallet"] = {
+            "enabled": True,
+            "alert_on_change": True,
+            "alert_min_delta_sompi": 1,
+            "large_outgoing_alert_sompi": 50000000,
+            "watch_addresses": [{"label": "ops", "address": "kaspa:qqtest1"}],
+        }
+        report = {
+            "wallet": {
+                "enabled": True,
+                "ok": True,
+                "total_sompi": 100000000,
+                "entries": [{"label": "ops", "address": "kaspa:qqtest1", "balance_sompi": 100000000}],
+            }
+        }
+        state = {
+            "last_report": {
+                "wallet": {
+                    "enabled": True,
+                    "ok": True,
+                    "total_sompi": 200000000,
+                    "entries": [{"label": "ops", "address": "kaspa:qqtest1", "balance_sompi": 200000000}],
+                }
+            }
+        }
+
+        event = watchtower.apply_wallet_change_detection(report, state, config)
+
+        self.assertEqual(event, "wallet_large_outgoing")
+        self.assertEqual(report["wallet"]["change"]["large_outgoing_entries"][0]["delta_sompi"], -100000000)
+
+    def test_update_wallet_event_state_records_balance_changes(self):
+        config = copy.deepcopy(watchtower.DEFAULT_CONFIG)
+        config["wallet"]["event_history_entries"] = 2
+        report = {
+            "checked_at": "2026-06-11T07:50:00+09:00",
+            "wallet": {
+                "change": {
+                    "changed": True,
+                    "entries": [
+                        {
+                            "address": "kaspa:qqtest1",
+                            "label": "mining",
+                            "previous_sompi": 100000000,
+                            "current_sompi": 150000000,
+                            "delta_sompi": 50000000,
+                            "delta_kas": 0.5,
+                        }
+                    ],
+                }
+            },
+        }
+        state = {"wallet_events": [{"observed_at": "old"}, {"observed_at": "older"}]}
+
+        events = watchtower.update_wallet_event_state(state, report, config)
+
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0]["direction"], "incoming")
+        self.assertEqual(events[0]["delta_sompi"], 50000000)
+        self.assertEqual(len(state["wallet_events"]), 2)
+        self.assertEqual(state["wallet_events"][-1]["label"], "mining")
+
+    def test_update_wallet_event_state_dedupes_repeated_events(self):
+        config = copy.deepcopy(watchtower.DEFAULT_CONFIG)
+        report = {
+            "checked_at": "2026-06-11T07:50:00+09:00",
+            "wallet": {
+                "change": {
+                    "changed": True,
+                    "entries": [
+                        {
+                            "address": "kaspa:qqtest1",
+                            "label": "mining",
+                            "previous_sompi": 100000000,
+                            "current_sompi": 150000000,
+                            "delta_sompi": 50000000,
+                        }
+                    ],
+                }
+            },
+        }
+        existing = {
+            "event_key": "2026-06-11T07:50:00+09:00|kaspa:qqtest1|50000000",
+            "observed_at": "2026-06-11T07:50:00+09:00",
+            "address": "kaspa:qqtest1",
+            "delta_sompi": 50000000,
+        }
+        state = {"wallet_events": [existing]}
+
+        events = watchtower.update_wallet_event_state(state, report, config)
+
+        self.assertEqual(events, [])
+        self.assertEqual(state["wallet_events"], [existing])
+
+    def test_mining_reward_summary_uses_mining_incoming_events(self):
+        now = dt.datetime(2026, 6, 11, 8, 0, tzinfo=dt.timezone(dt.timedelta(hours=9)))
+        events = [
+            {
+                "observed_at": "2026-06-11T07:50:00+09:00",
+                "direction": "incoming",
+                "label": "mining",
+                "delta_sompi": 200000000,
+            },
+            {
+                "observed_at": "2026-06-10T07:50:00+09:00",
+                "direction": "incoming",
+                "label": "ops",
+                "delta_sompi": 999000000,
+            },
+            {
+                "observed_at": "2026-06-09T07:50:00+09:00",
+                "direction": "outgoing",
+                "label": "mining",
+                "delta_sompi": -100000000,
+            },
+        ]
+
+        summary = watchtower.mining_reward_summary(events, price_usdt=0.2, now=now)
+
+        self.assertEqual(summary["candidate_events"], 1)
+        self.assertEqual(summary["today_kas"], 2.0)
+        self.assertEqual(summary["seven_day_kas"], 2.0)
+        self.assertEqual(summary["today_usd"], 0.4)
+        self.assertEqual(summary["latest_reward_at"], "2026-06-11T07:50:00+09:00")
+        self.assertAlmostEqual(summary["latest_reward_age_hours"], 1 / 6)
+
+    def test_whale_events_from_mempool_detects_single_large_output(self):
+        config = copy.deepcopy(watchtower.DEFAULT_CONFIG)
+        config["whale_watch"] = {
+            **config["whale_watch"],
+            "enabled": True,
+            "min_amount_sompi": 100_000_000_000_000,
+        }
+        mempool = {
+            "ok": True,
+            "entries": [
+                {
+                    "tx_id": "abc123",
+                    "fee_sompi": 1000,
+                    "outputs": [
+                        {"address": "kaspa:" + "q" * 61, "amount_sompi": 99_000_000_000_000},
+                        {"address": "kaspa:" + "p" * 61, "amount_sompi": 100_000_000_000_000},
+                    ],
+                    "total_output_sompi": 199_000_000_000_000,
+                    "largest_output_sompi": 100_000_000_000_000,
+                    "input_count": 2,
+                    "output_count": 2,
+                }
+            ],
+        }
+
+        events = watchtower.whale_events_from_mempool(mempool, config, "2026-06-11T08:00:00+09:00")
+
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0]["type"], "whale_tx_pending")
+        self.assertEqual(events[0]["amount_sompi"], 100_000_000_000_000)
+        self.assertEqual(events[0]["amount_kas"], 1_000_000)
+
+    def test_whale_events_from_confirmed_detects_single_large_output(self):
+        config = copy.deepcopy(watchtower.DEFAULT_CONFIG)
+        config["whale_watch"] = {
+            **config["whale_watch"],
+            "enabled": True,
+            "min_amount_sompi": 100_000_000_000_000,
+        }
+        chain = {
+            "ok": True,
+            "entries": [
+                {
+                    "tx_id": "abc123",
+                    "accepting_block_hash": "block123",
+                    "outputs": [
+                        {"address": "kaspa:" + "p" * 61, "amount_sompi": 125_000_000_000_000},
+                    ],
+                    "total_output_sompi": 125_000_000_000_000,
+                    "largest_output_sompi": 125_000_000_000_000,
+                    "input_count": 1,
+                    "output_count": 1,
+                }
+            ],
+        }
+
+        events = watchtower.whale_events_from_confirmed(chain, config, "2026-06-11T08:05:00+09:00")
+
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0]["type"], "whale_tx_confirmed")
+        self.assertEqual(events[0]["source"], "confirmed")
+        self.assertEqual(events[0]["accepting_block_hash"], "block123")
+
+    def test_update_whale_event_state_dedupes_repeated_events(self):
+        config = copy.deepcopy(watchtower.DEFAULT_CONFIG)
+        config["whale_watch"]["event_history_entries"] = 5
+        event = {
+            "event_key": "mempool|abc123|100000000000000|kaspa:q",
+            "observed_at": "2026-06-11T08:00:00+09:00",
+            "type": "whale_tx_pending",
+            "source": "mempool",
+            "tx_id": "abc123",
+            "address": "kaspa:q",
+            "amount_sompi": 100_000_000_000_000,
+        }
+        state = {"whale_events": [event]}
+        report = {"whale_watch": {"candidates": [dict(event)]}}
+
+        events = watchtower.update_whale_event_state(state, report, config)
+
+        self.assertEqual(events, [])
+        self.assertEqual(state["whale_events"], [event])
+
+    def test_update_whale_event_state_marks_pending_confirmed(self):
+        config = copy.deepcopy(watchtower.DEFAULT_CONFIG)
+        pending = {
+            "event_key": "mempool|abc123|100000000000000|kaspa:q",
+            "observed_at": "2026-06-11T08:00:00+09:00",
+            "type": "whale_tx_pending",
+            "source": "mempool",
+            "tx_id": "abc123",
+            "address": "kaspa:q",
+            "amount_sompi": 100_000_000_000_000,
+        }
+        confirmed = {
+            "event_key": "confirmed|abc123|100000000000000|kaspa:q",
+            "observed_at": "2026-06-11T08:05:00+09:00",
+            "type": "whale_tx_confirmed",
+            "source": "confirmed",
+            "tx_id": "abc123",
+            "address": "kaspa:q",
+            "amount_sompi": 100_000_000_000_000,
+            "accepting_block_hash": "block123",
+        }
+        state = {"whale_events": [pending]}
+        report = {"whale_watch": {"candidates": [confirmed]}}
+
+        events = watchtower.update_whale_event_state(state, report, config)
+
+        self.assertEqual(events, [confirmed])
+        self.assertEqual(state["whale_events"][0]["status"], "confirmed")
+        self.assertEqual(state["whale_events"][0]["accepting_block_hash"], "block123")
+
+    def test_wallet_policy_checks_warn_when_mining_reward_stale(self):
+        config = copy.deepcopy(watchtower.DEFAULT_CONFIG)
+        config["wallet"] = {
+            **config["wallet"],
+            "enabled": True,
+            "mining_reward_stale_hours": 1,
+        }
+        report = {
+            "checked_at": "2026-06-11T08:00:00+09:00",
+            "status": "ok",
+            "severity": "ok",
+            "checks": [],
+            "recovery": {},
+            "wallet": {
+                "enabled": True,
+                "events": [
+                    {
+                        "observed_at": "2026-06-11T06:00:00+09:00",
+                        "direction": "incoming",
+                        "label": "mining",
+                        "delta_sompi": 100000000,
+                    }
+                ],
+            },
+        }
+
+        watchtower.apply_wallet_policy_checks(report, config)
+
+        checks = {check["name"]: check for check in report["checks"]}
+        self.assertFalse(checks["mining_reward_freshness"]["ok"])
+        self.assertEqual(report["severity"], "warn")
+
+    def test_mining_policy_checks_warn_when_enabled_miner_not_running(self):
+        config = copy.deepcopy(watchtower.DEFAULT_CONFIG)
+        config["mining"] = {
+            **config["mining"],
+            "enabled": True,
+            "process_match": "definitely-not-running-kaspa-miner",
+        }
+        report = {
+            "status": "ok",
+            "severity": "ok",
+            "checks": [],
+            "mining": {
+                "enabled": True,
+                "running": False,
+                "detail": "not running",
+            },
+        }
+
+        watchtower.apply_mining_policy_checks(report, config)
+
+        checks = {check["name"]: check for check in report["checks"]}
+        self.assertFalse(checks["mining_process"]["ok"])
+        self.assertEqual(report["severity"], "warn")
+
+    def test_format_discord_wallet_lists_balances(self):
+        report = {
+            "node_name": "kaspa-mainnet-local",
+            "wallet": {
+                "enabled": True,
+                "configured": True,
+                "ok": True,
+                "detail": "read ok",
+                "entries": [
+                    {
+                        "label": "mining",
+                        "address": "kaspa:qqqqqqqqqqqqqqqqqqqqqqqqqqqq",
+                        "balance_sompi": 123456789,
+                    }
+                ],
+                "total_sompi": 123456789,
+                "change": {
+                    "changed": True,
+                    "total_delta_sompi": 100000000,
+                },
+            },
+        }
+
+        text = watchtower.format_discord_wallet(report)
+
+        self.assertIn("Kaspa wallet watch: kaspa-mainnet-local", text)
+        self.assertIn("total=1.23456789 KAS", text)
+        self.assertIn("change=changed=True delta=1.00000000 KAS", text)
+        self.assertIn("- mining: 1.23456789 KAS", text)
+
+    def test_format_discord_wallet_txs_lists_pending_and_events(self):
+        report = {
+            "node_name": "kaspa-mainnet-local",
+            "wallet": {
+                "pending": {
+                    "ok": True,
+                    "entries": [
+                        {
+                            "address": "kaspa:qqqqqqqqqqqqqqqqqqqqqqqqqqqq",
+                            "direction": "receiving",
+                            "tx_id": "abcdef1234567890",
+                            "amount_sompi": 100000000,
+                            "fee_sompi": 1000,
+                        }
+                    ],
+                },
+                "events": [
+                    {
+                        "observed_at": "2026-06-11T07:50:00+09:00",
+                        "direction": "incoming",
+                        "label": "mining",
+                        "address": "kaspa:qqqqqqqqqqqqqqqqqqqqqqqqqqqq",
+                        "delta_sompi": 50000000,
+                    }
+                ],
+            },
+        }
+
+        text = watchtower.format_discord_wallet_txs(report)
+
+        self.assertIn("Kaspa wallet txs: kaspa-mainnet-local", text)
+        self.assertIn("pending_ok=True pending=1 events=1", text)
+        self.assertIn("- receiving: amount=1.00000000 KAS", text)
+        self.assertIn("incoming mining delta=0.50000000 KAS", text)
+
+    def test_format_discord_mining_lists_miner_state(self):
+        report = {
+            "node_name": "kaspa-mainnet-local",
+            "mining": {
+                "enabled": True,
+                "configured": True,
+                "ok": True,
+                "running": True,
+                "mode": "macos-gpu-experimental",
+                "hashrate_hs": 42_500_000,
+                "accepted_shares": 7,
+                "rejected_shares": 1,
+                "last_share_at": "2026-06-11T08:02:00+09:00",
+                "pool_url": "stratum+tcp://pool.example:16110",
+                "worker_name": "macos-gpu-test",
+                "wallet_address": "kaspa:" + "q" * 61,
+                "wallet_address_source": "mining.wallet_address",
+                "detail": "running",
+            },
+        }
+
+        text = watchtower.format_discord_mining(report)
+
+        self.assertIn("Kaspa mining: kaspa-mainnet-local", text)
+        self.assertIn("running=True mode=macos-gpu-experimental", text)
+        self.assertIn("hashrate=42.50 MH/s accepted=7 rejected=1", text)
+        self.assertIn("address_source=mining.wallet_address", text)
+
+    def test_format_discord_whales_lists_recent_events(self):
+        report = {
+            "node_name": "kaspa-mainnet-local",
+            "whale_watch": {
+                "enabled": True,
+                "ok": True,
+                "min_amount_sompi": 100_000_000_000_000,
+                "mempool_entries": 12,
+                "candidates": [],
+                "detail": "mempool read ok",
+                "events": [
+                    {
+                        "observed_at": "2026-06-11T08:00:00+09:00",
+                        "source": "mempool",
+                        "tx_id": "abcdef1234567890",
+                        "amount_sompi": 125_000_000_000_000,
+                    }
+                ],
+            },
+        }
+
+        text = watchtower.format_discord_whales(report)
+
+        self.assertIn("Kaspa whales: kaspa-mainnet-local", text)
+        self.assertIn("threshold=1000000.00000000 KAS", text)
+        self.assertIn("24h_count=1", text)
+        self.assertIn("amount=1250000.00000000 KAS", text)
+
+    def test_format_discord_incidents_includes_current_and_recovery(self):
+        report = {
+            "node_name": "kaspa-mainnet-local",
+            "status": "alert",
+            "severity": "critical",
+            "checks": [{"name": "peer_count", "ok": False, "detail": "0 peers"}],
+            "incident": {
+                "active": True,
+                "started_at": "2026-06-10T09:30:00+09:00",
+                "duration_seconds": 1800,
+                "failed_checks": ["peer_count"],
+                "causes": ["peer count below threshold"],
+            },
+        }
+        state = {"last_incident": {"resolved_at": "2026-06-10T08:00:00+09:00"}}
+
+        text = watchtower.format_discord_incidents(
+            report,
+            state,
+            [{"action": "executed", "operator_required": True, "operator_reason": "post_recovery_unhealthy"}],
+        )
+
+        self.assertIn("current_active=True duration=30.0m", text)
+        self.assertIn("current_failed_checks=peer_count", text)
+        self.assertIn("last_resolved_at=2026-06-10T08:00:00+09:00", text)
+        self.assertIn("latest_recovery=action=executed operator_required=True reason=post_recovery_unhealthy", text)
+
+    def test_format_operator_incident_summary_includes_daily_ops_context(self):
+        report = {
+            "node_name": "kaspa-mainnet-local",
+            "status": "alert",
+            "severity": "warn",
+            "health_score": 85,
+            "checks": [{"name": "disk_free", "ok": False, "detail": "low"}],
+            "failure_causes": ["disk free space below threshold"],
+            "incident": {
+                "active": True,
+                "started_at": "2026-06-10T09:30:00+09:00",
+                "duration_seconds": 900,
+                "failed_checks": ["disk_free"],
+                "causes": ["disk free space below threshold"],
+            },
+            "maintenance": {
+                "active": True,
+                "critical_only": True,
+                "mute_until": "2026-06-10T10:30:00+09:00",
+                "reason": "planned restart",
+            },
+        }
+        state = {"last_incident": {"resolved_at": "2026-06-10T08:00:00+09:00"}}
+
+        text = watchtower.format_operator_incident_summary(
+            report,
+            state,
+            [{"action": "dry_run", "severity_before": "warn", "severity_after": "unknown", "reason": "manual mode"}],
+        )
+
+        self.assertIn("health_score=85", text)
+        self.assertIn("incident_duration=15.0m", text)
+        self.assertIn("incident_failed_checks=disk_free", text)
+        self.assertIn("maintenance_active=True", text)
+        self.assertIn("maintenance_until=2026-06-10T10:30:00+09:00", text)
+        self.assertIn("latest_recovery=action=dry_run before=warn after=unknown reason=manual mode", text)
+
+    def test_discord_query_commands_succeed_even_when_node_alerts(self):
+        report = {
+            "node_name": "kaspa-mainnet-local",
+            "checked_at": "2026-06-10T10:00:00+09:00",
+            "status": "alert",
+            "severity": "critical",
+            "health_score": 70,
+            "checks": [{"name": "grpc_metrics", "ok": False, "detail": "missing"}],
+            "grpc_metrics": {},
+            "incident": {"active": True, "duration_seconds": 60},
+            "maintenance": {"active": False},
+        }
+        config = copy.deepcopy(watchtower.DEFAULT_CONFIG)
+
+        with (
+            mock.patch.object(watchtower, "build_stateful_report", return_value=(report, {})),
+            mock.patch.object(watchtower, "recent_recovery_records", return_value=[]),
+            mock.patch("builtins.print"),
+        ):
+            self.assertEqual(watchtower.discord_command(config, "status"), 0)
+            self.assertEqual(watchtower.discord_command(config, "incidents"), 0)
 
     def test_format_alert_reports_sync_completed_event(self):
         report = {
@@ -840,12 +1763,163 @@ class WatchtowerUnitTests(unittest.TestCase):
             restart_command=["launchctl", "kickstart", "-k", "service"],
             force=False,
             dry_run=True,
+            policy_decision={
+                "allowed": True,
+                "reason": "policy_satisfied",
+                "consecutive_failures": 3,
+                "min_consecutive_failures": 3,
+                "incident_duration_seconds": 600,
+                "min_incident_seconds": 300,
+                "maintenance_active": False,
+            },
         )
 
         self.assertIn("Recovery decision:", text)
         self.assertIn("failed_checks=process,rpc_tcp", text)
         self.assertIn("restart_command_configured=True", text)
+        self.assertIn("policy=allowed=True reason=policy_satisfied", text)
         self.assertIn("review command", text)
+
+    def test_recovery_policy_allows_persistent_critical_incident(self):
+        report = {
+            "node_name": "test-node",
+            "checked_at": "2026-06-10T09:10:00+09:00",
+            "status": "alert",
+            "severity": "critical",
+            "checks": [{"name": "peer_count", "ok": False, "detail": "0 peers"}],
+            "incident": {"active": True, "duration_seconds": 600},
+            "maintenance": {"active": False},
+            "grpc_metrics": {},
+            "progress": {},
+        }
+        state = {
+            "history": [
+                {
+                    "checked_at": "2026-06-10T09:00:00+09:00",
+                    "status": "alert",
+                    "severity": "critical",
+                    "failed_checks": ["peer_count"],
+                },
+                {
+                    "checked_at": "2026-06-10T09:05:00+09:00",
+                    "status": "alert",
+                    "severity": "critical",
+                    "failed_checks": ["peer_count"],
+                },
+            ]
+        }
+
+        decision = watchtower.recovery_policy_decision(report, state, copy.deepcopy(watchtower.DEFAULT_CONFIG))
+
+        self.assertTrue(decision["allowed"])
+        self.assertEqual(decision["reason"], "policy_satisfied")
+        self.assertEqual(decision["consecutive_failures"], 3)
+
+    def test_recovery_policy_blocks_warning_and_maintenance(self):
+        report = {
+            "node_name": "test-node",
+            "checked_at": "2026-06-10T09:10:00+09:00",
+            "status": "alert",
+            "severity": "warn",
+            "checks": [{"name": "disk_free", "ok": False, "detail": "low"}],
+            "incident": {"active": True, "duration_seconds": 600},
+            "maintenance": {"active": False},
+            "grpc_metrics": {},
+            "progress": {},
+        }
+        state = {"history": []}
+        config = copy.deepcopy(watchtower.DEFAULT_CONFIG)
+
+        decision = watchtower.recovery_policy_decision(report, state, config)
+        self.assertFalse(decision["allowed"])
+        self.assertEqual(decision["reason"], "severity_not_critical")
+
+        report["severity"] = "critical"
+        report["maintenance"] = {"active": True}
+        decision = watchtower.recovery_policy_decision(report, state, config)
+        self.assertFalse(decision["allowed"])
+        self.assertEqual(decision["reason"], "maintenance_active")
+
+    def test_recover_skips_when_policy_not_satisfied(self):
+        before = {
+            "node_name": "test-node",
+            "checked_at": "2026-06-10T09:00:00+09:00",
+            "status": "alert",
+            "severity": "critical",
+            "checks": [{"name": "peer_count", "ok": False, "detail": "0 peers"}],
+            "grpc_metrics": {},
+            "progress": {},
+            "disk": {},
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            config = copy.deepcopy(watchtower.DEFAULT_CONFIG)
+            config["state_path"] = str(Path(tmp) / "state.json")
+            config["recovery_history_path"] = str(Path(tmp) / "recovery.jsonl")
+            config["recovery"]["restart_command"] = ["restart-kaspad"]
+
+            with (
+                mock.patch.object(watchtower, "build_report", return_value=before),
+                mock.patch.object(watchtower, "run_command_result") as mocked_restart,
+                mock.patch("builtins.print") as mocked_print,
+            ):
+                status = watchtower.recover(config)
+
+            output = "\n".join(str(call.args[0]) for call in mocked_print.call_args_list)
+            records = watchtower.load_jsonl(Path(config["recovery_history_path"]))
+            self.assertEqual(status, 0)
+            self.assertFalse(mocked_restart.called)
+            self.assertIn("Recovery skipped: policy blocked", output)
+            self.assertEqual(records[-1]["action"], "skipped")
+            self.assertTrue(records[-1]["reason"].startswith("policy:"))
+
+    def test_recover_marks_operator_required_when_post_check_stays_unhealthy(self):
+        before = {
+            "node_name": "test-node",
+            "checked_at": "2026-06-10T09:00:00+09:00",
+            "status": "alert",
+            "severity": "critical",
+            "checks": [{"name": "peer_count", "ok": False, "detail": "0 peers"}],
+            "grpc_metrics": {},
+            "progress": {},
+            "disk": {},
+        }
+        after = {
+            "node_name": "test-node",
+            "checked_at": "2026-06-10T09:01:00+09:00",
+            "status": "alert",
+            "severity": "critical",
+            "checks": [{"name": "rpc_tcp", "ok": False, "detail": "connect failed"}],
+            "grpc_metrics": {},
+            "progress": {},
+            "disk": {},
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            config = copy.deepcopy(watchtower.DEFAULT_CONFIG)
+            config["state_path"] = str(Path(tmp) / "state.json")
+            config["recovery_history_path"] = str(Path(tmp) / "recovery.jsonl")
+            config["recovery"]["restart_command"] = ["restart-kaspad"]
+            config["recovery"]["post_recovery_wait_seconds"] = 0
+
+            completed = subprocess.CompletedProcess(
+                ["restart-kaspad"],
+                0,
+                stdout="restarted\n",
+                stderr="",
+            )
+            with (
+                mock.patch.object(watchtower, "build_report", side_effect=[before, after]),
+                mock.patch.object(watchtower, "run_command_result", return_value=completed),
+                mock.patch("builtins.print") as mocked_print,
+            ):
+                status = watchtower.recover(config, force=True)
+
+            output = "\n".join(str(call.args[0]) for call in mocked_print.call_args_list)
+            records = watchtower.load_jsonl(Path(config["recovery_history_path"]))
+            self.assertEqual(status, 1)
+            self.assertIn("Operator required: post-recovery check still unhealthy", output)
+            self.assertEqual(records[-1]["operator_required"], True)
+            self.assertEqual(records[-1]["operator_reason"], "post_recovery_unhealthy")
+            self.assertEqual(records[-1]["failed_checks_after"], ["rpc_tcp"])
 
     def test_format_diagnostics_summary_is_sanitized(self):
         report = {
@@ -1174,11 +2248,25 @@ class WatchtowerUnitTests(unittest.TestCase):
                 report,
                 state,
                 benchmark_path=tmp_path / "missing.jsonl",
+                recovery_records=[
+                    {
+                        "started_at": "2026-06-06T10:01:00+09:00",
+                        "action": "executed",
+                        "severity_before": "critical",
+                        "severity_after": "critical",
+                        "failed_checks_before": ["peer_count"],
+                        "operator_required": True,
+                        "operator_reason": "post_recovery_unhealthy",
+                    }
+                ],
                 sqlite_history=history_db,
             )
 
             html = output.read_text(encoding="utf-8")
             self.assertIn("Operator verdict", html)
+            self.assertIn("Operator Required", html)
+            self.assertIn("Yes · post_recovery_unhealthy", html)
+            self.assertIn("YES", html)
             self.assertIn('class="header-link" href="stream.html"', html)
             self.assertIn(">Stream</a>", html)
             self.assertIn("Review failed checks", html)
@@ -1290,6 +2378,25 @@ class WatchtowerUnitTests(unittest.TestCase):
             self.assertIn(".liquidation-panel:not(.active)", html)
             self.assertNotIn("\n    .panel + .panel { margin-top: 14px; }", html)
             self.assertIn("activateDashboardGroup", html)
+            self.assertIn("statusActiveTabKey", html)
+            self.assertIn('data-tab-target="tab-wallet"', html)
+            self.assertIn('id="tab-wallet"', html)
+            self.assertIn("Wallet Events", html)
+            self.assertIn("Mining Rewards", html)
+            self.assertIn("Mining Today", html)
+            self.assertIn('data-tab-target="tab-mining"', html)
+            self.assertIn('id="tab-mining"', html)
+            self.assertIn("Mining Status", html)
+            self.assertIn("macOS GPU Plan", html)
+            self.assertIn('data-tab-target="tab-whales"', html)
+            self.assertIn('id="tab-whales"', html)
+            self.assertIn("Whale Watch", html)
+            self.assertIn("Whale Events", html)
+            self.assertIn("restoreDashboardSelection", html)
+            self.assertIn("window.history.replaceState", html)
+            self.assertIn("kaspa-watchtower-active-tab", html)
+            self.assertIn("kaspa-watchtower-active-timeframe", html)
+            self.assertIn("kaspa-watchtower-active-liquidation", html)
             self.assertIn("drawMarketCrossChart", html)
             self.assertIn("drawMarketVolumeChart", html)
             self.assertIn("marketVolumeRows", html)
@@ -1375,6 +2482,23 @@ class WatchtowerUnitTests(unittest.TestCase):
             self.assertIn('hour: "2-digit"', html)
             self.assertIn("Block Processing", html)
             self.assertIn("9.2/s", html)
+            self.assertIn("BPS Highway", html)
+            self.assertIn("20-Lane BPS Highway", html)
+            self.assertIn("9.2 BPS", html)
+            self.assertIn('class="bps-highway ok"', html)
+            self.assertIn('class="bps-highway-canvas"', html)
+            self.assertIn("three@0.184.0", html)
+            self.assertIn("THREE.PerspectiveCamera", html)
+            self.assertIn("THREE.BoxGeometry", html)
+            self.assertIn("renderKaspaCanvasFallback", html)
+            self.assertIn("canvas-fallback", html)
+            self.assertIn("three-ready", html)
+            self.assertIn("three-fallback", html)
+            self.assertEqual(html.count('class="bps-lane active"'), 20)
+            self.assertIn("rusty-kaspa processed-stats log", html)
+            self.assertIn("3.2s old", html)
+            self.assertIn("131.1 tx/s", html)
+            self.assertIn("1311 tx / 10.0s window", html)
             self.assertIn("Tx Rate", html)
             self.assertIn("Transaction Throughput", html)
             self.assertIn("131.1/s", html)
@@ -1519,6 +2643,13 @@ class WatchtowerUnitTests(unittest.TestCase):
             self.assertIn("KAS/USDT Market", html)
             self.assertIn("Futures Positioning", html)
             self.assertIn("216.1/s", html)
+            self.assertIn("BPS Highway", html)
+            self.assertIn("20-Lane BPS Highway", html)
+            self.assertIn("9.2 BPS", html)
+            self.assertIn('class="bps-highway-canvas"', html)
+            self.assertIn("three@0.184.0", html)
+            self.assertIn("rusty-kaspa processed-stats log", html)
+            self.assertIn("216.1 tx/s", html)
             self.assertIn("Disk Free", html)
             self.assertIn("24h High", html)
             self.assertIn("24h Low", html)

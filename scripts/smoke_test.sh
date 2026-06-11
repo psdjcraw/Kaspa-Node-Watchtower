@@ -65,6 +65,12 @@ if [ -f "config.json" ]; then
   "$PYTHON_BIN" watchtower.py -c config.json --incident-report >/dev/null
   ok "incident report"
 
+  "$PYTHON_BIN" watchtower.py -c config.json --discord-command status >/dev/null
+  ok "Discord status command"
+
+  "$PYTHON_BIN" watchtower.py -c config.json --discord-command incidents >/dev/null
+  ok "Discord incidents command"
+
   "$PYTHON_BIN" watchtower.py -c config.json --prometheus >/dev/null
   test -s state/watchtower.prom
   ok "Prometheus textfile"

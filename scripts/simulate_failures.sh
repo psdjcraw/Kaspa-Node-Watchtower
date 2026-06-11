@@ -40,6 +40,10 @@ config["thresholds"]["alert_repeat_minutes"] = 60
 
 if name == "peer-critical":
     config["thresholds"]["min_peer_count"] = 999
+    config.setdefault("recovery", {})
+    config["recovery"].setdefault("policy", {})
+    config["recovery"]["policy"]["min_consecutive_failures"] = 1
+    config["recovery"]["policy"]["min_incident_minutes"] = 0
 elif name in {"relay-warning", "relay-stalled"}:
     config["thresholds"]["min_relay_blocks_in_window"] = 999999
     config["thresholds"]["require_relay_progress_when_unsynced"] = True

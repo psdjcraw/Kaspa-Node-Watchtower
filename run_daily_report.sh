@@ -25,7 +25,7 @@ from pathlib import Path
 import watchtower
 
 config = watchtower.load_config(Path("config.json"))
-report, _state = watchtower.build_stateful_report(config)
+report, state = watchtower.build_stateful_report(config)
 benchmark = watchtower.build_benchmark_summary(
     Path(config.get("benchmark_path") or watchtower.DEFAULT_CONFIG["benchmark_path"]),
     limit=48,
@@ -45,6 +45,17 @@ print(f"benchmark_ok_ratio={watchtower.format_ratio(benchmark.get('ok_ratio'))}"
 print(f"benchmark_min_peer_count={watchtower.format_optional_number(benchmark.get('min_peer_count'))}")
 print(f"benchmark_min_disk_free={watchtower.format_gib(benchmark.get('min_disk_free_gb'))}")
 print(f"recovery_action={(report.get('recovery') or {}).get('action', 'none')}")
+PY
+
+section "Incident / Health / Maintenance"
+"$PYTHON_BIN" - <<'PY'
+from pathlib import Path
+
+import watchtower
+
+config = watchtower.load_config(Path("config.json"))
+report, state = watchtower.build_stateful_report(config)
+print(watchtower.format_operator_incident_summary(report, state, watchtower.recent_recovery_records(config)))
 PY
 
 section "Mainnet Sync Progress"
