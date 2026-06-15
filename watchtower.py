@@ -2753,6 +2753,47 @@ def format_market_time_ms(value: Any) -> str:
         return "unknown"
 
 
+def market_oi_volume_ratio(open_interest: Any, volume_24h: Any) -> float | None:
+    oi = numeric(open_interest)
+    volume = numeric(volume_24h)
+    if oi is None or volume in (None, 0):
+        return None
+    return oi / volume
+
+
+def market_funding_z_score(records: list[dict[str, Any]], current_rate: Any, sample_limit: int = 21) -> float | None:
+    current = numeric(current_rate)
+    if current is None:
+        return None
+    rates = [
+        rate
+        for item in records[-sample_limit:]
+        if item.get("ok") and (rate := numeric(item.get("futures_funding_rate"))) is not None
+    ]
+    if len(rates) < 2:
+        return None
+    mean = sum(rates) / len(rates)
+    variance = sum((rate - mean) ** 2 for rate in rates) / len(rates)
+    stddev = math.sqrt(variance)
+    if stddev == 0:
+        return None
+    return (current - mean) / stddev
+
+
+def format_market_ratio(value: Any, suffix: str = "x") -> str:
+    parsed = numeric(value)
+    if parsed is None:
+        return "unknown"
+    return f"{parsed:.2f}{suffix}"
+
+
+def format_market_zscore(value: Any) -> str:
+    parsed = numeric(value)
+    if parsed is None:
+        return "unknown"
+    return f"{parsed:+.2f}sd"
+
+
 def fetch_market_snapshot(timeout: float = 6.0) -> dict[str, Any]:
     spot_url = "https://api.bybit.com/v5/market/tickers?category=spot&symbol=KASUSDT"
     futures_url = "https://api.bybit.com/v5/market/tickers?category=linear&symbol=KASUSDT"
@@ -2790,13 +2831,21 @@ def fetch_market_snapshot(timeout: float = 6.0) -> dict[str, Any]:
             "open_interest": futures.get("openInterest"),
             "open_interest_value": futures.get("openInterestValue"),
             "volume_24h": futures.get("volume24h"),
+            "oi_volume_ratio": market_oi_volume_ratio(futures.get("openInterest"), futures.get("volume24h")),
         },
     }
 
 
-def market_snapshot_item(snapshot: dict[str, Any]) -> dict[str, Any]:
+def market_snapshot_item(snapshot: dict[str, Any], history: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     spot = snapshot.get("spot") or {}
     futures = snapshot.get("futures") or {}
+    funding_rate = numeric(futures.get("funding_rate"))
+    oi_volume_ratio = numeric(futures.get("oi_volume_ratio"))
+    if oi_volume_ratio is None:
+        oi_volume_ratio = market_oi_volume_ratio(futures.get("open_interest"), futures.get("volume_24h"))
+    funding_z_score = numeric(futures.get("funding_z_score"))
+    if funding_z_score is None:
+        funding_z_score = market_funding_z_score(history or [], funding_rate)
     return {
         "checked_at": dt.datetime.now().astimezone().isoformat(),
         "source": snapshot.get("source", "Bybit KAS/USDT"),
@@ -2810,12 +2859,14 @@ def market_snapshot_item(snapshot: dict[str, Any]) -> dict[str, Any]:
         "futures_mark_price": numeric(futures.get("mark_price")),
         "futures_index_price": numeric(futures.get("index_price")),
         "futures_basis_pct": numeric(futures.get("basis_pct")),
-        "futures_funding_rate": numeric(futures.get("funding_rate")),
+        "futures_funding_rate": funding_rate,
         "futures_funding_apr_pct": numeric(futures.get("funding_apr_pct")),
+        "futures_funding_z_score": funding_z_score,
         "futures_next_funding_time": futures.get("next_funding_time"),
         "futures_open_interest": numeric(futures.get("open_interest")),
         "futures_open_interest_value": numeric(futures.get("open_interest_value")),
         "futures_volume_24h": numeric(futures.get("volume_24h")),
+        "futures_oi_volume_ratio": oi_volume_ratio,
     }
 
 
@@ -2838,10 +2889,12 @@ def snapshot_from_market_item(item: dict[str, Any]) -> dict[str, Any]:
             "basis_pct": item.get("futures_basis_pct"),
             "funding_rate": item.get("futures_funding_rate"),
             "funding_apr_pct": item.get("futures_funding_apr_pct"),
+            "funding_z_score": item.get("futures_funding_z_score"),
             "next_funding_time": item.get("futures_next_funding_time"),
             "open_interest": item.get("futures_open_interest"),
             "open_interest_value": item.get("futures_open_interest_value"),
             "volume_24h": item.get("futures_volume_24h"),
+            "oi_volume_ratio": item.get("futures_oi_volume_ratio"),
         },
     }
 
@@ -2874,13 +2927,15 @@ def format_market_snapshot(snapshot: dict[str, Any]) -> str:
                 f"index={format_market_price(futures.get('index_price'))} "
                 f"basis={format_market_percent_points(futures.get('basis_pct'))} "
                 f"funding={format_market_percent(futures.get('funding_rate'))} "
-                f"funding_apr={format_market_percent_points(futures.get('funding_apr_pct'))}"
+                f"funding_apr={format_market_percent_points(futures.get('funding_apr_pct'))} "
+                f"funding_z={format_market_zscore(futures.get('funding_z_score'))}"
             ),
             (
                 "futures_positioning="
                 f"open_interest={format_market_volume(futures.get('open_interest'))} "
                 f"oi_value={format_market_usdt(futures.get('open_interest_value'))} "
                 f"volume_24h={format_market_volume(futures.get('volume_24h'))} "
+                f"oi_volume={format_market_ratio(futures.get('oi_volume_ratio'))} "
                 f"next_funding={format_market_time_ms(futures.get('next_funding_time'))}"
             ),
         ]
@@ -9580,7 +9635,11 @@ def market_summary(timeout: float = 6.0) -> int:
 def market_snapshot(config: dict, timeout: float = 6.0) -> int:
     path = Path(config.get("market_snapshot_path") or DEFAULT_CONFIG["market_snapshot_path"])
     snapshot = fetch_market_snapshot(timeout=timeout)
-    item = market_snapshot_item(snapshot)
+    try:
+        history = load_jsonl(path)
+    except (OSError, json.JSONDecodeError):
+        history = []
+    item = market_snapshot_item(snapshot, history=history)
     append_jsonl(path, item)
     print(f"Market snapshot saved: {path}")
     print(format_market_snapshot(snapshot_from_market_item(item)))
@@ -10199,6 +10258,12 @@ def format_prometheus_metrics(
     )
     add_prometheus_metric(
         lines,
+        "kaspa_watchtower_market_futures_funding_z_score",
+        latest_market.get("futures_funding_z_score"),
+        market_labels,
+    )
+    add_prometheus_metric(
+        lines,
         "kaspa_watchtower_market_futures_open_interest_kas",
         latest_market.get("futures_open_interest"),
         market_labels,
@@ -10213,6 +10278,12 @@ def format_prometheus_metrics(
         lines,
         "kaspa_watchtower_market_futures_volume_24h_kas",
         latest_market.get("futures_volume_24h"),
+        market_labels,
+    )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_market_futures_oi_volume_ratio",
+        latest_market.get("futures_oi_volume_ratio"),
         market_labels,
     )
     verdict_values = {"ok": 0, "warn": 1, "critical": 2, "unknown": -1}

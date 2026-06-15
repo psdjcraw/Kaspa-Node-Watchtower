@@ -104,7 +104,7 @@ Last verified manually on `2026-06-08`:
   interest; these are not exchange-reported liquidation fills
 - Futures positioning panel: Bybit KAS/USDT linear perp mark/index price,
   basis, funding, annualized funding, next funding time, open interest, OI
-  value, and 24-hour futures volume
+  value, 24-hour futures volume, OI/volume crowding, and funding z-score
 - Futures trend panel: 7-day Bybit KAS/USDT open interest line with
   funding-rate bars from public linear perp endpoints
 - Market-data browser fetches: short-window panels refresh more often, while

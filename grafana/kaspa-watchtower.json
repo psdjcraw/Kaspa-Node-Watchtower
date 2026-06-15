@@ -1471,6 +1471,16 @@
           "expr": "kaspa_watchtower_market_futures_basis_percent{node=\"$node\"}",
           "legendFormat": "{{source}} basis %",
           "refId": "B"
+        },
+        {
+          "expr": "kaspa_watchtower_market_futures_oi_volume_ratio{node=\"$node\"}",
+          "legendFormat": "{{source}} OI/volume",
+          "refId": "C"
+        },
+        {
+          "expr": "kaspa_watchtower_market_futures_funding_z_score{node=\"$node\"}",
+          "legendFormat": "{{source}} funding z",
+          "refId": "D"
         }
       ],
       "title": "KAS Futures Positioning",

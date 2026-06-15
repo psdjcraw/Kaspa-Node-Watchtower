@@ -68,15 +68,16 @@ which supports a more resilient decentralized network.
   shows daily KAS exchange-volume bars for Gate, MEXC, KuCoin, Bybit, Bitget,
   Kraken, HTX, and Total, plus estimated Bybit KAS/USDT futures liquidation
   heatmaps for 12-hour, 24-hour, 1-week, and 1-month ranges and a linear perp
-  positioning panel for funding, basis, and open interest context; a 7-day
-  futures trend panel plots open interest with funding-rate bars; browser
+  positioning panel for funding, basis, open interest, OI/volume crowding, and
+  funding z-score context; a 7-day futures trend panel plots open interest with
+  funding-rate bars; browser
   market-data refreshes are throttled per panel to avoid unnecessary public API
   calls for long-window data, with a source-status panel for live, cached, or
   unavailable public API groups in a stable operator-facing order with short
   failure details; daily and weekly reports also include an optional Bybit
   KAS/USDT spot/futures market snapshot for price, basis, funding, and open
-  interest context, with persisted snapshot metrics available in Prometheus and
-  the bundled Grafana dashboard
+  interest context, with persisted OI/volume and funding z-score metrics
+  available in Prometheus and the bundled Grafana dashboard
 - Prometheus textfile metrics for local scraping or textfile collectors
 - Long-lived SQLite history export and operator summary reporting
 - Watch-only wallet balance monitoring through the local Kaspa gRPC endpoint;

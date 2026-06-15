@@ -660,9 +660,11 @@ class WatchtowerUnitTests(unittest.TestCase):
                 "futures_basis_pct": -0.13,
                 "futures_funding_rate": 0.0001,
                 "futures_funding_apr_pct": 10.95,
+                "futures_funding_z_score": 1.25,
                 "futures_open_interest": 230000000,
                 "futures_open_interest_value": 7010000,
                 "futures_volume_24h": 78000000,
+                "futures_oi_volume_ratio": 2.9487,
             },
         }
         multi_node_metrics = {
@@ -725,7 +727,9 @@ class WatchtowerUnitTests(unittest.TestCase):
         self.assertIn("kaspa_watchtower_benchmark_min_disk_free_gb", metrics)
         self.assertIn('kaspa_watchtower_market_spot_price_usdt{node="test-node",source="Bybit KAS/USDT"} 0.0305', metrics)
         self.assertIn("kaspa_watchtower_market_futures_basis_percent", metrics)
+        self.assertIn('kaspa_watchtower_market_futures_funding_z_score{node="test-node",source="Bybit KAS/USDT"} 1.25', metrics)
         self.assertIn("kaspa_watchtower_market_futures_open_interest_kas", metrics)
+        self.assertIn("kaspa_watchtower_market_futures_oi_volume_ratio", metrics)
         self.assertIn('kaspa_watchtower_mining_running{node="test-node"} 1', metrics)
         self.assertIn('kaspa_watchtower_mining_hashrate_hs{node="test-node"} 4.25e+07', metrics)
         self.assertIn('kaspa_watchtower_mining_accepted_shares{node="test-node"} 7', metrics)
@@ -823,6 +827,18 @@ class WatchtowerUnitTests(unittest.TestCase):
         self.assertTrue(
             any(
                 target.get("expr") == 'kaspa_watchtower_market_futures_basis_percent{node="$node"}'
+                for target in futures_targets
+            )
+        )
+        self.assertTrue(
+            any(
+                target.get("expr") == 'kaspa_watchtower_market_futures_oi_volume_ratio{node="$node"}'
+                for target in futures_targets
+            )
+        )
+        self.assertTrue(
+            any(
+                target.get("expr") == 'kaspa_watchtower_market_futures_funding_z_score{node="$node"}'
                 for target in futures_targets
             )
         )
@@ -2481,10 +2497,12 @@ class WatchtowerUnitTests(unittest.TestCase):
                 "basis_pct": 0.3205128205,
                 "funding_rate": "0.00005",
                 "funding_apr_pct": 5.475,
+                "funding_z_score": 1.75,
                 "next_funding_time": "1780828800000",
                 "open_interest": "230000000",
                 "open_interest_value": "7200000",
                 "volume_24h": "51000000",
+                "oi_volume_ratio": 4.5098039216,
             },
         }
 
@@ -2496,8 +2514,10 @@ class WatchtowerUnitTests(unittest.TestCase):
         self.assertIn("basis=+0.32%", text)
         self.assertIn("funding=+0.01%", text)
         self.assertIn("funding_apr=+5.47%", text)
+        self.assertIn("funding_z=+1.75sd", text)
         self.assertIn("open_interest=230.00M KAS", text)
         self.assertIn("oi_value=$7.20M", text)
+        self.assertIn("oi_volume=4.51x", text)
 
     def test_fetch_market_snapshot_computes_basis_and_apr(self):
         spot_payload = {
@@ -2537,6 +2557,28 @@ class WatchtowerUnitTests(unittest.TestCase):
         self.assertTrue(snapshot["ok"])
         self.assertAlmostEqual(snapshot["futures"]["basis_pct"], 1.0)
         self.assertAlmostEqual(snapshot["futures"]["funding_apr_pct"], 10.95)
+        self.assertAlmostEqual(snapshot["futures"]["oi_volume_ratio"], 2 / 3)
+
+    def test_market_snapshot_item_adds_positioning_risk_metrics(self):
+        snapshot = {
+            "ok": True,
+            "source": "Bybit KAS/USDT",
+            "spot": {},
+            "futures": {
+                "funding_rate": "0.0003",
+                "open_interest": "9000000",
+                "volume_24h": "3000000",
+            },
+        }
+        history = [
+            {"ok": True, "futures_funding_rate": 0.0},
+            {"ok": True, "futures_funding_rate": 0.0002},
+        ]
+
+        item = watchtower.market_snapshot_item(snapshot, history=history)
+
+        self.assertAlmostEqual(item["futures_oi_volume_ratio"], 3.0)
+        self.assertAlmostEqual(item["futures_funding_z_score"], 2.0)
 
     def test_fetch_market_snapshot_returns_unavailable_on_api_failure(self):
         with mock.patch("watchtower.fetch_json_url", side_effect=ValueError("rate limited")):
@@ -2579,9 +2621,11 @@ class WatchtowerUnitTests(unittest.TestCase):
                         "futures_basis_pct": -0.13,
                         "futures_funding_rate": 0.0001,
                         "futures_funding_apr_pct": 10.95,
+                        "futures_funding_z_score": 1.5,
                         "futures_open_interest": 230000000,
                         "futures_open_interest_value": 7010000,
                         "futures_volume_24h": 78000000,
+                        "futures_oi_volume_ratio": 2.9487,
                     }
                 ],
             )
@@ -2614,6 +2658,8 @@ class WatchtowerUnitTests(unittest.TestCase):
         self.assertIn("market_snapshots=1 successful=1", completed.stdout)
         self.assertIn("market_latest=2026-06-07T10:01:00+09:00 source=Bybit KAS/USDT spot=$0.03050", completed.stdout)
         self.assertIn("market_futures=basis=-0.13%", completed.stdout)
+        self.assertIn("funding_z=+1.50sd", completed.stdout)
+        self.assertIn("oi_volume=2.95x", completed.stdout)
 
     def test_status_page_uses_incident_first_dashboard_layout(self):
         with tempfile.TemporaryDirectory() as tmp:

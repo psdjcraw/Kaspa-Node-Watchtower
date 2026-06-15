@@ -99,10 +99,12 @@ MARKET_COLUMNS = [
     "futures_basis_pct",
     "futures_funding_rate",
     "futures_funding_apr_pct",
+    "futures_funding_z_score",
     "futures_next_funding_time",
     "futures_open_interest",
     "futures_open_interest_value",
     "futures_volume_24h",
+    "futures_oi_volume_ratio",
     "data_json",
 ]
 
@@ -217,10 +219,12 @@ def create_schema(connection: sqlite3.Connection) -> None:
           futures_basis_pct real,
           futures_funding_rate real,
           futures_funding_apr_pct real,
+          futures_funding_z_score real,
           futures_next_funding_time text,
           futures_open_interest real,
           futures_open_interest_value real,
           futures_volume_24h real,
+          futures_oi_volume_ratio real,
           data_json text not null
         );
         """
@@ -234,6 +238,14 @@ def create_schema(connection: sqlite3.Connection) -> None:
             "latest_processed_transactions": "integer",
             "latest_processed_blocks": "integer",
             "latest_processed_seconds": "real",
+        },
+    )
+    ensure_columns(
+        connection,
+        "market_snapshots",
+        {
+            "futures_funding_z_score": "real",
+            "futures_oi_volume_ratio": "real",
         },
     )
 
@@ -367,6 +379,20 @@ def format_market_usdt(value: Any) -> str:
     return "unknown" if text == "unknown" else f"${text}"
 
 
+def format_market_multiple(value: Any) -> str:
+    parsed = numeric(value)
+    if parsed is None:
+        return "unknown"
+    return f"{parsed:.2f}x"
+
+
+def format_market_z_score(value: Any) -> str:
+    parsed = numeric(value)
+    if parsed is None:
+        return "unknown"
+    return f"{parsed:+.2f}sd"
+
+
 def safe_archive_label(label: str) -> str:
     cleaned = re.sub(r"[^A-Za-z0-9_.-]+", "-", label.strip())
     return cleaned.strip("-") or "history-archive"
@@ -431,8 +457,9 @@ def history_summary(connection: sqlite3.Connection, days: int) -> dict[str, Any]
             """
             select checked_at, source, ok, error, spot_last_price, spot_change_24h,
                    spot_volume_24h, futures_basis_pct, futures_funding_rate,
-                   futures_funding_apr_pct, futures_open_interest,
-                   futures_open_interest_value, futures_volume_24h
+                   futures_funding_apr_pct, futures_funding_z_score,
+                   futures_open_interest, futures_open_interest_value,
+                   futures_volume_24h, futures_oi_volume_ratio
             from market_snapshots
             order by checked_at
             """
@@ -534,6 +561,9 @@ def history_summary(connection: sqlite3.Connection, days: int) -> dict[str, Any]
         "latest_futures_funding_apr_pct": None
         if latest_market is None
         else numeric(latest_market["futures_funding_apr_pct"]),
+        "latest_futures_funding_z_score": None
+        if latest_market is None
+        else numeric(latest_market["futures_funding_z_score"]),
         "latest_futures_open_interest": None
         if latest_market is None
         else numeric(latest_market["futures_open_interest"]),
@@ -541,6 +571,9 @@ def history_summary(connection: sqlite3.Connection, days: int) -> dict[str, Any]
         if latest_market is None
         else numeric(latest_market["futures_open_interest_value"]),
         "latest_futures_volume_24h": None if latest_market is None else numeric(latest_market["futures_volume_24h"]),
+        "latest_futures_oi_volume_ratio": None
+        if latest_market is None
+        else numeric(latest_market["futures_oi_volume_ratio"]),
         "recovery_attempts": len(recovery_window),
         "recovery_executed": sum(1 for row in recovery_window if not row["dry_run"]),
         "recovery_dry_runs": sum(1 for row in recovery_window if row["dry_run"]),
@@ -768,13 +801,15 @@ def print_history_summary(summary: dict[str, Any]) -> None:
         f"basis_avg={format_market_percent(summary['avg_futures_basis_pct'])} "
         f"funding={format_market_fraction_percent(summary['latest_futures_funding_rate'])} "
         f"funding_avg={format_market_fraction_percent(summary['avg_futures_funding_rate'])} "
-        f"funding_apr={format_market_percent(summary['latest_futures_funding_apr_pct'])}"
+        f"funding_apr={format_market_percent(summary['latest_futures_funding_apr_pct'])} "
+        f"funding_z={format_market_z_score(summary['latest_futures_funding_z_score'])}"
     )
     print(
         "market_futures_positioning="
         f"open_interest={format_market_volume(summary['latest_futures_open_interest'])} "
         f"oi_value={format_market_usdt(summary['latest_futures_open_interest_value'])} "
-        f"volume_24h={format_market_volume(summary['latest_futures_volume_24h'])}"
+        f"volume_24h={format_market_volume(summary['latest_futures_volume_24h'])} "
+        f"oi_volume={format_market_multiple(summary['latest_futures_oi_volume_ratio'])}"
     )
     print(
         "recovery_attempts="
