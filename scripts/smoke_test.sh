@@ -13,6 +13,25 @@ ok() {
   printf 'OK %s\n' "$1"
 }
 
+run_summary_smoke() {
+  local output
+  local status
+
+  set +e
+  output="$("$PYTHON_BIN" watchtower.py -c config.json --summary 2>&1)"
+  status=$?
+  set -e
+
+  if [ "$status" -ne 0 ] && [ "$status" -ne 1 ]; then
+    printf '%s\n' "$output" >&2
+    return "$status"
+  fi
+  if ! grep -q '^Kaspa watchtower summary:' <<<"$output"; then
+    printf '%s\n' "$output" >&2
+    return 1
+  fi
+}
+
 "$PYTHON_BIN" -m py_compile watchtower.py kaspa_grpc_probe.py prometheus_file_server.py scripts/upgrade_checkpoint.py scripts/export_history_sqlite.py
 ok "Python compile"
 
@@ -56,7 +75,7 @@ if [ -f "config.json" ]; then
   "$PYTHON_BIN" watchtower.py -c config.json --validate-config >/dev/null
   ok "config validation"
 
-  "$PYTHON_BIN" watchtower.py -c config.json --summary >/dev/null
+  run_summary_smoke
   ok "watchtower summary"
 
   "$PYTHON_BIN" watchtower.py -c config.json --diagnostics-summary >/dev/null

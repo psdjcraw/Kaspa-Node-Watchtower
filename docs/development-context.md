@@ -8,7 +8,8 @@ Current node context:
 - Binary: `/Users/psdjc/kaspa/rusty-kaspa-v2.0.0/bin/kaspad`
 - Version: `kaspad 2.0.0`
 - Network: mainnet
-- RPC: `127.0.0.1:16110`
+- gRPC/RPC: `127.0.0.1:16110`
+- wRPC Borsh: `127.0.0.1:17110`
 - P2P: `0.0.0.0:16111`
 - Data directory: `/Users/psdjc/kaspa/rusty-kaspa-mainnet-data/kaspa-mainnet/datadir`
 - Log file: `/Users/psdjc/kaspa/rusty-kaspa-mainnet-data/kaspa-mainnet/logs/rusty-kaspa.log`

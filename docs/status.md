@@ -6,6 +6,7 @@
 - Host: `hang-studio-m4max`
 - Network: `mainnet`
 - gRPC/RPC endpoint: `127.0.0.1:16110`
+- wRPC Borsh endpoint for indexer: `127.0.0.1:17110`
 - Metrics exporter: `http://127.0.0.1:9660/metrics`
 - Prometheus target: `kaspa-watchtower` at `host.docker.internal:9660`
 - Grafana dashboard: `http://127.0.0.1:3000/d/kaspa-watchtower/kaspa-watchtower`

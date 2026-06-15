@@ -88,6 +88,27 @@ DEFAULT_CONFIG = {
         "explorer_tx_path": "/txs/{tx_id}",
         "explorer_address_path": "/addresses/{address}",
     },
+    "indexer": {
+        "enabled": False,
+        "base_url": "http://localhost:8500",
+        "health_path": "/api/health",
+        "metrics_path": "/api/metrics",
+        "timeout_seconds": 2,
+        "require_metrics": False,
+        "max_lag_seconds": 60,
+        "max_checkpoint_age_seconds": 300,
+        "transaction_path": "/api/transactions/{tx_id}",
+        "address_transactions_path": "/api/addresses/{address}/transactions",
+        "address_balance_path": "/api/addresses/{address}/balance",
+        "address_utxos_path": "/api/addresses/{address}/utxos",
+        "search_path": "/api/search?q={query}",
+    },
+    "indexer_watch": {
+        "enabled": False,
+        "alert_enabled": True,
+        "event_history_entries": 100,
+        "watch_addresses": [],
+    },
     "thresholds": {
         "alert_repeat_minutes": 60,
         "stale_log_minutes": 15,
@@ -1244,6 +1265,7 @@ def build_report(config: dict) -> dict[str, Any]:
     wallet = fetch_optional_wallet_balances(config, grpc_endpoint)
     mining = fetch_optional_mining_status(config)
     whale_watch = fetch_optional_whale_watch(config, grpc_endpoint)
+    indexer = fetch_optional_indexer_status(config)
 
     checks = [
         Check("process", bool(processes), "running" if processes else "not running"),
@@ -1295,6 +1317,42 @@ def build_report(config: dict) -> dict[str, Any]:
                 ),
             )
         )
+
+    if indexer.get("enabled"):
+        checks.append(
+            Check(
+                "indexer_health",
+                bool(indexer.get("health_ok") or indexer.get("syncing")),
+                indexer.get("detail") or "unknown",
+            )
+        )
+        if indexer.get("metrics_ok") or indexer_config(config).get("require_metrics"):
+            checks.append(
+                Check(
+                    "indexer_metrics",
+                    bool(indexer.get("metrics_ok")),
+                    indexer.get("metrics_detail") or indexer.get("detail") or "unknown",
+                )
+            )
+        if indexer.get("metrics_ok"):
+            lag = numeric((indexer.get("metrics") or {}).get("lag_seconds"))
+            checkpoint_age = numeric((indexer.get("metrics") or {}).get("checkpoint_age_seconds"))
+            checks.append(
+                Check(
+                    "indexer_lag",
+                    bool(indexer.get("lag_ok", True)),
+                    "lag=unknown" if lag is None else f"lag={lag:.1f}s",
+                )
+            )
+            checks.append(
+                Check(
+                    "indexer_checkpoint_freshness",
+                    bool(indexer.get("checkpoint_fresh", True)),
+                    "checkpoint_age=unknown"
+                    if checkpoint_age is None
+                    else f"checkpoint_age={checkpoint_age:.1f}s",
+                )
+            )
 
     min_free_gb = float(thresholds.get("disk_free_gb_min", 0))
     min_free_percent = float(thresholds.get("disk_free_percent_min", 0))
@@ -1472,6 +1530,7 @@ def build_report(config: dict) -> dict[str, Any]:
         "wallet": wallet,
         "mining": mining,
         "whale_watch": whale_watch,
+        "indexer": indexer,
         "data_dir": config.get("data_dir") or "",
         "data_dir_size": dir_size(config.get("data_dir", "")),
         "disk": disk,
@@ -1509,6 +1568,7 @@ def build_stateful_report(config: dict) -> tuple[dict[str, Any], dict[str, Any]]
     (report.get("wallet") or {})["events"] = list(state.get("wallet_events") or [])
     update_whale_confirmed_candidates(state, report, config)
     update_whale_event_state(state, report, config)
+    apply_indexer_watchlist(report, state, config)
     apply_wallet_policy_checks(report, config)
     enrich_operational_fields(report, config, state)
     return report, state
@@ -1820,6 +1880,8 @@ def update_incident_state(state: dict[str, Any], report: dict[str, Any]) -> str 
 
 def alert_muted_by_maintenance(report: dict[str, Any]) -> bool:
     maintenance = report.get("maintenance") or {}
+    indexer = report.get("indexer") or {}
+    indexer_metrics = indexer.get("metrics") or {}
     if not maintenance.get("active"):
         return False
     if maintenance.get("critical_only", True) and report.get("severity") == "critical":
@@ -2101,6 +2163,539 @@ def fetch_json_url(url: str, timeout: float = 6.0) -> Any:
     with urllib.request.urlopen(request, timeout=timeout) as response:
         data = response.read()
     return json.loads(data.decode("utf-8"))
+
+
+def indexer_config(config: dict[str, Any]) -> dict[str, Any]:
+    raw = config.get("indexer") if isinstance(config.get("indexer"), dict) else {}
+    return {**DEFAULT_CONFIG["indexer"], **raw}
+
+
+def join_url(base_url: Any, path: Any) -> str:
+    base = str(base_url or "").strip().rstrip("/")
+    suffix = str(path or "").strip()
+    if not base:
+        return ""
+    if not suffix:
+        return base
+    if re.fullmatch(r"https?://[^\s]+", suffix):
+        return suffix
+    return f"{base}/{suffix.lstrip('/')}"
+
+
+def find_nested_value(value: Any, keys: set[str]) -> Any:
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if str(key) in keys:
+                return item
+        for item in value.values():
+            found = find_nested_value(item, keys)
+            if found is not None:
+                return found
+    elif isinstance(value, list):
+        for item in value:
+            found = find_nested_value(item, keys)
+            if found is not None:
+                return found
+    return None
+
+
+def timestamp_age_seconds(value: Any, now: dt.datetime | None = None) -> float | None:
+    if value in (None, ""):
+        return None
+    now = now or dt.datetime.now().astimezone()
+    parsed_dt = parse_iso_datetime(str(value)) if isinstance(value, str) else None
+    if parsed_dt is not None:
+        if parsed_dt.tzinfo is None:
+            parsed_dt = parsed_dt.replace(tzinfo=now.tzinfo)
+        return max(0.0, (now - parsed_dt.astimezone(now.tzinfo)).total_seconds())
+    parsed_number = numeric(value)
+    if parsed_number is None:
+        return None
+    if parsed_number > 10_000_000_000:
+        parsed_number = parsed_number / 1000
+    try:
+        parsed_ts = dt.datetime.fromtimestamp(parsed_number, tz=now.tzinfo)
+    except (OSError, OverflowError, ValueError):
+        return None
+    return max(0.0, (now - parsed_ts).total_seconds())
+
+
+def indexer_payload_ok(payload: Any) -> bool:
+    if not isinstance(payload, dict):
+        return True
+    status = str(payload.get("status") or payload.get("severity") or "").lower()
+    if status in {"ok", "healthy", "ready", "up"}:
+        return True
+    if status in {"alert", "critical", "down", "error", "failed", "unhealthy"}:
+        return False
+    if "ok" in payload:
+        return bool(payload.get("ok"))
+    return True
+
+
+def fetch_indexer_health_payload(url: str, timeout: float) -> tuple[Any, int | None]:
+    try:
+        return fetch_json_url(url, timeout=timeout), None
+    except urllib.error.HTTPError as exc:
+        body = exc.read()
+        if not body:
+            raise
+        return json.loads(body.decode("utf-8")), exc.code
+
+
+def indexer_payload_syncing(payload: Any) -> bool:
+    if not isinstance(payload, dict):
+        return False
+    status = str(payload.get("status") or "").lower()
+    if status in {"syncing", "catching_up", "catching-up"}:
+        return True
+    kaspad = payload.get("kaspad") if isinstance(payload.get("kaspad"), dict) else {}
+    kaspad_up = str(kaspad.get("status") or "").lower() in {"up", "ok", "healthy"} or bool(kaspad.get("isSynced"))
+    indexer = payload.get("indexer") if isinstance(payload.get("indexer"), dict) else {}
+    details = indexer.get("details") if isinstance(indexer.get("details"), list) else []
+    reasons = " ".join(
+        str(item.get("reason") or "")
+        for item in details
+        if isinstance(item, dict)
+    ).lower()
+    has_catchup_reason = "behind" in reasons or "catch" in reasons or "checkpoint" in reasons
+    return bool(kaspad_up and has_catchup_reason)
+
+
+def extract_indexer_metrics(payload: Any) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        return {}
+    checkpoint_timestamp = find_nested_value(payload, {"timestamp", "blockTime", "block_time"})
+    lag_seconds = find_nested_value(payload, {"lag_seconds", "lagSeconds", "indexer_lag_seconds"})
+    schema_version = find_nested_value(payload, {"schema_version", "schemaVersion"})
+    version = find_nested_value(payload, {"version", "appVersion", "application_version"})
+    return {
+        "version": version,
+        "schema_version": schema_version,
+        "checkpoint_timestamp": checkpoint_timestamp,
+        "checkpoint_age_seconds": timestamp_age_seconds(checkpoint_timestamp),
+        "lag_seconds": numeric(lag_seconds),
+        "payload": payload,
+    }
+
+
+def fetch_optional_indexer_status(config: dict[str, Any]) -> dict[str, Any]:
+    cfg = indexer_config(config)
+    indexer: dict[str, Any] = {
+        "enabled": bool(cfg.get("enabled", False)),
+        "configured": bool(str(cfg.get("base_url") or "").strip()),
+        "ok": False,
+        "health_ok": False,
+        "metrics_ok": False,
+        "base_url": str(cfg.get("base_url") or "").strip().rstrip("/"),
+        "detail": "disabled",
+    }
+    if not indexer["enabled"]:
+        return indexer
+    if not indexer["configured"]:
+        indexer["detail"] = "no indexer base_url configured"
+        return indexer
+
+    timeout = float(cfg.get("timeout_seconds") or DEFAULT_CONFIG["indexer"]["timeout_seconds"])
+    health_url = join_url(cfg.get("base_url"), cfg.get("health_path"))
+    metrics_url = join_url(cfg.get("base_url"), cfg.get("metrics_path"))
+    indexer["health_url"] = health_url
+    indexer["metrics_url"] = metrics_url
+    start = time.monotonic()
+    try:
+        health_payload, health_http_status = fetch_indexer_health_payload(health_url, timeout=timeout)
+        indexer["health"] = health_payload
+        if health_http_status is not None:
+            indexer["health_http_status"] = health_http_status
+        indexer["health_ok"] = indexer_payload_ok(health_payload)
+        indexer["syncing"] = indexer_payload_syncing(health_payload)
+        indexer["state"] = "up" if indexer["health_ok"] else ("syncing" if indexer["syncing"] else "down")
+        indexer["health_latency_ms"] = round((time.monotonic() - start) * 1000, 1)
+    except (OSError, urllib.error.URLError, json.JSONDecodeError, ValueError) as exc:
+        indexer["detail"] = f"health read failed: {exc}"
+        indexer["state"] = "down"
+        return indexer
+
+    metrics_required = bool(cfg.get("require_metrics", False))
+    if metrics_url:
+        metrics_start = time.monotonic()
+        try:
+            metrics_payload = fetch_json_url(metrics_url, timeout=timeout)
+            indexer["metrics"] = extract_indexer_metrics(metrics_payload)
+            indexer["metrics_ok"] = True
+            indexer["metrics_latency_ms"] = round((time.monotonic() - metrics_start) * 1000, 1)
+        except (OSError, urllib.error.URLError, json.JSONDecodeError, ValueError) as exc:
+            indexer["metrics_detail"] = f"metrics read failed: {exc}"
+            indexer["metrics_ok"] = False
+            if metrics_required:
+                indexer["detail"] = indexer["metrics_detail"]
+                return indexer
+
+    metrics = indexer.get("metrics") or {}
+    lag = numeric(metrics.get("lag_seconds"))
+    checkpoint_age = numeric(metrics.get("checkpoint_age_seconds"))
+    max_lag = float(cfg.get("max_lag_seconds") or DEFAULT_CONFIG["indexer"]["max_lag_seconds"])
+    max_checkpoint_age = float(cfg.get("max_checkpoint_age_seconds") or DEFAULT_CONFIG["indexer"]["max_checkpoint_age_seconds"])
+    lag_ok = bool(indexer.get("syncing")) or lag is None or lag <= max_lag
+    checkpoint_ok = bool(indexer.get("syncing")) or checkpoint_age is None or checkpoint_age <= max_checkpoint_age
+    indexer["lag_ok"] = lag_ok
+    indexer["checkpoint_fresh"] = checkpoint_ok
+    health_acceptable = bool(indexer["health_ok"] or indexer.get("syncing"))
+    indexer["ok"] = bool(health_acceptable and (indexer["metrics_ok"] or not metrics_required) and lag_ok and checkpoint_ok)
+    lag_text = "unknown" if lag is None else f"{lag:.1f}s"
+    checkpoint_text = "unknown" if checkpoint_age is None else f"{checkpoint_age:.1f}s"
+    indexer["detail"] = (
+        f"state={indexer.get('state', 'unknown')} health_ok={indexer['health_ok']} "
+        f"metrics_ok={indexer['metrics_ok']} "
+        f"lag={lag_text} checkpoint_age={checkpoint_text}"
+    )
+    return indexer
+
+
+def render_indexer_path(template: Any, **params: str) -> str:
+    path = str(template or "").strip()
+    for key, value in params.items():
+        path = path.replace("{" + key + "}", urllib.parse.quote(str(value), safe=""))
+    return path
+
+
+def fetch_indexer_api(config: dict[str, Any], path_template: str, **params: str) -> Any:
+    cfg = indexer_config(config)
+    if not bool(cfg.get("enabled", False)):
+        raise ValueError("indexer is disabled in config")
+    base_url = str(cfg.get("base_url") or "").strip()
+    if not base_url:
+        raise ValueError("indexer base_url is not configured")
+    path = render_indexer_path(path_template, **params)
+    timeout = float(cfg.get("timeout_seconds") or DEFAULT_CONFIG["indexer"]["timeout_seconds"])
+    return fetch_json_url(join_url(base_url, path), timeout=timeout)
+
+
+def compact_indexer_payload(payload: Any, *, max_items: int = 10) -> str:
+    if isinstance(payload, dict):
+        parts: list[str] = []
+        for key, value in payload.items():
+            if isinstance(value, (str, int, float, bool)) or value is None:
+                text = str(value)
+                if len(text) > 80:
+                    text = text[:77] + "..."
+                parts.append(f"{key}={text}")
+            elif isinstance(value, list):
+                parts.append(f"{key}_count={len(value)}")
+            elif isinstance(value, dict):
+                parts.append(f"{key}_fields={len(value)}")
+            if len(parts) >= max_items:
+                break
+        return " ".join(parts) if parts else "empty object"
+    if isinstance(payload, list):
+        preview = ", ".join(compact_indexer_payload(item, max_items=3) for item in payload[:3])
+        return f"items={len(payload)}" + (f" preview=[{preview}]" if preview else "")
+    text = json.dumps(payload, ensure_ascii=False, sort_keys=True)
+    return text if len(text) <= 300 else text[:297] + "..."
+
+
+def format_indexer_api_result(kind: str, identifier: str, payload: Any) -> str:
+    return (
+        f"Kaspa indexer {kind}: {identifier}\n"
+        f"{compact_indexer_payload(payload)}"
+    )
+
+
+def indexer_lookup(config: dict[str, Any], kind: str, value: str) -> int:
+    cfg = indexer_config(config)
+    value = str(value or "").strip()
+    if not value:
+        print(f"Kaspa indexer {kind}: missing query value")
+        return 2
+    path_by_kind = {
+        "tx": render_indexer_path(cfg.get("transaction_path"), tx_id=value),
+        "address": render_indexer_path(cfg.get("address_transactions_path"), address=value),
+        "balance": render_indexer_path(cfg.get("address_balance_path"), address=value),
+        "utxos": render_indexer_path(cfg.get("address_utxos_path"), address=value),
+        "search": render_indexer_path(cfg.get("search_path"), query=value),
+    }
+    path = path_by_kind.get(kind)
+    if path is None:
+        print(f"Kaspa indexer lookup failed: unsupported kind={kind}")
+        return 2
+    try:
+        payload = fetch_indexer_api(config, path)
+    except (OSError, urllib.error.URLError, json.JSONDecodeError, ValueError) as exc:
+        print(f"Kaspa indexer {kind}: unavailable; {exc}")
+        return 1
+    print(format_indexer_api_result(kind, value, payload))
+    return 0
+
+
+def indexer_payload_count(payload: Any, keys: tuple[str, ...]) -> int:
+    if isinstance(payload, list):
+        return len(payload)
+    if isinstance(payload, dict):
+        for key in keys:
+            value = payload.get(key)
+            if isinstance(value, list):
+                return len(value)
+    return 0
+
+
+def indexer_watch_test(config: dict[str, Any], address: str, label: str = "") -> int:
+    address = str(address or "").strip()
+    label = str(label or "").strip()
+    if not address:
+        print("Kaspa indexer watch-test: missing address")
+        return 2
+    if not looks_like_kaspa_address(address):
+        print("Kaspa indexer watch-test: invalid Kaspa address")
+        return 2
+    cfg = indexer_config(config)
+    checks = [
+        ("transactions", cfg.get("address_transactions_path"), {"address": address}, ("transactions", "items"), True),
+        ("balance", cfg.get("address_balance_path"), {"address": address}, (), False),
+        ("utxos", cfg.get("address_utxos_path"), {"address": address}, ("utxos", "items"), False),
+    ]
+    results: list[tuple[str, str, Any]] = []
+    ok = True
+    for name, template, params, count_keys, required in checks:
+        try:
+            payload = fetch_indexer_api(config, render_indexer_path(template, **params))
+            if count_keys:
+                detail = f"count={indexer_payload_count(payload, count_keys)}"
+            else:
+                detail = compact_indexer_payload(payload, max_items=4)
+            results.append((name, "ok", detail))
+        except (OSError, urllib.error.URLError, json.JSONDecodeError, ValueError) as exc:
+            if required:
+                ok = False
+                results.append((name, "failed", str(exc)))
+            else:
+                results.append((name, "warn", str(exc)))
+    lines = [
+        "Kaspa indexer watch-test:",
+        f"address={address}",
+        f"label={label or 'unlabeled'}",
+    ]
+    lines.extend(f"{name}={status} {detail}" for name, status, detail in results)
+    print("\n".join(lines))
+    return 0 if ok else 1
+
+
+def indexer_watch_config(config: dict[str, Any]) -> dict[str, Any]:
+    raw = config.get("indexer_watch") if isinstance(config.get("indexer_watch"), dict) else {}
+    return {**DEFAULT_CONFIG["indexer_watch"], **raw}
+
+
+def normalize_watch_addresses(items: Any) -> list[dict[str, str]]:
+    if not isinstance(items, list):
+        return []
+    normalized = []
+    for item in items:
+        if isinstance(item, str):
+            address = item.strip()
+            label = ""
+        elif isinstance(item, dict):
+            address = str(item.get("address") or "").strip()
+            label = str(item.get("label") or "").strip()
+        else:
+            continue
+        if address:
+            normalized.append({"address": address, "label": label})
+    return normalized
+
+
+def format_indexer_watchlist(config: dict[str, Any]) -> str:
+    watch_config = indexer_watch_config(config)
+    targets = normalize_watch_addresses(watch_config.get("watch_addresses"))
+    lines = [
+        "Kaspa indexer watchlist:",
+        f"enabled={bool(watch_config.get('enabled', False))} addresses={len(targets)}",
+    ]
+    if not targets:
+        lines.append("- none")
+        return "\n".join(lines)
+    for target in targets:
+        label = target.get("label") or "unlabeled"
+        lines.append(f"- {label}: {target.get('address')}")
+    return "\n".join(lines)
+
+
+def update_indexer_watch_config(
+    config_path: Path,
+    *,
+    add_address: str | None = None,
+    remove_address: str | None = None,
+    label: str = "",
+) -> dict[str, Any]:
+    raw_config = load_raw_config(config_path)
+    indexer = dict(DEFAULT_CONFIG["indexer"])
+    configured_indexer = raw_config.get("indexer") or {}
+    if isinstance(configured_indexer, dict):
+        indexer.update(configured_indexer)
+    watch = dict(DEFAULT_CONFIG["indexer_watch"])
+    configured_watch = raw_config.get("indexer_watch") or {}
+    if isinstance(configured_watch, dict):
+        watch.update(configured_watch)
+
+    targets = normalize_watch_addresses(watch.get("watch_addresses"))
+    if add_address is not None:
+        address = str(add_address or "").strip()
+        if not looks_like_kaspa_address(address):
+            raise ValueError("watch address must look like a Kaspa address, for example kaspa:q...")
+        label = str(label or "").strip()
+        replaced = False
+        for target in targets:
+            if target["address"] == address:
+                target["label"] = label
+                replaced = True
+                break
+        if not replaced:
+            targets.append({"address": address, "label": label})
+        indexer["enabled"] = True
+        watch["enabled"] = True
+    elif remove_address is not None:
+        address = str(remove_address or "").strip()
+        if not address:
+            raise ValueError("watch remove requires an address")
+        before = len(targets)
+        targets = [target for target in targets if target["address"] != address and target.get("label") != address]
+        if len(targets) == before:
+            raise ValueError(f"watch address not found: {address}")
+        watch["enabled"] = bool(targets)
+
+    watch["watch_addresses"] = targets
+    raw_config["indexer"] = indexer
+    raw_config["indexer_watch"] = watch
+    save_config(config_path, raw_config)
+    return watch
+
+
+def first_present_value(value: dict[str, Any], keys: Iterable[str]) -> Any:
+    for key in keys:
+        if key in value and value.get(key) not in (None, ""):
+            return value.get(key)
+    return None
+
+
+def transaction_items_from_payload(payload: Any) -> list[dict[str, Any]]:
+    if isinstance(payload, list):
+        return [item for item in payload if isinstance(item, dict)]
+    if not isinstance(payload, dict):
+        return []
+    for key in ("transactions", "items", "results", "entries", "data"):
+        value = payload.get(key)
+        if isinstance(value, list):
+            return [item for item in value if isinstance(item, dict)]
+    if first_present_value(payload, ("transaction_id", "tx_id", "txid", "id", "hash")) is not None:
+        return [payload]
+    return []
+
+
+def indexer_watch_event_key(address: Any, tx_id: Any) -> str:
+    return f"{address or ''}|{tx_id or ''}"
+
+
+def indexer_watch_events_from_payload(
+    payload: Any,
+    target: dict[str, str],
+    checked_at: str,
+) -> list[dict[str, Any]]:
+    events = []
+    address = target.get("address") or ""
+    label = target.get("label") or ""
+    for item in transaction_items_from_payload(payload):
+        tx_id = first_present_value(item, ("transaction_id", "tx_id", "txid", "id", "hash"))
+        if tx_id in (None, ""):
+            continue
+        amount = first_present_value(item, ("amount_sompi", "value_sompi", "amount", "value"))
+        accepting_block_hash = first_present_value(item, ("accepting_block_hash", "block_hash", "blockHash"))
+        timestamp = first_present_value(item, ("timestamp", "block_time", "blockTime", "time"))
+        events.append(
+            {
+                "event_key": indexer_watch_event_key(address, tx_id),
+                "observed_at": checked_at,
+                "type": "indexer_address_tx",
+                "source": "indexer",
+                "address": address,
+                "label": label,
+                "tx_id": str(tx_id),
+                "amount_sompi": amount,
+                "amount_kas": kas_from_sompi(amount) if numeric(amount) is not None else None,
+                "accepting_block_hash": accepting_block_hash or "",
+                "transaction_time": timestamp or "",
+            }
+        )
+    return events
+
+
+def apply_indexer_watchlist(report: dict[str, Any], state: dict[str, Any], config: dict[str, Any]) -> str | None:
+    watch_config = indexer_watch_config(config)
+    targets = normalize_watch_addresses(watch_config.get("watch_addresses"))
+    watch: dict[str, Any] = {
+        "enabled": bool(watch_config.get("enabled", False)),
+        "alert_enabled": bool(watch_config.get("alert_enabled", True)),
+        "watch_addresses": targets,
+        "events": list(state.get("indexer_watch_events") or []),
+        "new_events": [],
+        "ok": True,
+        "detail": "disabled",
+    }
+    report["indexer_watch"] = watch
+    if not watch["enabled"]:
+        return None
+    if not targets:
+        watch["ok"] = False
+        watch["detail"] = "no indexer watch addresses configured"
+        report["checks"].append(Check("indexer_watchlist", False, watch["detail"]).as_dict())
+        recalculate_report_health(report, config)
+        return None
+    if not bool(indexer_config(config).get("enabled", False)):
+        watch["ok"] = False
+        watch["detail"] = "indexer is disabled"
+        report["checks"].append(Check("indexer_watchlist", False, watch["detail"]).as_dict())
+        recalculate_report_health(report, config)
+        return None
+
+    checked_at = report.get("checked_at") or dt.datetime.now().astimezone().isoformat()
+    candidates = []
+    errors = []
+    cfg = indexer_config(config)
+    for target in targets:
+        try:
+            payload = fetch_indexer_api(
+                config,
+                cfg.get("address_transactions_path"),
+                address=target["address"],
+            )
+        except (OSError, urllib.error.URLError, json.JSONDecodeError, ValueError) as exc:
+            errors.append(f"{target.get('label') or target['address']}: {exc}")
+            continue
+        candidates.extend(indexer_watch_events_from_payload(payload, target, checked_at))
+
+    limit = positive_int(watch_config.get("event_history_entries"), DEFAULT_CONFIG["indexer_watch"]["event_history_entries"])
+    events = list(state.get("indexer_watch_events") or [])
+    seen = {str(event.get("event_key") or indexer_watch_event_key(event.get("address"), event.get("tx_id"))) for event in events}
+    new_events = []
+    for event in candidates:
+        key = str(event.get("event_key") or indexer_watch_event_key(event.get("address"), event.get("tx_id")))
+        if key in seen:
+            continue
+        event["event_key"] = key
+        seen.add(key)
+        new_events.append(event)
+    events.extend(new_events)
+    state["indexer_watch_events"] = events[-limit:]
+    watch["events"] = list(state.get("indexer_watch_events") or [])
+    watch["new_events"] = new_events
+    watch["ok"] = not errors
+    watch["detail"] = (
+        f"watched={len(targets)} new_events={len(new_events)} total_events={len(watch['events'])}"
+        if not errors
+        else "; ".join(errors[:3])
+    )
+    report["checks"].append(Check("indexer_watchlist", watch["ok"], watch["detail"]).as_dict())
+    recalculate_report_health(report, config)
+    if new_events and watch["alert_enabled"]:
+        return "indexer_watch_event"
+    return None
 
 
 def market_api_list(payload: dict[str, Any], source: str) -> list[Any]:
@@ -3154,6 +3749,9 @@ def write_stream_page(
     wallet = report.get("wallet") or {}
     mining_status = report.get("mining") or {}
     whale = report.get("whale_watch") or {}
+    indexer = report.get("indexer") or {}
+    indexer_metrics = indexer.get("metrics") or {}
+    indexer_watch = report.get("indexer_watch") or {}
     incident = report.get("incident") or {}
     maintenance = report.get("maintenance") or {}
     history_items = state.get("history", [])[-80:]
@@ -3873,6 +4471,103 @@ def whale_watch_panel(report: dict[str, Any], state: dict[str, Any]) -> str:
     """
 
 
+def indexer_watch_panel(report: dict[str, Any], state: dict[str, Any]) -> str:
+    indexer = report.get("indexer") or {}
+    watch = report.get("indexer_watch") or {}
+    targets = normalize_watch_addresses(watch.get("watch_addresses"))
+    events = list(watch.get("events") or state.get("indexer_watch_events") or [])
+    target_rows = "\n".join(
+        html_row(
+            [
+                item.get("label") or "unlabeled",
+                item.get("address") or "",
+            ]
+        )
+        for item in targets
+    ) or html_row(["none", "no watched addresses configured"])
+    event_rows = "\n".join(
+        html_row(
+            [
+                item.get("observed_at", ""),
+                item.get("label") or "unlabeled",
+                item.get("address") or "",
+                short_hash(item.get("tx_id")),
+                format_kas(item.get("amount_sompi")) if item.get("amount_sompi") is not None else "unknown",
+            ]
+        )
+        for item in reversed(events[-20:])
+    ) or html_row(["none", "no watched address events recorded", "", "", ""])
+    command_rows = "\n".join(
+        html_row([command])
+        for command in [
+            "make discord-watch-list",
+            'make discord-watch-add ADDRESS="kaspa:..." LABEL="treasury"',
+            'make discord-watch-remove ADDRESS="kaspa:..."',
+            'make discord-balance ADDRESS="kaspa:..."',
+            'make discord-utxos ADDRESS="kaspa:..."',
+        ]
+    )
+    metrics = indexer.get("metrics") or {}
+    checkpoint_age = metrics.get("checkpoint_age_seconds")
+    checkpoint_age_text = "unknown" if checkpoint_age is None else f"{float(checkpoint_age):.1f}s"
+    return f"""
+    <section id="tab-indexer" class="tab-panel">
+    <section class="visual-grid">
+      {visual_card("Indexer State", indexer.get("state") or "disabled", f"ok={indexer.get('ok', False)}", "neutral")}
+      {visual_card("Checkpoint Age", checkpoint_age_text, f"fresh={indexer.get('checkpoint_fresh', False)}", "neutral")}
+      {visual_card("Watch Addresses", len(targets), f"enabled={watch.get('enabled', False)}", "neutral")}
+      {visual_card("Watched Events", len(events), f"new={len(watch.get('new_events') or [])}", "neutral")}
+    </section>
+    <section class="layout">
+      <section class="panel">
+        <h2>Indexer Status</h2>
+        <div class="context-grid">
+          <div class="context-item"><div class="context-label">Enabled</div><div class="context-value">{html.escape(str(indexer.get('enabled', False)))}</div></div>
+          <div class="context-item"><div class="context-label">State</div><div class="context-value">{html.escape(str(indexer.get('state', 'unknown')))}</div></div>
+          <div class="context-item"><div class="context-label">Health OK</div><div class="context-value">{html.escape(str(indexer.get('health_ok', False)))}</div></div>
+          <div class="context-item"><div class="context-label">Metrics OK</div><div class="context-value">{html.escape(str(indexer.get('metrics_ok', False)))}</div></div>
+          <div class="context-item"><div class="context-label">Lag</div><div class="context-value">{html.escape(str(metrics.get('lag_seconds', 'unknown')))}</div></div>
+          <div class="context-item"><div class="context-label">Base URL</div><div class="context-value">{html.escape(str(indexer.get('base_url') or 'none'))}</div></div>
+          <div class="context-item"><div class="context-label">Detail</div><div class="context-value">{html.escape(str(indexer.get('detail', 'unknown')))}</div></div>
+        </div>
+      </section>
+      <section class="panel">
+        <h2>Indexer Watch Policy</h2>
+        <div class="context-grid">
+          <div class="context-item"><div class="context-label">Enabled</div><div class="context-value">{html.escape(str(watch.get('enabled', False)))}</div></div>
+          <div class="context-item"><div class="context-label">Read OK</div><div class="context-value">{html.escape(str(watch.get('ok', False)))}</div></div>
+          <div class="context-item"><div class="context-label">Alert</div><div class="context-value">{html.escape(str(watch.get('alert_enabled', True)))}</div></div>
+          <div class="context-item"><div class="context-label">Detail</div><div class="context-value">{html.escape(str(watch.get('detail', 'unknown')))}</div></div>
+        </div>
+      </section>
+    </section>
+    <section class="layout">
+      <section class="panel">
+        <h2>Indexer Watchlist</h2>
+        <table>
+          <thead>{html_row(["Label", "Address"], "th")}</thead>
+          <tbody>{target_rows}</tbody>
+        </table>
+      </section>
+      <section class="panel">
+        <h2>Watch Commands</h2>
+        <table>
+          <thead>{html_row(["Command"], "th")}</thead>
+          <tbody>{command_rows}</tbody>
+        </table>
+      </section>
+    </section>
+    <section class="panel">
+      <h2>Watched Address Events</h2>
+      <table>
+        <thead>{html_row(["Observed", "Label", "Address", "Tx ID", "Amount"], "th")}</thead>
+        <tbody>{event_rows}</tbody>
+      </table>
+    </section>
+    </section>
+    """
+
+
 def write_status_page(
     path: Path,
     report: dict[str, Any],
@@ -3908,9 +4603,12 @@ def write_status_page(
     recovery = report.get("recovery") or {}
     incident = report.get("incident") or {}
     maintenance = report.get("maintenance") or {}
+    indexer = report.get("indexer") or {}
+    indexer_metrics = indexer.get("metrics") or {}
     wallet_panel = wallet_status_panel(report, state, market_snapshot_path)
     mining_panel = mining_status_panel(report)
     whale_panel = whale_watch_panel(report, state)
+    indexer_panel = indexer_watch_panel(report, state)
     latest_recovery = (recovery_records or [])[-1] if recovery_records else {}
     operator_required = latest_recovery.get("operator_required")
     operator_required_text = "Yes" if operator_required is True else "No" if operator_required is False else "Unknown"
@@ -4043,6 +4741,12 @@ def write_status_page(
             visual_card("Relay", latest_relay_text, f"{compact_number(progress.get('relay_blocks_in_window'))} blocks / {progress.get('window_minutes', 'unknown')}m", tone_for_check(report, "block_progress")),
             visual_card("Sync", "synced" if sync_text is True else str(sync_text), f"network {network_text}", tone_for_check(report, "sync_status")),
             visual_card("Tx Rate", transaction_rate_text, transaction_detail, tone_for_check(report, "processed_stats_freshness")),
+            visual_card(
+                "Indexer",
+                "ok" if indexer.get("ok") else "off" if not indexer.get("enabled") else "alert",
+                f"lag {indexer_metrics.get('lag_seconds', 'unknown')}s",
+                tone_for_check(report, "indexer_health") if indexer.get("enabled") else "neutral",
+            ),
             visual_card("DAA Score", compact_number(grpc_metrics.get("virtual_daa_score")), f"tips {grpc_metrics.get('tip_count', 'unknown')}", "neutral"),
             visual_card("Hashrate", format_hashrate(grpc_metrics.get("network_hashes_per_second")), f"window {grpc_metrics.get('network_hashrate_window_size', 'unknown')}", "neutral"),
             visual_card("Disk Free", format_gib(disk.get("free_gb")), f"{disk.get('free_percent', 'unknown')}% free", tone_for_check(report, "disk_free")),
@@ -4327,6 +5031,52 @@ def write_status_page(
     .market-rsi-badge.hot {{ background: #fff7ed; border-color: #fed7aa; color: #b26a00; }}
     .market-rsi-badge.cool {{ background: #ecfeff; border-color: #a5f3fc; color: #276b74; }}
     .market-rsi-badge.neutral {{ background: #f8fafc; border-color: #d9e1e8; color: var(--muted); }}
+    .market-indicator-panel {{ margin-bottom: 14px; }}
+    .market-indicator-card-grid {{
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 10px;
+    }}
+    .market-indicator-card {{
+      display: grid;
+      gap: 7px;
+      min-height: 218px;
+      padding: 11px;
+      border: 1px solid #edf1f6;
+      border-radius: 8px;
+      background: #f8fafc;
+      min-width: 0;
+    }}
+    .market-indicator-card.hot {{ background: #fff7ed; border-color: #fed7aa; }}
+    .market-indicator-card.cool {{ background: #ecfeff; border-color: #a5f3fc; }}
+    .market-indicator-card.neutral {{ background: #f8fafc; border-color: #d9e1e8; }}
+    .market-indicator-card .label {{ color: var(--muted); font-size: 12px; font-weight: 900; }}
+    .market-indicator-card .value {{ font-size: 24px; line-height: 1; font-weight: 900; overflow-wrap: anywhere; }}
+    .market-indicator-card.hot .value {{ color: #b26a00; }}
+    .market-indicator-card.cool .value {{ color: #276b74; }}
+    .market-indicator-card.neutral .value {{ color: var(--ink); }}
+    .market-indicator-card .state {{ color: var(--muted); font-size: 12px; font-weight: 800; overflow-wrap: anywhere; }}
+    .market-indicator-rows {{ display: grid; gap: 5px; }}
+    .market-indicator-row {{
+      display: grid;
+      grid-template-columns: 42px 1fr;
+      gap: 7px;
+      align-items: center;
+      min-height: 25px;
+      font-size: 12px;
+      font-weight: 800;
+      overflow-wrap: anywhere;
+    }}
+    .market-indicator-row span {{ color: var(--muted); }}
+    .market-indicator-row strong {{ color: var(--ink); }}
+    .market-indicator-row.up strong {{ color: var(--ok); }}
+    .market-indicator-row.down strong {{ color: var(--critical); }}
+    .market-indicator-row.warn strong {{ color: #b26a00; }}
+    .market-indicator-row.cool strong {{ color: #276b74; }}
+    .market-bollinger-fill {{ fill: rgba(37, 99, 235, 0.09); }}
+    .market-bollinger-line {{ fill: none; stroke: #2563eb; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; opacity: 0.82; }}
+    .market-bollinger-mid {{ stroke: #7c3aed; stroke-dasharray: 5 5; opacity: 0.72; }}
+    .market-bollinger-label {{ fill: #2563eb; font-size: 11px; font-weight: 800; }}
     .market-chart {{
       width: 100%;
       height: 230px;
@@ -4718,7 +5468,7 @@ def write_status_page(
     main > .panel + .panel {{ margin-top: 14px; }}
     @media (max-width: 760px) {{
       main {{ padding: 14px; }}
-      .hero-top, .hero-strip, .layout, .chart-grid, .market-watch, .market-timeframe-grid, .liquidation-grid, .context-grid {{ display: block; }}
+      .hero-top, .hero-strip, .layout, .chart-grid, .market-watch, .market-timeframe-grid, .market-indicator-card-grid, .liquidation-grid, .context-grid {{ display: block; }}
       .hero-actions {{ justify-content: flex-start; margin-top: 12px; }}
       .incident, .incident-facts {{ display: block; }}
       .incident-facts div {{ margin-top: 8px; }}
@@ -4731,6 +5481,7 @@ def write_status_page(
       .badge {{ margin-top: 10px; }}
       .v-card, .panel {{ margin-bottom: 12px; }}
       .market-meta {{ grid-template-columns: 1fr; }}
+      .market-indicator-card {{ margin-bottom: 10px; }}
       .futures-panel .market-meta {{ grid-template-columns: 1fr; }}
       .market-source-list {{ grid-template-columns: 1fr; }}
       .panel {{ overflow-x: auto; }}
@@ -4775,6 +5526,7 @@ def write_status_page(
       <button class="tab-button" type="button" data-tab-target="tab-network">Network</button>
       <button class="tab-button" type="button" data-tab-target="tab-wallet">Wallet</button>
       <button class="tab-button" type="button" data-tab-target="tab-mining">Mining</button>
+      <button class="tab-button" type="button" data-tab-target="tab-indexer">Indexer</button>
       <button class="tab-button" type="button" data-tab-target="tab-whales">Whales</button>
       <button class="tab-button" type="button" data-tab-target="tab-ops">Ops</button>
       <button class="tab-button" type="button" data-tab-target="tab-history">History</button>
@@ -4786,6 +5538,7 @@ def write_status_page(
       <button class="subtab-button" type="button" data-timeframe-target="1d">1D</button>
       <button class="subtab-button" type="button" data-timeframe-target="1w">1W</button>
       <button class="subtab-button" type="button" data-timeframe-target="1m">1M</button>
+      <button class="subtab-button" type="button" data-timeframe-target="all">All</button>
     </div>
     <section class="market-watch">
       <section class="panel market-price">
@@ -4819,6 +5572,69 @@ def write_status_page(
         </div>
         <svg id="market-chart" class="market-chart" viewBox="0 0 720 230" role="img" aria-label="KAS/USDT 15 minute candlestick chart"></svg>
       </section>
+    </section>
+    <section class="panel market-indicator-panel">
+      <div class="market-chart-head">
+        <h2>Market Indicators</h2>
+        <div class="market-status">RSI, MACD, Bollinger, volume, and BTC-relative by timeframe</div>
+      </div>
+      <div class="market-indicator-card-grid">
+        <div id="market-rsi-card-15m" class="market-indicator-card" data-indicator-card="15m">
+          <div class="label">15m</div>
+          <div class="value" data-indicator-value="rsi">RSI --</div>
+          <div class="state" data-indicator-state="rsi">Waiting for candles</div>
+          <div class="market-indicator-rows">
+            <div class="market-indicator-row" data-indicator-row="macd"><span>MACD</span><strong>pending</strong></div>
+            <div class="market-indicator-row" data-indicator-row="bb"><span>BB</span><strong>pending</strong></div>
+            <div class="market-indicator-row" data-indicator-row="volume"><span>Vol</span><strong>pending</strong></div>
+            <div class="market-indicator-row" data-indicator-row="relative"><span>BTC</span><strong>pending</strong></div>
+          </div>
+        </div>
+        <div id="market-rsi-card-4h" class="market-indicator-card" data-indicator-card="4h">
+          <div class="label">4h</div>
+          <div class="value" data-indicator-value="rsi">RSI --</div>
+          <div class="state" data-indicator-state="rsi">Waiting for candles</div>
+          <div class="market-indicator-rows">
+            <div class="market-indicator-row" data-indicator-row="macd"><span>MACD</span><strong>pending</strong></div>
+            <div class="market-indicator-row" data-indicator-row="bb"><span>BB</span><strong>pending</strong></div>
+            <div class="market-indicator-row" data-indicator-row="volume"><span>Vol</span><strong>pending</strong></div>
+            <div class="market-indicator-row" data-indicator-row="relative"><span>BTC</span><strong>pending</strong></div>
+          </div>
+        </div>
+        <div id="market-rsi-card-1d" class="market-indicator-card" data-indicator-card="1D">
+          <div class="label">1D</div>
+          <div class="value" data-indicator-value="rsi">RSI --</div>
+          <div class="state" data-indicator-state="rsi">Waiting for candles</div>
+          <div class="market-indicator-rows">
+            <div class="market-indicator-row" data-indicator-row="macd"><span>MACD</span><strong>pending</strong></div>
+            <div class="market-indicator-row" data-indicator-row="bb"><span>BB</span><strong>pending</strong></div>
+            <div class="market-indicator-row" data-indicator-row="volume"><span>Vol</span><strong>pending</strong></div>
+            <div class="market-indicator-row" data-indicator-row="relative"><span>BTC</span><strong>pending</strong></div>
+          </div>
+        </div>
+        <div id="market-rsi-card-1w" class="market-indicator-card" data-indicator-card="1W">
+          <div class="label">1W</div>
+          <div class="value" data-indicator-value="rsi">RSI --</div>
+          <div class="state" data-indicator-state="rsi">Waiting for candles</div>
+          <div class="market-indicator-rows">
+            <div class="market-indicator-row" data-indicator-row="macd"><span>MACD</span><strong>pending</strong></div>
+            <div class="market-indicator-row" data-indicator-row="bb"><span>BB</span><strong>pending</strong></div>
+            <div class="market-indicator-row" data-indicator-row="volume"><span>Vol</span><strong>pending</strong></div>
+            <div class="market-indicator-row" data-indicator-row="relative"><span>BTC</span><strong>pending</strong></div>
+          </div>
+        </div>
+        <div id="market-rsi-card-1m" class="market-indicator-card" data-indicator-card="1M">
+          <div class="label">1M</div>
+          <div class="value" data-indicator-value="rsi">RSI --</div>
+          <div class="state" data-indicator-state="rsi">Waiting for candles</div>
+          <div class="market-indicator-rows">
+            <div class="market-indicator-row" data-indicator-row="macd"><span>MACD</span><strong>pending</strong></div>
+            <div class="market-indicator-row" data-indicator-row="bb"><span>BB</span><strong>pending</strong></div>
+            <div class="market-indicator-row" data-indicator-row="volume"><span>Vol</span><strong>pending</strong></div>
+            <div class="market-indicator-row" data-indicator-row="relative"><span>BTC</span><strong>pending</strong></div>
+          </div>
+        </div>
+      </div>
     </section>
     <section class="market-timeframe-grid">
       <section class="panel timeframe-panel" data-timeframe-panel="4h">
@@ -4865,6 +5681,44 @@ def write_status_page(
         </div>
         <svg id="market-chart-1m" class="market-chart" viewBox="0 0 720 230" role="img" aria-label="KAS/USDT monthly candlestick chart"></svg>
       </section>
+      <section class="panel timeframe-panel" data-timeframe-panel="all">
+        <div class="market-chart-head">
+          <div class="market-title-row">
+            <h2>KAS/USDT All Bollinger</h2>
+            <span id="market-trend-all" class="market-trend-badge">Trend pending</span>
+            <span id="market-rsi-all" class="market-rsi-badge">RSI pending</span>
+          </div>
+          <div id="market-status-all" class="market-status">Loading full-period bands</div>
+        </div>
+        <div class="market-legend">
+          <span style="color: #2563eb"><i></i>BB upper/lower</span>
+          <span style="color: #7c3aed"><i></i>BB basis</span>
+          <span style="color: #d97706"><i></i>EMA</span>
+        </div>
+        <svg id="market-chart-all" class="market-chart" viewBox="0 0 720 230" role="img" aria-label="Full-period KAS/USDT candlestick chart with Bollinger Bands"></svg>
+      </section>
+    </section>
+    <section class="panel market-cross-panel">
+      <div class="market-chart-head">
+        <h2>KAS/USDT vs BTC/USDT 15m</h2>
+        <div id="market-cross-status-15m" class="market-status">Loading 15m cross</div>
+      </div>
+      <div class="market-legend">
+        <span style="color: #b42318"><i></i>KAS/USDT</span>
+        <span style="color: #2563eb"><i></i>BTC/USDT</span>
+      </div>
+      <svg id="market-cross-chart-15m" class="market-chart" viewBox="0 0 720 230" role="img" aria-label="KAS/USDT and BTC/USDT 15 minute normalized comparison chart"></svg>
+    </section>
+    <section class="panel market-cross-panel">
+      <div class="market-chart-head">
+        <h2>KAS/USDT vs BTC/USDT 4h</h2>
+        <div id="market-cross-status-4h" class="market-status">Loading 4h cross</div>
+      </div>
+      <div class="market-legend">
+        <span style="color: #b42318"><i></i>KAS/USDT</span>
+        <span style="color: #2563eb"><i></i>BTC/USDT</span>
+      </div>
+      <svg id="market-cross-chart-4h" class="market-chart" viewBox="0 0 720 230" role="img" aria-label="KAS/USDT and BTC/USDT 4 hour normalized comparison chart"></svg>
     </section>
     <section class="panel market-cross-panel">
       <div class="market-chart-head">
@@ -4876,6 +5730,28 @@ def write_status_page(
         <span style="color: #2563eb"><i></i>BTC/USDT</span>
       </div>
       <svg id="market-cross-chart" class="market-chart" viewBox="0 0 720 230" role="img" aria-label="KAS/USDT and BTC/USDT daily normalized comparison chart"></svg>
+    </section>
+    <section class="panel market-cross-panel">
+      <div class="market-chart-head">
+        <h2>KAS/USDT vs BTC/USDT 1W</h2>
+        <div id="market-cross-status-1w" class="market-status">Loading weekly cross</div>
+      </div>
+      <div class="market-legend">
+        <span style="color: #b42318"><i></i>KAS/USDT</span>
+        <span style="color: #2563eb"><i></i>BTC/USDT</span>
+      </div>
+      <svg id="market-cross-chart-1w" class="market-chart" viewBox="0 0 720 230" role="img" aria-label="KAS/USDT and BTC/USDT weekly normalized comparison chart"></svg>
+    </section>
+    <section class="panel market-cross-panel">
+      <div class="market-chart-head">
+        <h2>KAS/USDT vs BTC/USDT 1M</h2>
+        <div id="market-cross-status-1m" class="market-status">Loading monthly cross</div>
+      </div>
+      <div class="market-legend">
+        <span style="color: #b42318"><i></i>KAS/USDT</span>
+        <span style="color: #2563eb"><i></i>BTC/USDT</span>
+      </div>
+      <svg id="market-cross-chart-1m" class="market-chart" viewBox="0 0 720 230" role="img" aria-label="KAS/USDT and BTC/USDT monthly normalized comparison chart"></svg>
     </section>
     <section class="panel market-volume-panel">
       <div class="market-chart-head">
@@ -5051,6 +5927,7 @@ def write_status_page(
     </section>
     {wallet_panel}
     {mining_panel}
+    {indexer_panel}
     {whale_panel}
     <section id="tab-ops" class="tab-panel">
     <section class="layout">
@@ -5344,6 +6221,7 @@ def write_status_page(
           statusId: "market-status",
           trendId: "market-trend-15m",
           rsiId: "market-rsi-15m",
+          rsiCardId: "market-rsi-card-15m",
           refreshMs: 60 * 1000,
           url: "https://api.bybit.com/v5/market/kline?category=spot&symbol=KASUSDT&interval=15",
         }},
@@ -5357,6 +6235,7 @@ def write_status_page(
           statusId: "market-status-4h",
           trendId: "market-trend-4h",
           rsiId: "market-rsi-4h",
+          rsiCardId: "market-rsi-card-4h",
           refreshMs: 5 * 60 * 1000,
           url: "https://api.bybit.com/v5/market/kline?category=spot&symbol=KASUSDT&interval=240",
         }},
@@ -5371,6 +6250,7 @@ def write_status_page(
           statusId: "market-status-1d",
           trendId: "market-trend-1d",
           rsiId: "market-rsi-1d",
+          rsiCardId: "market-rsi-card-1d",
           refreshMs: 10 * 60 * 1000,
           url: "https://api.bybit.com/v5/market/kline?category=spot&symbol=KASUSDT&interval=D",
         }},
@@ -5385,6 +6265,7 @@ def write_status_page(
           statusId: "market-status-1w",
           trendId: "market-trend-1w",
           rsiId: "market-rsi-1w",
+          rsiCardId: "market-rsi-card-1w",
           refreshMs: 30 * 60 * 1000,
           url: "https://api.bybit.com/v5/market/kline?category=spot&symbol=KASUSDT&interval=W",
         }},
@@ -5397,28 +6278,125 @@ def write_status_page(
           statusId: "market-status-1m",
           trendId: "market-trend-1m",
           rsiId: "market-rsi-1m",
+          rsiCardId: "market-rsi-card-1m",
           refreshMs: 60 * 60 * 1000,
           url: "https://api.bybit.com/v5/market/kline?category=spot&symbol=KASUSDT&interval=M",
         }},
+        {{
+          label: "All",
+          emaPeriod: 30,
+          axisMode: "month",
+          limit: 1000,
+          chartId: "market-chart-all",
+          statusId: "market-status-all",
+          trendId: "market-trend-all",
+          rsiId: "market-rsi-all",
+          refreshMs: 60 * 60 * 1000,
+          bollinger: {{ period: 20, deviations: 2 }},
+          url: "https://api.bybit.com/v5/market/kline?category=spot&symbol=KASUSDT&interval=D",
+        }},
       ],
-      cross: {{
-        chartId: "market-cross-chart",
-        statusId: "market-cross-status",
-        axisMode: "day",
-        refreshMs: 10 * 60 * 1000,
-        series: [
-          {{
-            label: "KAS/USDT",
-            color: "#b42318",
-            url: "https://api.bybit.com/v5/market/kline?category=spot&symbol=KASUSDT&interval=D&limit=32",
-          }},
-          {{
-            label: "BTC/USDT",
-            color: "#2563eb",
-            url: "https://api.bybit.com/v5/market/kline?category=spot&symbol=BTCUSDT&interval=D&limit=32",
-          }},
-        ],
-      }},
+      cross: [
+        {{
+          label: "15m",
+          indicatorCardId: "market-rsi-card-15m",
+          chartId: "market-cross-chart-15m",
+          statusId: "market-cross-status-15m",
+          refreshMs: 60 * 1000,
+          series: [
+            {{
+              label: "KAS/USDT",
+              color: "#b42318",
+              url: "https://api.bybit.com/v5/market/kline?category=spot&symbol=KASUSDT&interval=15&limit=96",
+            }},
+            {{
+              label: "BTC/USDT",
+              color: "#2563eb",
+              url: "https://api.bybit.com/v5/market/kline?category=spot&symbol=BTCUSDT&interval=15&limit=96",
+            }},
+          ],
+        }},
+        {{
+          label: "4h",
+          indicatorCardId: "market-rsi-card-4h",
+          chartId: "market-cross-chart-4h",
+          statusId: "market-cross-status-4h",
+          refreshMs: 5 * 60 * 1000,
+          series: [
+            {{
+              label: "KAS/USDT",
+              color: "#b42318",
+              url: "https://api.bybit.com/v5/market/kline?category=spot&symbol=KASUSDT&interval=240&limit=48",
+            }},
+            {{
+              label: "BTC/USDT",
+              color: "#2563eb",
+              url: "https://api.bybit.com/v5/market/kline?category=spot&symbol=BTCUSDT&interval=240&limit=48",
+            }},
+          ],
+        }},
+        {{
+          label: "1D",
+          indicatorCardId: "market-rsi-card-1d",
+          chartId: "market-cross-chart",
+          statusId: "market-cross-status",
+          axisMode: "day",
+          refreshMs: 10 * 60 * 1000,
+          series: [
+            {{
+              label: "KAS/USDT",
+              color: "#b42318",
+              url: "https://api.bybit.com/v5/market/kline?category=spot&symbol=KASUSDT&interval=D&limit=32",
+            }},
+            {{
+              label: "BTC/USDT",
+              color: "#2563eb",
+              url: "https://api.bybit.com/v5/market/kline?category=spot&symbol=BTCUSDT&interval=D&limit=32",
+            }},
+          ],
+        }},
+        {{
+          label: "1W",
+          indicatorCardId: "market-rsi-card-1w",
+          chartId: "market-cross-chart-1w",
+          statusId: "market-cross-status-1w",
+          axisMode: "month",
+          refreshMs: 30 * 60 * 1000,
+          series: [
+            {{
+              label: "KAS/USDT",
+              color: "#b42318",
+              url: "https://api.bybit.com/v5/market/kline?category=spot&symbol=KASUSDT&interval=W&limit=60",
+            }},
+            {{
+              label: "BTC/USDT",
+              color: "#2563eb",
+              url: "https://api.bybit.com/v5/market/kline?category=spot&symbol=BTCUSDT&interval=W&limit=60",
+            }},
+          ],
+        }},
+        {{
+          label: "1M",
+          indicatorCardId: "market-rsi-card-1m",
+          chartId: "market-cross-chart-1m",
+          statusId: "market-cross-status-1m",
+          axisMode: "year",
+          independentRange: true,
+          refreshMs: 60 * 60 * 1000,
+          series: [
+            {{
+              label: "KAS/USDT",
+              color: "#b42318",
+              url: "https://api.bybit.com/v5/market/kline?category=spot&symbol=KASUSDT&interval=M&limit=1000",
+            }},
+            {{
+              label: "BTC/USDT",
+              color: "#2563eb",
+              url: "https://api.bybit.com/v5/market/kline?category=spot&symbol=BTCUSDT&interval=M&limit=1000",
+            }},
+          ],
+        }},
+      ],
       volume: {{
         chartId: "market-volume-chart",
         statusId: "market-volume-status",
@@ -5522,7 +6500,12 @@ def write_status_page(
       ["spot-1D", "Spot 1D"],
       ["spot-1W", "Spot 1W"],
       ["spot-1M", "Spot 1M"],
-      ["cross", "KAS/BTC cross"],
+      ["spot-All", "Spot All"],
+      ["cross-15m", "KAS/BTC cross 15m"],
+      ["cross-4h", "KAS/BTC cross 4h"],
+      ["cross-1D", "KAS/BTC cross 1D"],
+      ["cross-1W", "KAS/BTC cross 1W"],
+      ["cross-1M", "KAS/BTC cross 1M"],
       ["volume", "Exchange volume"],
       ["futures-positioning", "Futures positioning"],
       ["futures-trend", "Futures trend"],
@@ -5812,6 +6795,7 @@ def write_status_page(
           high: marketNumber(row[2]),
           low: marketNumber(row[3]),
           close: marketNumber(row[4]),
+          volume: marketNumber(row[5]) || 0,
         }}))
         .filter((row) => row.open !== null && row.high !== null && row.low !== null && row.close !== null)
         .reverse();
@@ -5831,6 +6815,110 @@ def write_status_page(
           value: previous,
         }};
       }});
+    }}
+
+    function marketBollingerPoints(candles, period, deviations) {{
+      const parsedPeriod = Number(period);
+      const parsedDeviations = Number(deviations || 2);
+      if (!Number.isFinite(parsedPeriod) || parsedPeriod <= 1 || candles.length < parsedPeriod) {{
+        return [];
+      }}
+      return candles.map((candle, index) => {{
+        if (index + 1 < parsedPeriod) {{
+          return {{ time: candle.time, basis: null, upper: null, lower: null }};
+        }}
+        const windowCandles = candles.slice(index + 1 - parsedPeriod, index + 1);
+        const closes = windowCandles.map((item) => item.close);
+        const basis = closes.reduce((total, value) => total + value, 0) / parsedPeriod;
+        const variance = closes.reduce((total, value) => total + Math.pow(value - basis, 2), 0) / parsedPeriod;
+        const standardDeviation = Math.sqrt(variance);
+        return {{
+          time: candle.time,
+          basis,
+          upper: basis + standardDeviation * parsedDeviations,
+          lower: basis - standardDeviation * parsedDeviations,
+        }};
+      }});
+    }}
+
+    function marketMacdState(candles) {{
+      if (candles.length < 35) {{
+        return {{ tone: "", text: "pending", detail: "Not enough MACD data" }};
+      }}
+      const fast = marketEmaPoints(candles, 12);
+      const slow = marketEmaPoints(candles, 26);
+      const macdSeries = candles.map((candle, index) => ({{
+        time: candle.time,
+        value: fast[index].value - slow[index].value,
+      }}));
+      const signal = marketEmaPoints(macdSeries.map((point) => ({{ close: point.value, time: point.time }})), 9);
+      const latest = macdSeries[macdSeries.length - 1].value;
+      const previous = macdSeries[macdSeries.length - 2].value;
+      const latestSignal = signal[signal.length - 1].value;
+      const previousSignal = signal[signal.length - 2].value;
+      const histogram = latest - latestSignal;
+      const crossedUp = previous <= previousSignal && latest > latestSignal;
+      const crossedDown = previous >= previousSignal && latest < latestSignal;
+      if (crossedUp) {{
+        return {{ tone: "up", text: "bull cross", detail: "MACD crossed above signal" }};
+      }}
+      if (crossedDown) {{
+        return {{ tone: "down", text: "bear cross", detail: "MACD crossed below signal" }};
+      }}
+      if (histogram > 0) {{
+        return {{ tone: "up", text: "bullish", detail: "MACD above signal" }};
+      }}
+      if (histogram < 0) {{
+        return {{ tone: "down", text: "bearish", detail: "MACD below signal" }};
+      }}
+      return {{ tone: "neutral", text: "flat", detail: "MACD near signal" }};
+    }}
+
+    function marketBollingerPositionState(candles, period, deviations) {{
+      const points = marketBollingerPoints(candles, period, deviations);
+      const latestBand = [...points].reverse().find((point) => point.upper !== null && point.lower !== null);
+      if (!latestBand || candles.length < period) {{
+        return {{ tone: "", text: "pending", detail: "Not enough Bollinger data" }};
+      }}
+      const latest = candles[candles.length - 1];
+      const widthPct = latestBand.basis ? ((latestBand.upper - latestBand.lower) / latestBand.basis) * 100 : 0;
+      if (latest.close >= latestBand.upper) {{
+        return {{ tone: "warn", text: "upper touch", detail: "Price at/above upper band; width " + widthPct.toFixed(1) + "%" }};
+      }}
+      if (latest.close <= latestBand.lower) {{
+        return {{ tone: "cool", text: "lower touch", detail: "Price at/below lower band; width " + widthPct.toFixed(1) + "%" }};
+      }}
+      if (widthPct <= 10) {{
+        return {{ tone: "neutral", text: "squeeze", detail: "Band width " + widthPct.toFixed(1) + "%" }};
+      }}
+      if (latest.close >= latestBand.basis) {{
+        return {{ tone: "up", text: "above basis", detail: "Price above Bollinger basis; width " + widthPct.toFixed(1) + "%" }};
+      }}
+      return {{ tone: "down", text: "below basis", detail: "Price below Bollinger basis; width " + widthPct.toFixed(1) + "%" }};
+    }}
+
+    function marketVolumeSpikeState(candles, period) {{
+      const parsedPeriod = Number(period || 20);
+      if (candles.length <= parsedPeriod) {{
+        return {{ tone: "", text: "pending", detail: "Not enough volume data" }};
+      }}
+      const latest = candles[candles.length - 1];
+      const windowCandles = candles.slice(candles.length - parsedPeriod - 1, candles.length - 1);
+      const average = windowCandles.reduce((total, candle) => total + (candle.volume || 0), 0) / parsedPeriod;
+      if (!average) {{
+        return {{ tone: "", text: "no volume", detail: "Volume unavailable" }};
+      }}
+      const multiple = latest.volume / average;
+      if (multiple >= 3) {{
+        return {{ tone: "warn", text: multiple.toFixed(1) + "x spike", detail: "Latest volume vs " + parsedPeriod + "-candle average" }};
+      }}
+      if (multiple >= 1.5) {{
+        return {{ tone: "up", text: multiple.toFixed(1) + "x active", detail: "Latest volume vs " + parsedPeriod + "-candle average" }};
+      }}
+      if (multiple <= 0.55) {{
+        return {{ tone: "cool", text: multiple.toFixed(1) + "x quiet", detail: "Latest volume vs " + parsedPeriod + "-candle average" }};
+      }}
+      return {{ tone: "neutral", text: multiple.toFixed(1) + "x normal", detail: "Latest volume vs " + parsedPeriod + "-candle average" }};
     }}
 
     function marketTrendState(candles, emaPoints) {{
@@ -5933,6 +7021,49 @@ def write_status_page(
       element.className = "market-rsi-badge" + (state.tone ? " " + state.tone : "");
     }}
 
+    function marketRsiCard(id, value, state, updatedAt) {{
+      const element = document.getElementById(id);
+      if (!element) {{
+        return;
+      }}
+      const valueElement = element.querySelector('[data-indicator-value="rsi"]');
+      const stateElement = element.querySelector('[data-indicator-state="rsi"]');
+      if (valueElement) {{
+        valueElement.textContent = value === null ? "RSI --" : "RSI " + value.toFixed(1);
+      }}
+      if (stateElement) {{
+        const updated = updatedAt ? " at " + new Date(updatedAt).toLocaleTimeString() : "";
+        stateElement.textContent = state.text + updated;
+      }}
+      element.title = state.detail;
+      element.setAttribute("aria-label", state.text + ": " + state.detail);
+      element.className = "market-indicator-card" + (state.tone ? " " + state.tone : "");
+    }}
+
+    function marketIndicatorRow(cardId, key, state) {{
+      const card = document.getElementById(cardId);
+      if (!card) {{
+        return;
+      }}
+      const row = card.querySelector('[data-indicator-row="' + key + '"]');
+      if (!row) {{
+        return;
+      }}
+      const value = row.querySelector("strong");
+      if (value) {{
+        value.textContent = state.text;
+        value.title = state.detail;
+      }}
+      row.className = "market-indicator-row" + (state.tone ? " " + state.tone : "");
+      row.setAttribute("aria-label", key + ": " + state.detail);
+    }}
+
+    function marketUpdateIndicatorRows(cardId, candles) {{
+      marketIndicatorRow(cardId, "macd", marketMacdState(candles));
+      marketIndicatorRow(cardId, "bb", marketBollingerPositionState(candles, 20, 2));
+      marketIndicatorRow(cardId, "volume", marketVolumeSpikeState(candles, 20));
+    }}
+
     function marketSignalState(candles, emaPoints, rsiValue) {{
       if (candles.length < 2 || emaPoints.length < 2) {{
         return {{ tone: "", text: "Waiting for candles" }};
@@ -6009,7 +7140,24 @@ def write_status_page(
       }});
     }}
 
-    function drawMarketCandles(rows, chartId, statusId, trendId, rsiId, labelText, emaPeriod, axisMode) {{
+    function marketPathFromPoints(points, xValue, yValue, valueKey) {{
+      let started = false;
+      return points
+        .map((point, index) => {{
+          const value = point[valueKey];
+          if (value === null || value === undefined) {{
+            started = false;
+            return "";
+          }}
+          const command = started ? "L" : "M";
+          started = true;
+          return command + xValue(index).toFixed(1) + " " + yValue(value).toFixed(1);
+        }})
+        .filter(Boolean)
+        .join(" ");
+    }}
+
+    function drawMarketCandles(rows, chartId, statusId, trendId, rsiId, labelText, emaPeriod, axisMode, bollingerConfig, rsiCardId) {{
       const svg = document.getElementById(chartId);
       if (!svg) {{
         return;
@@ -6020,17 +7168,24 @@ def write_status_page(
         marketText(statusId, "Not enough candle data");
         marketTrendBadge(trendId, {{ tone: "", text: "Trend pending", detail: "Not enough candle data" }});
         marketRsiBadge(rsiId, {{ tone: "", text: "RSI pending", detail: "Not enough candle data" }});
+        marketRsiCard(rsiCardId, null, {{ tone: "", text: "RSI pending", detail: "Not enough candle data" }}, null);
+        ["macd", "bb", "volume"].forEach((key) => marketIndicatorRow(rsiCardId, key, {{ tone: "", text: "pending", detail: "Not enough candle data" }}));
         marketSignalWatch(labelText, {{ tone: "", text: "Not enough data" }});
         return;
       }}
+      const bollingerPoints = bollingerConfig
+        ? marketBollingerPoints(candles, bollingerConfig.period, bollingerConfig.deviations)
+        : [];
       const width = 720;
       const height = 230;
       const leftPad = 24;
       const rightPad = 70;
       const topPad = 18;
       const bottomPad = 34;
-      const highs = candles.map((row) => row.high);
-      const lows = candles.map((row) => row.low);
+      const bandHighs = bollingerPoints.map((point) => point.upper).filter((value) => value !== null);
+      const bandLows = bollingerPoints.map((point) => point.lower).filter((value) => value !== null);
+      const highs = candles.map((row) => row.high).concat(bandHighs);
+      const lows = candles.map((row) => row.low).concat(bandLows);
       const high = Math.max(...highs);
       const low = Math.min(...lows);
       const span = high - low || 1;
@@ -6078,6 +7233,42 @@ def write_status_page(
         label.setAttribute("class", "market-axis-label");
         svg.appendChild(label);
       }});
+
+      if (bollingerPoints.length > 1) {{
+        const xBand = (index) => leftPad + step * index + step / 2;
+        const upperPoints = bollingerPoints.filter((point) => point.upper !== null);
+        if (upperPoints.length > 1) {{
+          const upperPath = marketPathFromPoints(bollingerPoints, xBand, y, "upper");
+          const reversedLowerPath = bollingerPoints
+            .map((point, index) => ({{ point, index }}))
+            .filter((item) => item.point.lower !== null)
+            .reverse()
+            .map((item) => "L" + xBand(item.index).toFixed(1) + " " + y(item.point.lower).toFixed(1))
+            .join(" ");
+          const bandFill = document.createElementNS(ns, "path");
+          bandFill.setAttribute("d", upperPath + " " + reversedLowerPath + " Z");
+          bandFill.setAttribute("class", "market-bollinger-fill");
+          svg.appendChild(bandFill);
+
+          [
+            ["upper", "market-bollinger-line"],
+            ["basis", "market-bollinger-line market-bollinger-mid"],
+            ["lower", "market-bollinger-line"],
+          ].forEach((entry) => {{
+            const path = document.createElementNS(ns, "path");
+            path.setAttribute("d", marketPathFromPoints(bollingerPoints, xBand, y, entry[0]));
+            path.setAttribute("class", entry[1]);
+            svg.appendChild(path);
+          }});
+
+          const bandLabel = document.createElementNS(ns, "text");
+          bandLabel.textContent = "BB" + String(bollingerConfig.period) + " " + String(bollingerConfig.deviations) + "sd";
+          bandLabel.setAttribute("x", String(leftPad + 58));
+          bandLabel.setAttribute("y", String(topPad + 4));
+          bandLabel.setAttribute("class", "market-bollinger-label");
+          svg.appendChild(bandLabel);
+        }}
+      }}
 
       candles.forEach((candle, index) => {{
         const x = leftPad + step * index + step / 2;
@@ -6135,14 +7326,20 @@ def write_status_page(
         svg.appendChild(emaLabel);
       }}
       marketTrendBadge(trendId, marketTrendState(candles, emaPoints));
-      marketRsiBadge(rsiId, marketRsiState(candles, 14));
-      marketSignalWatch(labelText, marketSignalState(candles, emaPoints, marketRsiValue(candles, 14)));
-
       const latest = candles[candles.length - 1];
-      marketText(statusId, labelText + " candles updated at " + new Date(latest.time).toLocaleTimeString());
+      const rsiValue = marketRsiValue(candles, 14);
+      const rsiState = marketRsiState(candles, 14);
+      marketRsiBadge(rsiId, rsiState);
+      marketRsiCard(rsiCardId, rsiValue, rsiState, latest.time);
+      marketUpdateIndicatorRows(rsiCardId, candles);
+      marketSignalWatch(labelText, marketSignalState(candles, emaPoints, rsiValue));
+
+      const latestBand = [...bollingerPoints].reverse().find((point) => point.upper !== null && point.lower !== null);
+      const bandText = latestBand ? " · BB width " + formatMarketSignedPercent(((latestBand.upper - latestBand.lower) / latest.close) * 100).replace("+", "") : "";
+      marketText(statusId, labelText + " candles updated at " + new Date(latest.time).toLocaleTimeString() + bandText);
     }}
 
-    function drawMarketCrossChart(seriesRows, chartId, statusId, axisMode) {{
+    function drawMarketCrossChart(seriesRows, chartId, statusId, axisMode, independentRange) {{
       const svg = document.getElementById(chartId);
       if (!svg) {{
         return;
@@ -6161,7 +7358,7 @@ def write_status_page(
       }}
       const minLength = Math.min(...series.map((item) => item.candles.length));
       const normalized = series.map((item) => {{
-        const candles = item.candles.slice(-minLength);
+        const candles = independentRange ? item.candles : item.candles.slice(-minLength);
         const base = candles[0].close || 1;
         return {{
           label: item.label,
@@ -6187,8 +7384,12 @@ def write_status_page(
       const bottomPad = 34;
       const chartWidth = width - leftPad - rightPad;
       const chartHeight = height - topPad - bottomPad;
+      const timeValues = normalized.flatMap((item) => item.points.map((point) => point.time));
+      const timeStart = Math.min(...timeValues);
+      const timeEnd = Math.max(...timeValues);
       const step = chartWidth / Math.max(1, minLength - 1);
       const x = (index) => leftPad + step * index;
+      const xTime = (time) => leftPad + ((time - timeStart) / (timeEnd - timeStart || 1)) * chartWidth;
       const y = (value) => topPad + chartHeight - ((value - low) / span) * chartHeight;
       const ns = "http://www.w3.org/2000/svg";
 
@@ -6216,13 +7417,23 @@ def write_status_page(
         svg.appendChild(label);
       }});
 
-      [0, Math.floor((minLength - 1) / 2), minLength - 1].forEach((index) => {{
-        const point = normalized[0].points[index];
+      const axisPoints = independentRange
+        ? [
+            {{ time: timeStart, x: leftPad, anchor: "start" }},
+            {{ time: timeStart + (timeEnd - timeStart) / 2, x: leftPad + chartWidth / 2, anchor: "middle" }},
+            {{ time: timeEnd, x: width - rightPad, anchor: "end" }},
+          ]
+        : [0, Math.floor((minLength - 1) / 2), minLength - 1].map((index) => ({{
+            time: normalized[0].points[index].time,
+            x: x(index),
+            anchor: index === 0 ? "start" : index === minLength - 1 ? "end" : "middle",
+          }}));
+      axisPoints.forEach((point) => {{
         const label = document.createElementNS(ns, "text");
         label.textContent = marketAxisTimeLabel(point.time, axisMode);
-        label.setAttribute("x", String(x(index)));
+        label.setAttribute("x", String(point.x));
         label.setAttribute("y", String(height - 9));
-        label.setAttribute("text-anchor", index === 0 ? "start" : index === minLength - 1 ? "end" : "middle");
+        label.setAttribute("text-anchor", point.anchor);
         label.setAttribute("fill", "#66727f");
         label.setAttribute("font-size", "10");
         label.setAttribute("font-weight", "700");
@@ -6244,7 +7455,10 @@ def write_status_page(
       normalized.forEach((item) => {{
         const path = document.createElementNS(ns, "path");
         const d = item.points
-          .map((point, index) => (index === 0 ? "M" : "L") + x(index).toFixed(1) + " " + y(point.value).toFixed(1))
+          .map((point, index) => {{
+            const pointX = independentRange ? xTime(point.time) : x(index);
+            return (index === 0 ? "M" : "L") + pointX.toFixed(1) + " " + y(point.value).toFixed(1);
+          }})
           .join(" ");
         path.setAttribute("d", d);
         path.setAttribute("fill", "none");
@@ -6255,8 +7469,9 @@ def write_status_page(
         svg.appendChild(path);
 
         const latest = item.points[item.points.length - 1];
+        const latestX = independentRange ? xTime(latest.time) : x(item.points.length - 1);
         const marker = document.createElementNS(ns, "circle");
-        marker.setAttribute("cx", String(x(item.points.length - 1)));
+        marker.setAttribute("cx", String(latestX));
         marker.setAttribute("cy", String(y(latest.value)));
         marker.setAttribute("r", "4");
         marker.setAttribute("fill", item.color);
@@ -6268,6 +7483,37 @@ def write_status_page(
         .map((item) => item.label.replace("/USDT", "") + " " + formatMarketSignedPercent(item.points[item.points.length - 1].value - 100))
         .join(" / ");
       marketText(statusId, summary + " at " + new Date(latest.time).toLocaleTimeString());
+    }}
+
+    function marketRelativeStrengthState(seriesRows) {{
+      const series = seriesRows
+        .map((item) => ({{
+          label: item.label,
+          candles: marketCandlesFromRows(item.rows),
+        }}))
+        .filter((item) => item.candles.length >= 2);
+      const kas = series.find((item) => item.label === "KAS/USDT");
+      const btc = series.find((item) => item.label === "BTC/USDT");
+      if (!kas || !btc) {{
+        return {{ tone: "", text: "pending", detail: "Not enough KAS/BTC data" }};
+      }}
+      const length = Math.min(kas.candles.length, btc.candles.length);
+      if (length < 2) {{
+        return {{ tone: "", text: "pending", detail: "Not enough KAS/BTC data" }};
+      }}
+      const kasCandles = kas.candles.slice(-length);
+      const btcCandles = btc.candles.slice(-length);
+      const kasChange = ((kasCandles[length - 1].close / (kasCandles[0].close || 1)) - 1) * 100;
+      const btcChange = ((btcCandles[length - 1].close / (btcCandles[0].close || 1)) - 1) * 100;
+      const relative = kasChange - btcChange;
+      const text = (relative >= 0 ? "+" : "") + relative.toFixed(1) + "%";
+      if (relative >= 3) {{
+        return {{ tone: "up", text, detail: "KAS outperforming BTC by " + text }};
+      }}
+      if (relative <= -3) {{
+        return {{ tone: "down", text, detail: "KAS underperforming BTC by " + text }};
+      }}
+      return {{ tone: "neutral", text, detail: "KAS vs BTC relative change " + text }};
     }}
 
     function marketDayKey(time) {{
@@ -6803,33 +8049,37 @@ def write_status_page(
       }}
       try {{
         const payload = await fetchMarketJson(marketKlineUrl(config));
-        drawMarketCandles(((payload.result || {{}}).list || []), config.chartId, config.statusId, config.trendId, config.rsiId, config.label, config.emaPeriod, config.axisMode);
+        drawMarketCandles(((payload.result || {{}}).list || []), config.chartId, config.statusId, config.trendId, config.rsiId, config.label, config.emaPeriod, config.axisMode, config.bollinger, config.rsiCardId);
         marketSourceStatus("spot-" + config.label, "Spot " + config.label, payload.fromCache ? "cached" : "ok", marketSourceDetail(payload));
       }} catch (error) {{
         marketText(config.statusId, "KAS/USDT " + config.label + " candles unavailable");
         marketTrendBadge(config.trendId, {{ tone: "", text: "Trend pending", detail: "Market candles unavailable" }});
         marketRsiBadge(config.rsiId, {{ tone: "", text: "RSI pending", detail: "Market candles unavailable" }});
+        marketRsiCard(config.rsiCardId, null, {{ tone: "", text: "Unavailable", detail: "Market candles unavailable" }}, null);
+        ["macd", "bb", "volume"].forEach((key) => marketIndicatorRow(config.rsiCardId, key, {{ tone: "", text: "unavailable", detail: "Market candles unavailable" }}));
         marketSignalWatch(config.label, {{ tone: "", text: "Unavailable" }});
         marketSourceStatus("spot-" + config.label, "Spot " + config.label, "fail", marketErrorDetail(error));
       }}
     }}
 
-    async function refreshMarketCrossChart() {{
-      if (!marketShouldRefresh("cross", marketConfig.cross.refreshMs)) {{
+    async function refreshMarketCrossChart(config) {{
+      if (!marketShouldRefresh("cross:" + config.label, config.refreshMs)) {{
         return;
       }}
       try {{
-        const payloads = await Promise.all(marketConfig.cross.series.map((item) => fetchMarketJson(item.url)));
+        const payloads = await Promise.all(config.series.map((item) => fetchMarketJson(item.url)));
         const seriesRows = payloads.map((payload, index) => ({{
-          label: marketConfig.cross.series[index].label,
-          color: marketConfig.cross.series[index].color,
+          label: config.series[index].label,
+          color: config.series[index].color,
           rows: ((payload.result || {{}}).list || []),
         }}));
-        drawMarketCrossChart(seriesRows, marketConfig.cross.chartId, marketConfig.cross.statusId, marketConfig.cross.axisMode);
-        marketSourceStatus("cross", "KAS/BTC cross", payloads.some((payload) => payload.fromCache) ? "cached" : "ok", "2/2 series " + marketSourceDetail(payloads[0]));
+        drawMarketCrossChart(seriesRows, config.chartId, config.statusId, config.axisMode, config.independentRange);
+        marketIndicatorRow(config.indicatorCardId, "relative", marketRelativeStrengthState(seriesRows));
+        marketSourceStatus("cross-" + config.label, "KAS/BTC cross " + config.label, payloads.some((payload) => payload.fromCache) ? "cached" : "ok", "2/2 series " + marketSourceDetail(payloads[0]));
       }} catch (error) {{
-        marketText(marketConfig.cross.statusId, "KAS/BTC daily cross unavailable");
-        marketSourceStatus("cross", "KAS/BTC cross", "fail", marketErrorDetail(error));
+        marketText(config.statusId, "KAS/BTC " + config.label + " cross unavailable");
+        marketIndicatorRow(config.indicatorCardId, "relative", {{ tone: "", text: "unavailable", detail: "KAS/BTC cross unavailable" }});
+        marketSourceStatus("cross-" + config.label, "KAS/BTC cross " + config.label, "fail", marketErrorDetail(error));
       }}
     }}
 
@@ -6954,7 +8204,7 @@ def write_status_page(
       }}
       await Promise.all([
         ...marketConfig.klines.map(refreshMarketChart),
-        refreshMarketCrossChart(),
+        ...marketConfig.cross.map(refreshMarketCrossChart),
         refreshMarketVolumeChart(),
         refreshFuturesPositioning(),
         refreshFuturesTrend(),
@@ -7027,6 +8277,7 @@ def alert(config: dict) -> int:
     update_whale_confirmed_candidates(state, report, config)
     new_whale_events = update_whale_event_state(state, report, config)
     whale_event = "whale_tx_detected" if new_whale_events and bool(whale_watch_config(config).get("alert_enabled", True)) else None
+    indexer_watch_event = apply_indexer_watchlist(report, state, config)
     apply_wallet_policy_checks(report, config)
     incident_event = update_incident_state(state, report)
     enrich_operational_fields(report, config, state)
@@ -7036,8 +8287,25 @@ def alert(config: dict) -> int:
     previous_synced = (previous_report.get("grpc_metrics") or {}).get("is_synced")
     current_synced = (report.get("grpc_metrics") or {}).get("is_synced")
     sync_completed = previous_synced is False and current_synced is True
-    event = whale_event or wallet_event or ("sync_completed" if sync_completed else incident_event)
-    should_emit = should_emit_alert(state, report, repeat_minutes) or sync_completed or bool(wallet_event) or bool(whale_event)
+    previous_indexer = previous_report.get("indexer") or {}
+    current_indexer = report.get("indexer") or {}
+    indexer_ready = (
+        bool(previous_indexer.get("enabled"))
+        and bool(current_indexer.get("enabled"))
+        and previous_indexer.get("state") == "syncing"
+        and current_indexer.get("state") == "up"
+    )
+    event = indexer_watch_event or whale_event or wallet_event or (
+        "indexer_ready" if indexer_ready else ("sync_completed" if sync_completed else incident_event)
+    )
+    should_emit = (
+        should_emit_alert(state, report, repeat_minutes)
+        or sync_completed
+        or indexer_ready
+        or bool(wallet_event)
+        or bool(whale_event)
+        or bool(indexer_watch_event)
+    )
     if alert_muted_by_maintenance(report):
         should_emit = False
     history = state.get("history", [])
@@ -7099,8 +8367,12 @@ def format_alert(
     maintenance = report.get("maintenance") or {}
     if event == "sync_completed":
         title = f"Kaspa watchtower: {report['node_name']} sync completed"
+    elif event == "indexer_ready":
+        title = f"Kaspa watchtower: {report['node_name']} indexer ready"
     elif event == "whale_tx_detected":
         title = f"Kaspa watchtower: {report['node_name']} whale tx detected"
+    elif event == "indexer_watch_event":
+        title = f"Kaspa watchtower: {report['node_name']} watched address tx"
     elif event == "wallet_large_outgoing":
         title = f"Kaspa watchtower: {report['node_name']} large wallet outgoing"
     elif event == "wallet_changed":
@@ -7138,6 +8410,17 @@ def format_alert(
     elif event == "sync_completed":
         lines.append("상태: mainnet sync completed")
         lines.append("Next: set thresholds.require_synced=true for strict production monitoring")
+    elif event == "indexer_ready":
+        indexer = report.get("indexer") or {}
+        metrics = indexer.get("metrics") or {}
+        lines.append("상태: indexer catch-up completed")
+        lines.append(
+            "Indexer: "
+            f"state={indexer.get('state', 'unknown')} "
+            f"checkpoint_age={metrics.get('checkpoint_age_seconds', 'unknown')} "
+            f"lag={metrics.get('lag_seconds', 'unknown')}"
+        )
+        lines.append("Next: enable indexer watchlist alerts for production addresses")
     elif event == "whale_tx_detected":
         whale = report.get("whale_watch") or {}
         new_events = whale.get("new_events") or whale.get("candidates") or []
@@ -7158,6 +8441,24 @@ def format_alert(
             if item.get("tx_url"):
                 line += f" link={item.get('tx_url')}"
             lines.append(line)
+    elif event == "indexer_watch_event":
+        watch = report.get("indexer_watch") or {}
+        new_events = watch.get("new_events") or []
+        lines.append(
+            "Indexer watch: "
+            f"watched={len(watch.get('watch_addresses') or [])} "
+            f"new_events={len(new_events)}"
+        )
+        for item in new_events[:5]:
+            tx_id = str(item.get("tx_id") or "unknown")
+            short_tx = tx_id if len(tx_id) <= 18 else f"{tx_id[:10]}...{tx_id[-6:]}"
+            label = item.get("label") or "unlabeled"
+            address = str(item.get("address") or "")
+            short_address = address if len(address) <= 24 else f"{address[:12]}...{address[-8:]}"
+            lines.append(
+                f"- {label}: tx={short_tx} address={short_address or 'unknown'} "
+                f"amount={format_kas(item.get('amount_sompi'))}"
+            )
     elif event in {"wallet_changed", "wallet_large_outgoing"}:
         wallet = report.get("wallet") or {}
         change = wallet.get("change") or {}
@@ -7222,6 +8523,9 @@ def format_alert(
 
 def format_summary(report: dict[str, Any]) -> str:
     grpc_metrics = report.get("grpc_metrics") or {}
+    indexer = report.get("indexer") or {}
+    indexer_metrics = indexer.get("metrics") or {}
+    indexer_watch = report.get("indexer_watch") or {}
     progress = report.get("progress") or {}
     sync_progress = report.get("sync_progress") or {}
     disk = report.get("disk") or {}
@@ -7238,6 +8542,20 @@ def format_summary(report: dict[str, Any]) -> str:
     disk_text = "unknown"
     if disk.get("exists"):
         disk_text = f"{disk.get('free_gb')} GiB ({disk.get('free_percent')}%)"
+    indexer_enabled = bool(indexer.get("enabled", False))
+    indexer_state = indexer.get("state", "unknown")
+    indexer_ok = indexer.get("ok", False)
+    indexer_health = indexer.get("health_ok", False)
+    indexer_metrics_ok = indexer.get("metrics_ok", False)
+    indexer_lag = indexer_metrics.get("lag_seconds", "unknown")
+    indexer_checkpoint_age = indexer_metrics.get("checkpoint_age_seconds", "unknown")
+    if not indexer_enabled:
+        indexer_state = "disabled"
+        indexer_ok = True
+        indexer_health = "skipped"
+        indexer_metrics_ok = "skipped"
+        indexer_lag = "disabled"
+        indexer_checkpoint_age = "disabled"
 
     lines = [
         f"Kaspa watchtower summary: {report['node_name']}",
@@ -7268,6 +8586,25 @@ def format_summary(report: dict[str, Any]) -> str:
             f"latest_relay_age={latest_relay_age_text}"
         ),
         f"processed={format_processed_progress(progress)}",
+        (
+            "indexer="
+            f"enabled={indexer_enabled} "
+            f"state={indexer_state} "
+            f"ok={indexer_ok} "
+            f"health={indexer_health} "
+            f"syncing={indexer.get('syncing', False)} "
+            f"metrics={indexer_metrics_ok} "
+            f"lag={indexer_lag} "
+            f"checkpoint_age={indexer_checkpoint_age}"
+        ),
+        (
+            "indexer_watch="
+            f"enabled={indexer_watch.get('enabled', False)} "
+            f"ok={indexer_watch.get('ok', False)} "
+            f"addresses={len(indexer_watch.get('watch_addresses') or [])} "
+            f"events={len(indexer_watch.get('events') or [])} "
+            f"new={len(indexer_watch.get('new_events') or [])}"
+        ),
         f"disk_free={disk_text}",
         (
             "ops="
@@ -7447,6 +8784,8 @@ def incident_report(config: dict) -> int:
 
 def format_discord_status(report: dict[str, Any]) -> str:
     grpc_metrics = report.get("grpc_metrics") or {}
+    indexer = report.get("indexer") or {}
+    indexer_metrics = indexer.get("metrics") or {}
     wallet = report.get("wallet") or {}
     wallet_change = wallet.get("change") or {}
     mining = report.get("mining") or {}
@@ -7494,6 +8833,14 @@ def format_discord_status(report: dict[str, Any]) -> str:
                 f"enabled={mining.get('enabled', False)} "
                 f"running={mining.get('running', False)} "
                 f"hashrate={format_hashrate_local(mining.get('hashrate_hs'))}"
+            ),
+            (
+                "indexer="
+                f"enabled={indexer.get('enabled', False)} "
+                f"state={indexer.get('state', 'unknown')} "
+                f"ok={indexer.get('ok', False)} "
+                f"lag={indexer_metrics.get('lag_seconds', 'unknown')} "
+                f"checkpoint_age={indexer_metrics.get('checkpoint_age_seconds', 'unknown')}"
             ),
             f"cause_guess={causes_text}",
             f"failed_checks={failed_text}",
@@ -7761,6 +9108,7 @@ def discord_command(
     config_path: Path | None = None,
     mute_minutes: float = 30,
     reason: str = "",
+    query_value: str = "",
 ) -> int:
     if command in {"mute", "mute-all", "unmute"}:
         if config_path is None:
@@ -7785,6 +9133,44 @@ def discord_command(
             f"until={until} reason={status['reason'] or 'none'}"
         )
         return 0
+
+    if command in {"watch-list", "watch-add", "watch-remove", "watch-test"}:
+        if command == "watch-list":
+            print(format_indexer_watchlist(config))
+            return 0
+        if command == "watch-test":
+            return indexer_watch_test(config, query_value, reason)
+        if config_path is None:
+            print("discord command failed: watch add/remove requires -c/--config")
+            return 2
+        try:
+            watch = update_indexer_watch_config(
+                config_path,
+                add_address=query_value if command == "watch-add" else None,
+                remove_address=query_value if command == "watch-remove" else None,
+                label=reason,
+            )
+        except (OSError, ValueError, json.JSONDecodeError) as exc:
+            print(f"discord command failed: {exc}")
+            return 2
+        targets = normalize_watch_addresses(watch.get("watch_addresses"))
+        action = "added" if command == "watch-add" else "removed"
+        print(
+            "Kaspa indexer watchlist: "
+            f"{action} addresses={len(targets)} enabled={bool(watch.get('enabled', False))}"
+        )
+        return 0
+
+    if command == "tx":
+        return indexer_lookup(config, "tx", query_value)
+    if command == "address":
+        return indexer_lookup(config, "address", query_value)
+    if command == "search":
+        return indexer_lookup(config, "search", query_value)
+    if command == "balance":
+        return indexer_lookup(config, "balance", query_value)
+    if command == "utxos":
+        return indexer_lookup(config, "utxos", query_value)
 
     report, state = build_stateful_report(config)
     if command == "status":
@@ -8298,6 +9684,9 @@ def format_prometheus_metrics(
     wallet = report.get("wallet") or {}
     mining_status = report.get("mining") or {}
     whale = report.get("whale_watch") or {}
+    indexer = report.get("indexer") or {}
+    indexer_metrics = indexer.get("metrics") or {}
+    indexer_watch = report.get("indexer_watch") or {}
     incident = report.get("incident") or {}
     maintenance = report.get("maintenance") or {}
     recovery_summary = recovery_summary or {}
@@ -8350,6 +9739,25 @@ def format_prometheus_metrics(
     add_prometheus_metric(lines, "kaspa_watchtower_whale_latest_amount_kas", whale_summary.get("latest_amount_kas"), node_labels)
     add_prometheus_metric(lines, "kaspa_watchtower_whale_24h_count", whale_summary.get("count_24h"), node_labels)
     add_prometheus_metric(lines, "kaspa_watchtower_whale_24h_volume_kas", whale_summary.get("volume_24h_kas"), node_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_indexer_enabled", bool(indexer.get("enabled")), node_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_indexer_ok", bool(indexer.get("ok")), node_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_indexer_health_ok", bool(indexer.get("health_ok")), node_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_indexer_syncing", bool(indexer.get("syncing")), node_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_indexer_metrics_ok", bool(indexer.get("metrics_ok")), node_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_indexer_lag_seconds", indexer_metrics.get("lag_seconds"), node_labels)
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_indexer_checkpoint_age_seconds",
+        indexer_metrics.get("checkpoint_age_seconds"),
+        node_labels,
+    )
+    add_prometheus_metric(lines, "kaspa_watchtower_indexer_health_latency_ms", indexer.get("health_latency_ms"), node_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_indexer_metrics_latency_ms", indexer.get("metrics_latency_ms"), node_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_indexer_watch_enabled", bool(indexer_watch.get("enabled")), node_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_indexer_watch_ok", bool(indexer_watch.get("ok")), node_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_indexer_watch_addresses", len(indexer_watch.get("watch_addresses") or []), node_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_indexer_watch_events_total", len(indexer_watch.get("events") or []), node_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_indexer_watch_new_events", len(indexer_watch.get("new_events") or []), node_labels)
     add_prometheus_metric(lines, "kaspa_watchtower_wallet_enabled", bool(wallet.get("enabled")), node_labels)
     add_prometheus_metric(lines, "kaspa_watchtower_wallet_ok", bool(wallet.get("ok")), node_labels)
     add_prometheus_metric(lines, "kaspa_watchtower_wallet_watch_addresses", len(wallet.get("entries") or []), node_labels)
@@ -9248,6 +10656,48 @@ def config_validation_checks(config: dict) -> list[Check]:
         value = whale.get(key, DEFAULT_CONFIG["whale_watch"].get(key))
         ok = validator(value)
         checks.append(Check(f"whale_watch.{key}", ok, validation_detail(value, expected, ok)))
+    indexer = config.get("indexer") if isinstance(config.get("indexer"), dict) else {}
+    indexer_specs = [
+        ("enabled", lambda value: isinstance(value, bool), "boolean"),
+        ("base_url", lambda value: value in (None, "") or bool(re.fullmatch(r"https?://[^/\s]+.*", str(value))), "empty or http(s) URL"),
+        ("health_path", lambda value: isinstance(value, str) and bool(value.strip()), "non-empty path or URL"),
+        ("metrics_path", lambda value: isinstance(value, str) and bool(value.strip()), "non-empty path or URL"),
+        ("timeout_seconds", lambda value: number_between_config(value, 0.1), "number >= 0.1"),
+        ("require_metrics", lambda value: isinstance(value, bool), "boolean"),
+        ("max_lag_seconds", lambda value: number_between_config(value, 0), "number >= 0"),
+        ("max_checkpoint_age_seconds", lambda value: number_between_config(value, 0), "number >= 0"),
+        ("transaction_path", lambda value: isinstance(value, str) and "{tx_id}" in value, "string containing {tx_id}"),
+        ("address_transactions_path", lambda value: isinstance(value, str) and "{address}" in value, "string containing {address}"),
+        ("address_balance_path", lambda value: isinstance(value, str) and "{address}" in value, "string containing {address}"),
+        ("address_utxos_path", lambda value: isinstance(value, str) and "{address}" in value, "string containing {address}"),
+        ("search_path", lambda value: isinstance(value, str) and "{query}" in value, "string containing {query}"),
+    ]
+    for key, validator, expected in indexer_specs:
+        value = indexer.get(key, DEFAULT_CONFIG["indexer"].get(key))
+        ok = validator(value)
+        checks.append(Check(f"indexer.{key}", ok, validation_detail(value, expected, ok)))
+    indexer_watch = config.get("indexer_watch") if isinstance(config.get("indexer_watch"), dict) else {}
+    indexer_watch_specs = [
+        ("enabled", lambda value: isinstance(value, bool), "boolean"),
+        ("alert_enabled", lambda value: isinstance(value, bool), "boolean"),
+        ("event_history_entries", positive_int_config, "integer > 0"),
+    ]
+    for key, validator, expected in indexer_watch_specs:
+        value = indexer_watch.get(key, DEFAULT_CONFIG["indexer_watch"].get(key))
+        ok = validator(value)
+        checks.append(Check(f"indexer_watch.{key}", ok, validation_detail(value, expected, ok)))
+    indexer_watch_addresses = indexer_watch.get("watch_addresses", DEFAULT_CONFIG["indexer_watch"]["watch_addresses"])
+    indexer_watch_addresses_ok = isinstance(indexer_watch_addresses, list) and all(
+        isinstance(item, str) or (isinstance(item, dict) and isinstance(item.get("address"), str))
+        for item in indexer_watch_addresses
+    )
+    checks.append(
+        Check(
+            "indexer_watch.watch_addresses",
+            indexer_watch_addresses_ok,
+            validation_detail(indexer_watch_addresses, "list of address strings or {label,address} objects", indexer_watch_addresses_ok),
+        )
+    )
     history_paths = {
         "state_path": config.get("state_path") or DEFAULT_CONFIG["state_path"],
         "benchmark_path": config.get("benchmark_path") or DEFAULT_CONFIG["benchmark_path"],
@@ -9602,6 +11052,16 @@ def main() -> int:
     parser.add_argument("--market-summary", action="store_true", help="Print an optional public KAS/USDT market snapshot.")
     parser.add_argument("--market-snapshot", action="store_true", help="Append a public KAS/USDT market snapshot to JSONL history.")
     parser.add_argument("--market-timeout", type=float, default=6.0, help="Public market API timeout in seconds.")
+    parser.add_argument("--indexer-tx", help="Query a transaction from the configured local indexer API.")
+    parser.add_argument("--indexer-address", help="Query address transactions from the configured local indexer API.")
+    parser.add_argument("--indexer-balance", help="Query address balance from the configured local indexer API.")
+    parser.add_argument("--indexer-utxos", help="Query address UTXOs from the configured local indexer API.")
+    parser.add_argument("--indexer-search", help="Search the configured local indexer API.")
+    parser.add_argument("--indexer-watch-add", help="Add an address to the indexer watchlist.")
+    parser.add_argument("--indexer-watch-remove", help="Remove an address or label from the indexer watchlist.")
+    parser.add_argument("--indexer-watch-test", help="Test indexer reads for a watch address without changing config.")
+    parser.add_argument("--indexer-watch-label", default="", help="Label for --indexer-watch-add.")
+    parser.add_argument("--indexer-watch-list", action="store_true", help="Print the indexer watchlist.")
     parser.add_argument("--prometheus", action="store_true", help="Write Prometheus textfile metrics.")
     parser.add_argument("--validate-config", action="store_true", help="Validate config paths, endpoints, and commands.")
     parser.add_argument("--prune-state", action="store_true", help="Apply configured retention limits to local state files.")
@@ -9612,10 +11072,31 @@ def main() -> int:
     parser.add_argument("--clear-mining-address", action="store_true", help="Clear the stored mining payout address.")
     parser.add_argument(
         "--discord-command",
-        choices=("status", "incidents", "maintenance", "wallet", "wallet-txs", "mining", "whales", "mute", "mute-all", "unmute"),
+        choices=(
+            "status",
+            "incidents",
+            "maintenance",
+            "wallet",
+            "wallet-txs",
+            "mining",
+            "whales",
+            "tx",
+            "address",
+            "search",
+            "balance",
+            "utxos",
+            "watch-list",
+            "watch-add",
+            "watch-remove",
+            "watch-test",
+            "mute",
+            "mute-all",
+            "unmute",
+        ),
         help="Run a Discord-friendly watchtower command.",
     )
     parser.add_argument("--discord-mute-minutes", type=float, default=30, help="Mute window for --discord-command mute.")
+    parser.add_argument("--discord-query", default="", help="Lookup value for --discord-command tx/address/search/balance/utxos.")
     parser.add_argument(
         "--mute-all",
         action="store_true",
@@ -9672,6 +11153,30 @@ def main() -> int:
             f"reason={maintenance_state['reason'] or 'none'}"
         )
         return 0
+    if args.indexer_watch_test:
+        return indexer_watch_test(config, args.indexer_watch_test, args.indexer_watch_label)
+    if args.indexer_watch_list or args.indexer_watch_add or args.indexer_watch_remove:
+        if args.config is None:
+            parser.error("--indexer-watch-* requires -c/--config")
+        if sum(bool(item) for item in (args.indexer_watch_list, args.indexer_watch_add, args.indexer_watch_remove)) != 1:
+            parser.error("use exactly one of --indexer-watch-list, --indexer-watch-add, or --indexer-watch-remove")
+        if args.indexer_watch_list:
+            print(format_indexer_watchlist(config))
+            return 0
+        try:
+            watch_state = update_indexer_watch_config(
+                args.config,
+                add_address=args.indexer_watch_add,
+                remove_address=args.indexer_watch_remove,
+                label=args.indexer_watch_label,
+            )
+        except (OSError, ValueError, json.JSONDecodeError) as exc:
+            print(f"indexer watch update failed: {exc}")
+            return 2
+        updated = dict(config)
+        updated["indexer_watch"] = watch_state
+        print(format_indexer_watchlist(updated))
+        return 0
     if args.discord_command:
         return discord_command(
             config,
@@ -9679,6 +11184,7 @@ def main() -> int:
             config_path=args.config,
             mute_minutes=args.discord_mute_minutes,
             reason=args.maintenance_reason,
+            query_value=args.discord_query,
         )
     if args.maintenance_status:
         print(format_maintenance_status(config))
@@ -9713,6 +11219,16 @@ def main() -> int:
         return market_summary(timeout=args.market_timeout)
     if args.market_snapshot:
         return market_snapshot(config, timeout=args.market_timeout)
+    if args.indexer_tx:
+        return indexer_lookup(config, "tx", args.indexer_tx)
+    if args.indexer_address:
+        return indexer_lookup(config, "address", args.indexer_address)
+    if args.indexer_balance:
+        return indexer_lookup(config, "balance", args.indexer_balance)
+    if args.indexer_utxos:
+        return indexer_lookup(config, "utxos", args.indexer_utxos)
+    if args.indexer_search:
+        return indexer_lookup(config, "search", args.indexer_search)
     if args.prometheus:
         return prometheus(config)
     if args.validate_config:

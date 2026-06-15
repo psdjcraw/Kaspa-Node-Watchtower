@@ -63,6 +63,32 @@
     "explorer_tx_path": "/txs/{tx_id}",
     "explorer_address_path": "/addresses/{address}"
   },
+  "indexer": {
+    "enabled": false,
+    "base_url": "http://localhost:8500",
+    "health_path": "/api/health",
+    "metrics_path": "/api/metrics",
+    "timeout_seconds": 2,
+    "require_metrics": false,
+    "max_lag_seconds": 60,
+    "max_checkpoint_age_seconds": 300,
+    "transaction_path": "/api/transactions/{tx_id}",
+    "address_transactions_path": "/api/addresses/{address}/transactions",
+    "address_balance_path": "/api/addresses/{address}/balance",
+    "address_utxos_path": "/api/addresses/{address}/utxos",
+    "search_path": "/api/search?q={query}"
+  },
+  "indexer_watch": {
+    "enabled": false,
+    "alert_enabled": true,
+    "event_history_entries": 100,
+    "watch_addresses": [
+      {
+        "label": "mining",
+        "address": "kaspa:q..."
+      }
+    ]
+  },
   "thresholds": {
     "alert_repeat_minutes": 60,
     "stale_log_minutes": 15,

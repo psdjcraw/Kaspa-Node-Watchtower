@@ -7,6 +7,7 @@
 - Network: Kaspa mainnet
 - RPC TCP check: `127.0.0.1:16110`
 - gRPC metrics: `127.0.0.1:16110`
+- wRPC Borsh for indexer: `127.0.0.1:17110`
 - Process match: `kaspad`
 - Log: `/Users/psdjc/kaspa/rusty-kaspa-mainnet-data/kaspa-mainnet/logs/rusty-kaspa.log`
 - Data dir: `/Users/psdjc/kaspa/rusty-kaspa-mainnet-data/kaspa-mainnet/datadir`
@@ -18,6 +19,7 @@ The local watchtower reports an alert when any of these fail:
 - `kaspad` process is not running.
 - Data directory is missing.
 - RPC TCP connection to `127.0.0.1:16110` fails.
+- Indexer wRPC Borsh connection to `127.0.0.1:17110` fails.
 - gRPC metrics cannot be read.
 - Node reports `isSynced=false` when `require_synced=true`.
 - Connected peer count is below `1`.

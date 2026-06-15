@@ -13,10 +13,13 @@ the primary source of truth.
 - Keep smoke tests, unit tests, and alert rule tests passing on GitHub Actions.
 - Document safe diagnostics and recovery workflows for node operators.
 - Use local SQLite history summaries for longer-window operator review.
+- Extend the project into a Watchtower plus Indexer stack by integrating
+  `simply-kaspa-indexer` as the PostgreSQL-backed chain data layer.
 
 ## Next Execution Plan
 
-The next operator work should prioritize distribution and host handoff:
+The next operator work should finish distribution and host handoff, then move
+into indexer integration:
 
 - Keep `make smoke`, `make validate`, and Prometheus rule tests green before
   each deployment change.
@@ -29,6 +32,58 @@ The next operator work should prioritize distribution and host handoff:
   alerts, Grafana reachability, and GitHub Actions status in one command.
 - Finish v0.8 with release notes, package verification, and final smoke
   guidance.
+- Start v0.9 by adding optional indexer health/status awareness to Watchtower
+  without changing the existing node monitoring behavior.
+- Keep the Rust indexer as a companion service first; integrate through
+  health/metrics/API endpoints before deciding whether to fork, vendor, or
+  submodule it.
+
+## v1.x - Watchtower plus Indexer
+
+The long-term project direction is documented in
+`docs/indexer-integration-plan.md`. The short version: Python Watchtower remains
+the operator, alerting, reporting, and dashboard layer; `simply-kaspa-indexer`
+becomes the PostgreSQL-backed chain data and explorer API layer.
+
+### v0.9 - Indexer Awareness
+
+- Add optional `indexer` configuration for base URL, PostgreSQL/metrics mode,
+  and lag/staleness thresholds.
+- Poll indexer health and metrics from Watchtower.
+- Export Prometheus metrics for indexer availability, lag, checkpoint
+  freshness, API failures, and schema/version status when available.
+- Add status page, summary, and alert-rule coverage for indexer health.
+- Validate healthy, stale, and unavailable indexer states with mocked tests.
+
+### v1.0 - Explorer API Baseline
+
+- Add or consume Rust indexer endpoints for recent blocks, block details,
+  transaction details, address transactions, search, and combined status.
+- Add Watchtower command targets for local transaction and address lookups.
+- Surface local explorer links in status output when configured.
+- Validate Rust endpoints with seeded PostgreSQL fixtures and Watchtower command
+  tests with mocked API responses.
+
+### v1.1 - Watchlist and Alert Events
+
+- Add durable watch target and watch event storage for addresses,
+  transactions, blocks, large transaction rules, and indexer lag rules.
+- Keep alert policy in Watchtower while using indexed data for event detection.
+- Add idempotent event creation so alerts do not duplicate across restarts.
+
+### v1.2 - Balance and UTXO Layer
+
+- Add optional derived balance and UTXO tables behind an explicit enable flag.
+- Provide balance, UTXO, and balance-event APIs for watched addresses.
+- Add reconciliation checks and reorg-safe update behavior before using this
+  data for operator alerts.
+
+### v1.3+ - Admin and Explorer UI
+
+- Build an operator-first admin UI for node health, indexer health, PostgreSQL,
+  watchlists, alert history, and recent chain activity.
+- Add compact local explorer pages after the API and derived data model are
+  stable.
 
 ## v0.8 - Distribution and Onboarding
 

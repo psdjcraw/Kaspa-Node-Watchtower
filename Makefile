@@ -10,8 +10,14 @@ MULTI_NODE_PROCESSED_AGE_LAG_WARNING ?= 60
 MUTE_MINUTES ?= 30
 MUTE_REASON ?= planned maintenance
 MINING_ADDRESS ?=
+TX_ID ?=
+ADDRESS ?=
+QUERY ?=
+COMPOSE ?= docker compose
+INDEXER_COMPOSE ?= integrations/simply-kaspa-indexer/docker-compose.yml
+INDEXER_API ?= http://127.0.0.1:8500
 
-.PHONY: help onboard bootstrap proto-check version status stream summary sync-report diagnostics-summary incident-report json alert discord-status discord-incidents discord-wallet discord-wallet-txs discord-mining discord-whales mining-set-address mining-clear-address discord-maintenance discord-mute discord-mute-all discord-unmute maintenance-status mute mute-all unmute smoke ci integrations simulate-exporter-failure ensure-exporter launchd-status launchd-install launchd-restart launchd-uninstall diagnostics diagnostics-archive daily-report weekly-report weekly-archive benchmark benchmark-report prometheus export-history history-report history-multi-node history-archive upload-archive package prune validate recover-dry-run recover force-recover-dry-run
+.PHONY: help onboard bootstrap proto-check version status stream summary sync-report diagnostics-summary incident-report json alert discord-status discord-incidents discord-wallet discord-wallet-txs discord-mining discord-whales discord-tx discord-address discord-balance discord-utxos discord-search discord-watch-list discord-watch-add discord-watch-remove discord-watch-test indexer-up indexer-down indexer-logs indexer-smoke mining-set-address mining-clear-address discord-maintenance discord-mute discord-mute-all discord-unmute maintenance-status mute mute-all unmute smoke ci integrations simulate-exporter-failure ensure-exporter launchd-status launchd-install launchd-restart launchd-uninstall diagnostics diagnostics-archive daily-report weekly-report weekly-archive benchmark benchmark-report prometheus export-history history-report history-multi-node history-archive upload-archive package prune validate recover-dry-run recover force-recover-dry-run
 
 help:
 	@printf 'Kaspa Node Watchtower operator commands\n'
@@ -33,6 +39,19 @@ help:
 	@printf '  make discord-wallet-txs  Print pending wallet txs and recorded wallet events\n'
 	@printf '  make discord-mining      Print Discord-friendly miner monitor state\n'
 	@printf '  make discord-whales      Print Discord-friendly 1M+ KAS whale events\n'
+	@printf '  make discord-tx          Query indexer tx; set TX_ID=...\n'
+	@printf '  make discord-address     Query indexer address; set ADDRESS=kaspa:...\n'
+	@printf '  make discord-balance     Query indexer address balance; set ADDRESS=kaspa:...\n'
+	@printf '  make discord-utxos       Query indexer address UTXOs; set ADDRESS=kaspa:...\n'
+	@printf '  make discord-search      Search indexer; set QUERY=...\n'
+	@printf '  make discord-watch-list  Print indexer watchlist\n'
+	@printf '  make discord-watch-add   Add watch address; set ADDRESS=kaspa:... LABEL=...\n'
+	@printf '  make discord-watch-remove Remove watch address; set ADDRESS=kaspa:...\n'
+	@printf '  make discord-watch-test  Test watch address reads; set ADDRESS=kaspa:...\n'
+	@printf '  make indexer-up          Start local kaspad/postgres/indexer compose stack\n'
+	@printf '  make indexer-down        Stop local indexer compose stack\n'
+	@printf '  make indexer-logs        Tail local indexer compose logs\n'
+	@printf '  make indexer-smoke       Check local indexer API/admin endpoints\n'
 	@printf '  make mining-set-address  Store payout address; set MINING_ADDRESS=kaspa:...\n'
 	@printf '  make mining-clear-address Clear stored mining payout address\n'
 	@printf '  make discord-mute        Discord bridge mute; set MUTE_MINUTES/REASON\n'
@@ -121,6 +140,53 @@ discord-mining:
 
 discord-whales:
 	@$(PYTHON) scripts/discord_command_handler.py -c $(CONFIG) whales
+
+discord-tx:
+	@test -n "$(TX_ID)" || (printf 'TX_ID is required\n' >&2; exit 2)
+	@$(PYTHON) scripts/discord_command_handler.py -c $(CONFIG) tx --query "$(TX_ID)"
+
+discord-address:
+	@test -n "$(ADDRESS)" || (printf 'ADDRESS is required\n' >&2; exit 2)
+	@$(PYTHON) scripts/discord_command_handler.py -c $(CONFIG) address --query "$(ADDRESS)"
+
+discord-balance:
+	@test -n "$(ADDRESS)" || (printf 'ADDRESS is required\n' >&2; exit 2)
+	@$(PYTHON) scripts/discord_command_handler.py -c $(CONFIG) balance --query "$(ADDRESS)"
+
+discord-utxos:
+	@test -n "$(ADDRESS)" || (printf 'ADDRESS is required\n' >&2; exit 2)
+	@$(PYTHON) scripts/discord_command_handler.py -c $(CONFIG) utxos --query "$(ADDRESS)"
+
+discord-search:
+	@test -n "$(QUERY)" || (printf 'QUERY is required\n' >&2; exit 2)
+	@$(PYTHON) scripts/discord_command_handler.py -c $(CONFIG) search --query "$(QUERY)"
+
+discord-watch-list:
+	@$(PYTHON) scripts/discord_command_handler.py -c $(CONFIG) watch-list
+
+discord-watch-add:
+	@test -n "$(ADDRESS)" || (printf 'ADDRESS is required\n' >&2; exit 2)
+	@$(PYTHON) scripts/discord_command_handler.py -c $(CONFIG) watch-add --query "$(ADDRESS)" --reason "$(LABEL)"
+
+discord-watch-remove:
+	@test -n "$(ADDRESS)" || (printf 'ADDRESS is required\n' >&2; exit 2)
+	@$(PYTHON) scripts/discord_command_handler.py -c $(CONFIG) watch-remove --query "$(ADDRESS)"
+
+discord-watch-test:
+	@test -n "$(ADDRESS)" || (printf 'ADDRESS is required\n' >&2; exit 2)
+	@$(PYTHON) scripts/discord_command_handler.py -c $(CONFIG) watch-test --query "$(ADDRESS)" --reason "$(LABEL)"
+
+indexer-up:
+	@$(COMPOSE) -f $(INDEXER_COMPOSE) up -d --build
+
+indexer-down:
+	@$(COMPOSE) -f $(INDEXER_COMPOSE) down
+
+indexer-logs:
+	@$(COMPOSE) -f $(INDEXER_COMPOSE) logs -f --tail=200 kaspa_indexer
+
+indexer-smoke:
+	@scripts/check_indexer_api.sh "$(INDEXER_API)"
 
 mining-set-address:
 	@test -n "$(MINING_ADDRESS)" || (printf 'MINING_ADDRESS is required\n' >&2; exit 2)

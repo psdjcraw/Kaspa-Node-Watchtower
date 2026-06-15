@@ -1,0 +1,64 @@
+services:
+  kaspad:
+    container_name: kaspa_watchtower_kaspad
+    image: supertypo/rusty-kaspad:latest
+    profiles:
+      - local-kaspad
+    restart: unless-stopped
+    command: >
+      kaspad
+      --yes
+      --nologfiles
+      --disable-upnp
+      --utxoindex
+      --rpclisten=0.0.0.0:16110
+      --rpclisten-borsh=0.0.0.0:17110
+    ports:
+      - "127.0.0.1:${KASPAD_GRPC_PORT:-16112}:16110"
+      - "127.0.0.1:${KASPAD_WRPC_PORT:-17112}:17110"
+    volumes:
+      - kaspad-data:/app/data
+
+  kaspa_db:
+    container_name: kaspa_watchtower_db
+    image: postgres:16-alpine
+    restart: unless-stopped
+    shm_size: 4gb
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+    ports:
+      - "127.0.0.1:${KASPA_DB_PORT:-15432}:5432"
+    volumes:
+      - kaspa-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  kaspa_indexer:
+    container_name: kaspa_watchtower_indexer
+    image: rust:1.93.1
+    working_dir: /workspace
+    restart: unless-stopped
+    depends_on:
+      kaspa_db:
+        condition: service_healthy
+    volumes:
+      - ${SIMPLY_KASPA_INDEXER_DIR:-../../../simply-kaspa-indexer}:/workspace
+    command: >
+      bash -lc '/usr/local/cargo/bin/cargo run --
+      -u
+      -s ${KASPAD_WRPC_URL:-ws://host.docker.internal:17110}
+      -d postgresql://postgres:postgres@kaspa_db:5432/postgres
+      -l 0.0.0.0:8500
+      --prune-db="0 4 * * *"
+      --retention=30d'
+    ports:
+      - "127.0.0.1:8500:8500"
+
+volumes:
+  kaspad-data:
+  kaspa-db-data:

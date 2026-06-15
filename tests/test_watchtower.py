@@ -28,6 +28,301 @@ class WatchtowerUnitTests(unittest.TestCase):
             set(watchtower.DEFAULT_CONFIG["thresholds"]),
             set(example["thresholds"]),
         )
+        self.assertEqual(set(watchtower.DEFAULT_CONFIG["indexer"]), set(example["indexer"]))
+        self.assertEqual(set(watchtower.DEFAULT_CONFIG["indexer_watch"]), set(example["indexer_watch"]))
+
+    def test_fetch_optional_indexer_status_reads_health_and_metrics(self):
+        config = copy.deepcopy(watchtower.DEFAULT_CONFIG)
+        config["indexer"]["enabled"] = True
+        config["indexer"]["max_lag_seconds"] = 60
+        now = dt.datetime.now().astimezone()
+
+        with mock.patch(
+            "watchtower.fetch_json_url",
+            side_effect=[
+                {"status": "healthy", "version": "1.2.3"},
+                {
+                    "indexer_lag_seconds": 12,
+                    "schema_version": 22,
+                    "checkpoint": {"timestamp": now.isoformat()},
+                },
+            ],
+        ):
+            status = watchtower.fetch_optional_indexer_status(config)
+
+        self.assertTrue(status["ok"])
+        self.assertTrue(status["health_ok"])
+        self.assertTrue(status["metrics_ok"])
+        self.assertEqual(status["metrics"]["lag_seconds"], 12)
+        self.assertEqual(status["metrics"]["schema_version"], 22)
+
+    def test_fetch_optional_indexer_status_flags_stale_metrics(self):
+        config = copy.deepcopy(watchtower.DEFAULT_CONFIG)
+        config["indexer"]["enabled"] = True
+        config["indexer"]["max_lag_seconds"] = 10
+
+        with mock.patch(
+            "watchtower.fetch_json_url",
+            side_effect=[
+                {"status": "ok"},
+                {"lag_seconds": 30, "timestamp": 1_700_000_000},
+            ],
+        ):
+            status = watchtower.fetch_optional_indexer_status(config)
+
+        self.assertFalse(status["ok"])
+        self.assertFalse(status["lag_ok"])
+        self.assertEqual(status["metrics"]["lag_seconds"], 30)
+
+    def test_fetch_optional_indexer_status_treats_catchup_as_syncing(self):
+        config = copy.deepcopy(watchtower.DEFAULT_CONFIG)
+        config["indexer"]["enabled"] = True
+        config["indexer"]["max_checkpoint_age_seconds"] = 60
+
+        health_payload = {
+            "status": "DOWN",
+            "indexer": {
+                "status": "DOWN",
+                "details": [
+                    {"name": "checkpoint", "status": "DOWN", "reason": "1day 4h behind"},
+                    {"name": "queue.transactions", "status": "WARN", "reason": "Utilization: 100%"},
+                ],
+            },
+            "kaspad": {"status": "UP", "isSynced": True, "networkId": "mainnet"},
+        }
+        with (
+            mock.patch("watchtower.fetch_indexer_health_payload", return_value=(health_payload, 503)),
+            mock.patch("watchtower.fetch_json_url", return_value={"checkpoint": {"timestamp": 1_700_000_000}}),
+        ):
+            status = watchtower.fetch_optional_indexer_status(config)
+
+        self.assertTrue(status["ok"])
+        self.assertFalse(status["health_ok"])
+        self.assertTrue(status["syncing"])
+        self.assertEqual(status["state"], "syncing")
+        self.assertEqual(status["health_http_status"], 503)
+        self.assertTrue(status["checkpoint_fresh"])
+
+    def test_build_report_adds_indexer_checks_when_enabled(self):
+        config = copy.deepcopy(watchtower.DEFAULT_CONFIG)
+        config["node_name"] = "test-mainnet"
+        config["process_match"] = "kaspad"
+        config["log_path"] = "/tmp/missing-watchtower-test.log"
+        config["data_dir"] = ""
+        config["rpc_endpoint"] = ""
+        config["grpc_endpoint"] = ""
+        config["thresholds"]["require_rpc"] = False
+        config["thresholds"]["require_grpc_metrics"] = False
+        config["indexer"]["enabled"] = True
+
+        with (
+            mock.patch("watchtower.find_processes", return_value=["123 kaspad"]),
+            mock.patch("watchtower.disk_usage", return_value={"exists": False}),
+            mock.patch("watchtower.check_tcp_endpoint", return_value={"configured": False, "ok": False, "detail": "not configured"}),
+            mock.patch("watchtower.fetch_optional_grpc_metrics", return_value={"configured": False, "ok": False}),
+            mock.patch("watchtower.fetch_optional_wallet_balances", return_value={"enabled": False, "ok": True}),
+            mock.patch("watchtower.fetch_optional_mining_status", return_value={"enabled": False, "ok": True}),
+            mock.patch("watchtower.fetch_optional_whale_watch", return_value={"enabled": False, "ok": True}),
+            mock.patch(
+                "watchtower.fetch_optional_indexer_status",
+                return_value={
+                    "enabled": True,
+                    "ok": False,
+                    "health_ok": True,
+                    "metrics_ok": True,
+                    "lag_ok": False,
+                    "checkpoint_fresh": True,
+                    "detail": "lag=90s",
+                    "metrics": {"lag_seconds": 90, "checkpoint_age_seconds": 12},
+                },
+            ),
+        ):
+            report = watchtower.build_report(config)
+
+        checks = {check["name"]: check for check in report["checks"]}
+        self.assertIn("indexer_health", checks)
+        self.assertIn("indexer_lag", checks)
+        self.assertFalse(checks["indexer_lag"]["ok"])
+        self.assertEqual(report["indexer"]["metrics"]["lag_seconds"], 90)
+
+    def test_indexer_lookup_fetches_transaction_api(self):
+        config = copy.deepcopy(watchtower.DEFAULT_CONFIG)
+        config["indexer"]["enabled"] = True
+        config["indexer"]["base_url"] = "http://indexer.local"
+
+        with (
+            mock.patch(
+                "watchtower.fetch_json_url",
+                return_value={"transaction_id": "abc123", "outputs": [{"value": 1}, {"value": 2}]},
+            ) as fetch,
+            mock.patch("builtins.print") as printed,
+        ):
+            code = watchtower.indexer_lookup(config, "tx", "abc123")
+
+        self.assertEqual(code, 0)
+        fetch.assert_called_once_with("http://indexer.local/api/transactions/abc123", timeout=2.0)
+        printed.assert_called_once()
+        self.assertIn("Kaspa indexer tx: abc123", printed.call_args.args[0])
+        self.assertIn("outputs_count=2", printed.call_args.args[0])
+
+    def test_indexer_lookup_fetches_balance_and_utxos_api(self):
+        config = copy.deepcopy(watchtower.DEFAULT_CONFIG)
+        config["indexer"]["enabled"] = True
+        config["indexer"]["base_url"] = "http://indexer.local"
+
+        with (
+            mock.patch("watchtower.fetch_json_url", side_effect=[{"balance_sompi": 123}, {"utxos": [{"outpoint": "a"}]}]) as fetch,
+            mock.patch("builtins.print") as printed,
+        ):
+            balance_code = watchtower.indexer_lookup(config, "balance", "kaspa:qabc")
+            utxos_code = watchtower.indexer_lookup(config, "utxos", "kaspa:qabc")
+
+        self.assertEqual(balance_code, 0)
+        self.assertEqual(utxos_code, 0)
+        self.assertEqual(fetch.call_args_list[0].args[0], "http://indexer.local/api/addresses/kaspa%3Aqabc/balance")
+        self.assertEqual(fetch.call_args_list[1].args[0], "http://indexer.local/api/addresses/kaspa%3Aqabc/utxos")
+        self.assertIn("Kaspa indexer balance: kaspa:qabc", printed.call_args_list[0].args[0])
+        self.assertIn("Kaspa indexer utxos: kaspa:qabc", printed.call_args_list[1].args[0])
+
+    def test_discord_command_routes_indexer_lookup_without_node_report(self):
+        config = copy.deepcopy(watchtower.DEFAULT_CONFIG)
+
+        with mock.patch("watchtower.indexer_lookup", return_value=0) as lookup:
+            code = watchtower.discord_command(config, "balance", query_value="kaspa:qabc")
+
+        self.assertEqual(code, 0)
+        lookup.assert_called_once_with(config, "balance", "kaspa:qabc")
+
+    def test_indexer_watch_config_adds_and_removes_addresses(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config_path = Path(tmp_dir) / "config.json"
+            config_path.write_text(json.dumps({"node_name": "test"}), encoding="utf-8")
+
+            added = watchtower.update_indexer_watch_config(
+                config_path,
+                add_address="kaspa:qabcdefghijklmnopqrst",
+                label="mining",
+            )
+            self.assertTrue(added["enabled"])
+            self.assertEqual(added["watch_addresses"], [{"address": "kaspa:qabcdefghijklmnopqrst", "label": "mining"}])
+
+            loaded = watchtower.load_raw_config(config_path)
+            self.assertTrue(loaded["indexer"]["enabled"])
+            text = watchtower.format_indexer_watchlist({**watchtower.DEFAULT_CONFIG, **loaded})
+            self.assertIn("mining: kaspa:qabcdefghijklmnopqrst", text)
+
+            removed = watchtower.update_indexer_watch_config(config_path, remove_address="kaspa:qabcdefghijklmnopqrst")
+            self.assertFalse(removed["enabled"])
+            self.assertEqual(removed["watch_addresses"], [])
+
+    def test_discord_command_updates_indexer_watchlist(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config_path = Path(tmp_dir) / "config.json"
+            config_path.write_text(json.dumps({"node_name": "test"}), encoding="utf-8")
+            config = watchtower.load_config(config_path)
+
+            with mock.patch("builtins.print") as printed:
+                code = watchtower.discord_command(
+                    config,
+                    "watch-add",
+                    config_path=config_path,
+                    query_value="kaspa:qabcdefghijklmnopqrst",
+                    reason="mining",
+                )
+
+            self.assertEqual(code, 0)
+            self.assertIn("added addresses=1 enabled=True", printed.call_args.args[0])
+            loaded = watchtower.load_raw_config(config_path)
+            self.assertEqual(loaded["indexer_watch"]["watch_addresses"][0]["label"], "mining")
+
+    def test_indexer_watch_test_queries_address_endpoints(self):
+        config = copy.deepcopy(watchtower.DEFAULT_CONFIG)
+        config["indexer"]["enabled"] = True
+        address = "kaspa:qabcdefghijklmnopqrst"
+
+        with (
+            mock.patch(
+                "watchtower.fetch_indexer_api",
+                side_effect=[
+                    {"transactions": [{"transaction_id": "tx1"}]},
+                    {"balance_sompi": 123},
+                    {"utxos": [{"outpoint": "a"}, {"outpoint": "b"}]},
+                ],
+            ) as fetch,
+            mock.patch("builtins.print") as printed,
+        ):
+            code = watchtower.indexer_watch_test(config, address, "mining")
+
+        self.assertEqual(code, 0)
+        self.assertEqual(fetch.call_count, 3)
+        text = printed.call_args.args[0]
+        self.assertIn("Kaspa indexer watch-test:", text)
+        self.assertIn("label=mining", text)
+        self.assertIn("transactions=ok count=1", text)
+        self.assertIn("utxos=ok count=2", text)
+
+    def test_apply_indexer_watchlist_records_new_address_events_once(self):
+        config = copy.deepcopy(watchtower.DEFAULT_CONFIG)
+        config["indexer"]["enabled"] = True
+        config["indexer_watch"]["enabled"] = True
+        config["indexer_watch"]["watch_addresses"] = [{"label": "mining", "address": "kaspa:qabc"}]
+        report = {
+            "node_name": "test-mainnet",
+            "status": "ok",
+            "severity": "ok",
+            "checked_at": "2026-06-13T13:45:00+09:00",
+            "checks": [],
+            "recovery": {"action": "none"},
+        }
+        state = {}
+
+        with mock.patch(
+            "watchtower.fetch_indexer_api",
+            return_value={
+                "transactions": [
+                    {"transaction_id": "tx1", "amount_sompi": 123456789},
+                    {"tx_id": "tx2", "value_sompi": 200000000},
+                ]
+            },
+        ):
+            event = watchtower.apply_indexer_watchlist(report, state, config)
+            second_event = watchtower.apply_indexer_watchlist(report, state, config)
+
+        self.assertEqual(event, "indexer_watch_event")
+        self.assertIsNone(second_event)
+        self.assertEqual(len(state["indexer_watch_events"]), 2)
+        self.assertEqual(len(report["indexer_watch"]["new_events"]), 0)
+        checks = {check["name"]: check for check in report["checks"]}
+        self.assertTrue(checks["indexer_watchlist"]["ok"])
+
+    def test_format_alert_includes_indexer_watch_events(self):
+        report = {
+            "node_name": "test-mainnet",
+            "checked_at": "2026-06-13T13:45:00+09:00",
+            "status": "ok",
+            "severity": "ok",
+            "checks": [],
+            "latest_throughput": "",
+            "progress": {"relay_blocks_in_window": 0, "relay_events_in_window": 0, "window_minutes": 10},
+            "recovery": {"action": "none"},
+            "indexer_watch": {
+                "watch_addresses": [{"label": "mining", "address": "kaspa:qabc"}],
+                "new_events": [
+                    {
+                        "label": "mining",
+                        "address": "kaspa:qabc",
+                        "tx_id": "abcdef1234567890",
+                        "amount_sompi": 123456789,
+                    }
+                ],
+            },
+        }
+
+        text = watchtower.format_alert(report, event="indexer_watch_event")
+
+        self.assertIn("watched address tx", text)
+        self.assertIn("Indexer watch: watched=1 new_events=1", text)
+        self.assertIn("mining: tx=abcdef1234567890", text)
 
     def test_prune_jsonl_keeps_latest_entries(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -309,6 +604,26 @@ class WatchtowerUnitTests(unittest.TestCase):
                     }
                 ],
             },
+            "indexer": {
+                "enabled": True,
+                "ok": True,
+                "health_ok": True,
+                "metrics_ok": True,
+                "health_latency_ms": 15.5,
+                "metrics_latency_ms": 8.2,
+                "metrics": {
+                    "lag_seconds": 12,
+                    "checkpoint_age_seconds": 45,
+                    "schema_version": 22,
+                },
+            },
+            "indexer_watch": {
+                "enabled": True,
+                "ok": True,
+                "watch_addresses": [{"label": "mining", "address": "kaspa:qabc"}],
+                "events": [{"tx_id": "tx1"}],
+                "new_events": [{"tx_id": "tx2"}],
+            },
             "disk": {"free_gb": 100, "free_percent": 20},
         }
 
@@ -420,6 +735,14 @@ class WatchtowerUnitTests(unittest.TestCase):
         self.assertIn('kaspa_watchtower_whale_latest_amount_kas{node="test-node"} 1.25e+06', metrics)
         self.assertIn('kaspa_watchtower_whale_confirmed_candidates{node="test-node"} 1', metrics)
         self.assertIn('kaspa_watchtower_whale_confirmed_baseline_available{node="test-node"} 1', metrics)
+        self.assertIn('kaspa_watchtower_indexer_enabled{node="test-node"} 1', metrics)
+        self.assertIn('kaspa_watchtower_indexer_ok{node="test-node"} 1', metrics)
+        self.assertIn('kaspa_watchtower_indexer_syncing{node="test-node"} 0', metrics)
+        self.assertIn('kaspa_watchtower_indexer_lag_seconds{node="test-node"} 12', metrics)
+        self.assertIn('kaspa_watchtower_indexer_checkpoint_age_seconds{node="test-node"} 45', metrics)
+        self.assertIn('kaspa_watchtower_indexer_watch_enabled{node="test-node"} 1', metrics)
+        self.assertIn('kaspa_watchtower_indexer_watch_events_total{node="test-node"} 1', metrics)
+        self.assertIn('kaspa_watchtower_indexer_watch_new_events{node="test-node"} 1', metrics)
         self.assertIn("2.3e+08", metrics)
         self.assertIn('kaspa_watchtower_multi_node_available{node="test-node"} 1', metrics)
         self.assertIn('kaspa_watchtower_multi_node_verdict_value{node="test-node"} 1', metrics)
@@ -938,12 +1261,53 @@ class WatchtowerUnitTests(unittest.TestCase):
                     "transactions_per_second": 131.1,
                 },
             },
+            "indexer": {
+                "enabled": True,
+                "ok": True,
+                "health_ok": True,
+                "metrics_ok": True,
+                "metrics": {"lag_seconds": 4, "checkpoint_age_seconds": 9},
+            },
+            "indexer_watch": {
+                "enabled": True,
+                "ok": True,
+                "watch_addresses": [{"label": "mining", "address": "kaspa:qabc"}],
+                "events": [{"tx_id": "tx1"}],
+                "new_events": [],
+            },
             "disk": {"exists": True, "free_gb": 100, "free_percent": 20},
         }
 
         text = watchtower.format_summary(report)
 
         self.assertIn("processed=tx_rate=131.10/s age=2.5s tx=1311 blocks=92 window=10.0s", text)
+        self.assertIn(
+            "indexer=enabled=True state=unknown ok=True health=True syncing=False metrics=True lag=4 checkpoint_age=9",
+            text,
+        )
+        self.assertIn("indexer_watch=enabled=True ok=True addresses=1 events=1 new=0", text)
+
+    def test_format_summary_treats_disabled_indexer_as_skipped(self):
+        report = {
+            "node_name": "kaspa-mainnet-local",
+            "checked_at": "2026-06-13T21:30:00+09:00",
+            "status": "ok",
+            "severity": "ok",
+            "checks": [],
+            "grpc_metrics": {},
+            "progress": {},
+            "indexer": {"enabled": False},
+            "indexer_watch": {"enabled": False, "ok": True},
+            "disk": {"exists": True, "free_gb": 255, "free_percent": 27.5},
+        }
+
+        text = watchtower.format_summary(report)
+
+        self.assertIn(
+            "indexer=enabled=False state=disabled ok=True health=skipped "
+            "syncing=False metrics=skipped lag=disabled checkpoint_age=disabled",
+            text,
+        )
 
     def test_format_discord_status_is_operator_friendly(self):
         report = {
@@ -977,6 +1341,12 @@ class WatchtowerUnitTests(unittest.TestCase):
                 "entries": [{"address": "kaspa:qqqq", "balance_sompi": 123456789}],
                 "total_sompi": 123456789,
             },
+            "indexer": {
+                "enabled": True,
+                "ok": True,
+                "state": "syncing",
+                "metrics": {"lag_seconds": 30, "checkpoint_age_seconds": 45},
+            },
         }
 
         text = watchtower.format_discord_status(report)
@@ -986,6 +1356,7 @@ class WatchtowerUnitTests(unittest.TestCase):
         self.assertIn("node=network=mainnet synced=True peers=8 active=8 daa=12345", text)
         self.assertIn("ops=incident=10.0m maintenance=active", text)
         self.assertIn("wallet=enabled=True ok=True addresses=1 total=1.23456789 KAS", text)
+        self.assertIn("indexer=enabled=True state=syncing ok=True lag=30 checkpoint_age=45", text)
         self.assertIn("failed_checks=disk_free", text)
 
     def test_wallet_balances_are_watch_only_grpc_reads(self):
@@ -1526,7 +1897,7 @@ class WatchtowerUnitTests(unittest.TestCase):
                 "detail": "mempool read ok",
                 "events": [
                     {
-                        "observed_at": "2026-06-11T08:00:00+09:00",
+                        "observed_at": dt.datetime.now().astimezone().isoformat(),
                         "source": "mempool",
                         "tx_id": "abcdef1234567890",
                         "amount_sompi": 125_000_000_000_000,
@@ -1692,6 +2063,44 @@ class WatchtowerUnitTests(unittest.TestCase):
         self.assertIn("상태: mainnet sync completed", text)
         self.assertIn("require_synced=true", text)
 
+    def test_format_alert_reports_indexer_ready_event(self):
+        report = {
+            "node_name": "kaspa-mainnet-local",
+            "checked_at": "2026-06-13T17:40:00+09:00",
+            "severity": "ok",
+            "status": "ok",
+            "checks": [],
+            "latest_throughput": None,
+            "grpc_metrics": {
+                "ok": True,
+                "is_synced": True,
+                "peer_count": 8,
+                "network_id": "mainnet",
+                "virtual_daa_score": 500,
+            },
+            "indexer": {
+                "enabled": True,
+                "state": "up",
+                "metrics": {
+                    "checkpoint_age_seconds": 12,
+                    "lag_seconds": 0,
+                },
+            },
+            "progress": {
+                "relay_blocks_in_window": 10,
+                "relay_events_in_window": 5,
+                "window_minutes": 10,
+            },
+            "recovery": {"action": "none"},
+        }
+
+        text = watchtower.format_alert(report, "ok", "ok", event="indexer_ready")
+
+        self.assertIn("indexer ready", text)
+        self.assertIn("상태: indexer catch-up completed", text)
+        self.assertIn("state=up", text)
+        self.assertIn("checkpoint_age=12", text)
+
     def test_config_validation_rejects_invalid_numeric_settings(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
@@ -1745,6 +2154,27 @@ class WatchtowerUnitTests(unittest.TestCase):
         self.assertIn("prometheus_metrics_path.suffix", failed)
         self.assertIn("expected path ending in .sqlite or .db", failed["sqlite_history_path.suffix"])
         self.assertIn("expected path ending in .prom", failed["prometheus_metrics_path.suffix"])
+
+    def test_config_validation_checks_indexer_settings(self):
+        config = copy.deepcopy(watchtower.DEFAULT_CONFIG)
+        config["indexer"]["base_url"] = "localhost:8500"
+        config["indexer"]["timeout_seconds"] = 0
+        config["indexer"]["require_metrics"] = "yes"
+        config["indexer_watch"]["event_history_entries"] = 0
+        config["indexer_watch"]["watch_addresses"] = [{"label": "bad"}]
+
+        failed = {
+            check.name: check.detail
+            for check in watchtower.config_validation_checks(config)
+            if not check.ok
+        }
+
+        self.assertIn("indexer.base_url", failed)
+        self.assertIn("indexer.timeout_seconds", failed)
+        self.assertIn("indexer.require_metrics", failed)
+        self.assertIn("indexer_watch.event_history_entries", failed)
+        self.assertIn("indexer_watch.watch_addresses", failed)
+        self.assertIn("expected empty or http(s) URL", failed["indexer.base_url"])
 
     def test_config_validation_checks_multi_node_env_thresholds(self):
         with mock.patch.dict(os.environ, {"MULTI_NODE_DAA_LAG_WARNING": "nope"}):
@@ -2349,6 +2779,8 @@ class WatchtowerUnitTests(unittest.TestCase):
             self.assertIn("stale_node", html)
             self.assertIn('data-timeframe-target="15m"', html)
             self.assertIn('data-timeframe-panel="15m"', html)
+            self.assertIn('data-timeframe-target="all"', html)
+            self.assertIn('data-timeframe-panel="all"', html)
             self.assertIn('data-liquidation-target="12h"', html)
             self.assertIn('data-liquidation-panel="12h"', html)
             self.assertIn("Hashrate", html)
@@ -2359,7 +2791,23 @@ class WatchtowerUnitTests(unittest.TestCase):
             self.assertIn("KAS/USDT 1D", html)
             self.assertIn("KAS/USDT 1W", html)
             self.assertIn("KAS/USDT 1M", html)
+            self.assertIn("KAS/USDT All Bollinger", html)
+            self.assertIn("Market Indicators", html)
+            self.assertIn("RSI, MACD, Bollinger, volume, and BTC-relative by timeframe", html)
+            self.assertIn("RSI --", html)
+            self.assertIn("<span>MACD</span><strong>pending</strong>", html)
+            self.assertIn("<span>BB</span><strong>pending</strong>", html)
+            self.assertIn("<span>Vol</span><strong>pending</strong>", html)
+            self.assertIn("<span>BTC</span><strong>pending</strong>", html)
+            self.assertIn("KAS/USDT vs BTC/USDT 15m", html)
             self.assertIn("KAS/USDT vs BTC/USDT 1D", html)
+            self.assertIn("KAS/USDT vs BTC/USDT 4h", html)
+            self.assertIn("KAS/USDT vs BTC/USDT 1W", html)
+            self.assertIn("KAS/USDT vs BTC/USDT 1M", html)
+            self.assertLess(html.index("KAS/USDT vs BTC/USDT 15m"), html.index("KAS/USDT vs BTC/USDT 4h"))
+            self.assertLess(html.index("KAS/USDT vs BTC/USDT 4h"), html.index("KAS/USDT vs BTC/USDT 1D"))
+            self.assertLess(html.index("KAS/USDT vs BTC/USDT 1D"), html.index("KAS/USDT vs BTC/USDT 1W"))
+            self.assertLess(html.index("KAS/USDT vs BTC/USDT 1W"), html.index("KAS/USDT vs BTC/USDT 1M"))
             self.assertIn("KAS Exchange Volume 1D", html)
             self.assertIn("KAS/USDT Futures Positioning", html)
             self.assertIn("KAS/USDT Futures Trend 7D", html)
@@ -2386,7 +2834,12 @@ class WatchtowerUnitTests(unittest.TestCase):
             self.assertIn('id="market-chart-1d"', html)
             self.assertIn('id="market-chart-1w"', html)
             self.assertIn('id="market-chart-1m"', html)
+            self.assertIn('id="market-chart-all"', html)
+            self.assertIn('id="market-cross-chart-15m"', html)
             self.assertIn('id="market-cross-chart"', html)
+            self.assertIn('id="market-cross-chart-4h"', html)
+            self.assertIn('id="market-cross-chart-1w"', html)
+            self.assertIn('id="market-cross-chart-1m"', html)
             self.assertIn('id="market-volume-chart"', html)
             self.assertIn('id="market-volume-legend"', html)
             self.assertIn('id="futures-mark"', html)
@@ -2409,11 +2862,18 @@ class WatchtowerUnitTests(unittest.TestCase):
             self.assertIn('id="market-trend-1d"', html)
             self.assertIn('id="market-trend-1w"', html)
             self.assertIn('id="market-trend-1m"', html)
+            self.assertIn('id="market-trend-all"', html)
             self.assertIn('id="market-rsi-15m"', html)
             self.assertIn('id="market-rsi-4h"', html)
             self.assertIn('id="market-rsi-1d"', html)
             self.assertIn('id="market-rsi-1w"', html)
             self.assertIn('id="market-rsi-1m"', html)
+            self.assertIn('id="market-rsi-all"', html)
+            self.assertIn('id="market-rsi-card-15m"', html)
+            self.assertIn('id="market-rsi-card-4h"', html)
+            self.assertIn('id="market-rsi-card-1d"', html)
+            self.assertIn('id="market-rsi-card-1w"', html)
+            self.assertIn('id="market-rsi-card-1m"', html)
             self.assertIn('id="market-signal-list"', html)
             self.assertIn("Trend pending", html)
             self.assertIn("RSI pending", html)
@@ -2435,6 +2895,11 @@ class WatchtowerUnitTests(unittest.TestCase):
             self.assertIn('id="tab-mining"', html)
             self.assertIn("Mining Status", html)
             self.assertIn("macOS GPU Plan", html)
+            self.assertIn('data-tab-target="tab-indexer"', html)
+            self.assertIn('id="tab-indexer"', html)
+            self.assertIn("Indexer Watchlist", html)
+            self.assertIn("Watched Address Events", html)
+            self.assertIn("make discord-watch-add", html)
             self.assertIn('data-tab-target="tab-whales"', html)
             self.assertIn('id="tab-whales"', html)
             self.assertIn("Whale Watch", html)
@@ -2445,6 +2910,9 @@ class WatchtowerUnitTests(unittest.TestCase):
             self.assertIn("kaspa-watchtower-active-timeframe", html)
             self.assertIn("kaspa-watchtower-active-liquidation", html)
             self.assertIn("drawMarketCrossChart", html)
+            self.assertIn("marketConfig.cross.map(refreshMarketCrossChart)", html)
+            self.assertIn("independentRange: true", html)
+            self.assertIn("const xTime = (time)", html)
             self.assertIn("drawMarketVolumeChart", html)
             self.assertIn("marketVolumeRows", html)
             self.assertIn("marketVolumeDataset", html)
@@ -2460,11 +2928,22 @@ class WatchtowerUnitTests(unittest.TestCase):
             self.assertIn("formatFundingPercent", html)
             self.assertIn("Estimated from Bybit linear OI/candles", html)
             self.assertIn("marketEmaPoints", html)
+            self.assertIn("marketBollingerPoints", html)
+            self.assertIn("marketPathFromPoints", html)
             self.assertIn("marketTrendState", html)
             self.assertIn("marketTrendBadge", html)
             self.assertIn("marketRsiValue", html)
             self.assertIn("marketRsiState", html)
             self.assertIn("marketRsiBadge", html)
+            self.assertIn("marketRsiCard", html)
+            self.assertIn("marketUpdateIndicatorRows", html)
+            self.assertIn("marketIndicatorRow", html)
+            self.assertIn("marketMacdState", html)
+            self.assertIn("marketBollingerPositionState", html)
+            self.assertIn("marketVolumeSpikeState", html)
+            self.assertIn("marketRelativeStrengthState", html)
+            self.assertIn("market-indicator-card-grid", html)
+            self.assertIn("market-indicator-row", html)
             self.assertIn("marketRsiState(candles, 14)", html)
             self.assertIn("marketSignalState", html)
             self.assertIn("marketSignalWatch", html)
@@ -2475,6 +2954,11 @@ class WatchtowerUnitTests(unittest.TestCase):
             self.assertIn("marketSourceDetail", html)
             self.assertIn("marketErrorDetail", html)
             self.assertIn("marketSourceOrder", html)
+            self.assertIn("KAS/BTC cross 15m", html)
+            self.assertIn("KAS/BTC cross 4h", html)
+            self.assertIn("KAS/BTC cross 1D", html)
+            self.assertIn("KAS/BTC cross 1W", html)
+            self.assertIn("KAS/BTC cross 1M", html)
             self.assertIn("marketRenderSourceStates", html)
             self.assertIn("waiting for refresh", html)
             self.assertIn("refreshMs: 60 * 1000", html)
@@ -2490,6 +2974,9 @@ class WatchtowerUnitTests(unittest.TestCase):
             self.assertIn("Downtrend", html)
             self.assertIn("Neutral", html)
             self.assertIn("market-ema-line", html)
+            self.assertIn("market-bollinger-line", html)
+            self.assertIn("market-bollinger-fill", html)
+            self.assertIn('textContent = "BB" + String(bollingerConfig.period)', html)
             self.assertIn("market-trend-badge", html)
             self.assertIn("market-rsi-badge", html)
             self.assertIn("market-signal-row", html)
@@ -2503,6 +2990,7 @@ class WatchtowerUnitTests(unittest.TestCase):
             self.assertIn("lookbackMonths: 1", html)
             self.assertIn("lookbackMs: 365 * 24 * 60 * 60 * 1000", html)
             self.assertIn("limit: 1000", html)
+            self.assertIn("bollinger: { period: 20, deviations: 2 }", html)
             self.assertIn("limit: 32", html)
             self.assertIn("emaPeriod: 21", html)
             self.assertIn("emaPeriod: 12", html)
@@ -2524,6 +3012,10 @@ class WatchtowerUnitTests(unittest.TestCase):
             self.assertIn("interval=D", html)
             self.assertIn("interval=W", html)
             self.assertIn("interval=M", html)
+            self.assertIn("symbol=BTCUSDT&interval=15&limit=96", html)
+            self.assertIn("symbol=BTCUSDT&interval=240&limit=48", html)
+            self.assertIn("symbol=BTCUSDT&interval=W&limit=60", html)
+            self.assertIn("symbol=BTCUSDT&interval=M&limit=1000", html)
             self.assertIn("market-axis-label", html)
             self.assertIn('month: "2-digit"', html)
             self.assertIn('hour: "2-digit"', html)

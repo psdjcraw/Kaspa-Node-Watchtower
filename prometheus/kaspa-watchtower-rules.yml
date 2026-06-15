@@ -184,3 +184,53 @@ groups:
         annotations:
           summary: "Kaspa multi-node comparison found DAA or block lag"
           description: "History node {{ $labels.history_node }} on {{ $labels.network }} is lagging by flag {{ $labels.flag }}."
+
+      - alert: KaspaIndexerApiDown
+        expr: (kaspa_watchtower_indexer_enabled{job="kaspa-watchtower"} == 1) and on(job,node) (kaspa_watchtower_indexer_health_ok{job="kaspa-watchtower"} == 0)
+        for: 2m
+        labels:
+          severity: critical
+          service: kaspa-watchtower
+        annotations:
+          summary: "Kaspa indexer API is unavailable"
+          description: "Watchtower cannot read the configured indexer health endpoint for node {{ $labels.node }}."
+
+      - alert: KaspaIndexerMetricsUnavailable
+        expr: (kaspa_watchtower_indexer_enabled{job="kaspa-watchtower"} == 1) and on(job,node) (kaspa_watchtower_indexer_metrics_ok{job="kaspa-watchtower"} == 0)
+        for: 5m
+        labels:
+          severity: warning
+          service: kaspa-watchtower
+        annotations:
+          summary: "Kaspa indexer metrics are unavailable"
+          description: "Watchtower cannot read indexer metrics for node {{ $labels.node }}."
+
+      - alert: KaspaIndexerLagHigh
+        expr: kaspa_watchtower_indexer_lag_seconds{job="kaspa-watchtower"} > 60
+        for: 5m
+        labels:
+          severity: warning
+          service: kaspa-watchtower
+        annotations:
+          summary: "Kaspa indexer lag is high"
+          description: "Indexer lag is {{ $value }} seconds for node {{ $labels.node }}."
+
+      - alert: KaspaIndexerCheckpointStale
+        expr: kaspa_watchtower_indexer_checkpoint_age_seconds{job="kaspa-watchtower"} > 300
+        for: 5m
+        labels:
+          severity: warning
+          service: kaspa-watchtower
+        annotations:
+          summary: "Kaspa indexer checkpoint is stale"
+          description: "Indexer checkpoint age is {{ $value }} seconds for node {{ $labels.node }}."
+
+      - alert: KaspaIndexerWatchlistUnavailable
+        expr: (kaspa_watchtower_indexer_watch_enabled{job="kaspa-watchtower"} == 1) and on(job,node) (kaspa_watchtower_indexer_watch_ok{job="kaspa-watchtower"} == 0)
+        for: 5m
+        labels:
+          severity: warning
+          service: kaspa-watchtower
+        annotations:
+          summary: "Kaspa indexer watchlist is unavailable"
+          description: "Watchtower could not poll one or more configured indexer watch addresses for node {{ $labels.node }}."

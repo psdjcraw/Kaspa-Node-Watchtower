@@ -81,6 +81,7 @@ Confirm the port:
 
 ```bash
 nc -vz 127.0.0.1 16110
+nc -vz 127.0.0.1 17110
 ```
 
 Check process logs:

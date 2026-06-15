@@ -117,6 +117,7 @@ Current target environment:
 - [Sample status reports](docs/sample-status-reports.md)
 - [Long-lived storage options](docs/storage-options.md)
 - [Packaging options](docs/packaging-options.md)
+- [Indexer integration plan](docs/indexer-integration-plan.md)
 - [v0.7.0 release notes](docs/release-notes-v0.7.0.md)
 - [v0.6.1 release notes](docs/release-notes-v0.6.1.md)
 - [v0.6.0 release notes](docs/release-notes-v0.6.0.md)
@@ -178,11 +179,38 @@ make discord-wallet
 make discord-wallet-txs
 make discord-mining
 make discord-whales
+make discord-tx TX_ID="..."
+make discord-address ADDRESS="kaspa:q..."
+make discord-balance ADDRESS="kaspa:q..."
+make discord-utxos ADDRESS="kaspa:q..."
+make discord-search QUERY="..."
+make discord-watch-list
+make discord-watch-add ADDRESS="kaspa:q..." LABEL="treasury"
+make discord-watch-remove ADDRESS="kaspa:q..."
+make discord-watch-test ADDRESS="kaspa:q..." LABEL="treasury"
+make indexer-up
+make indexer-smoke
+make indexer-logs
+make indexer-down
 make mining-set-address MINING_ADDRESS="kaspa:q..."
 make mining-clear-address
 make discord-mute MUTE_MINUTES=30 MUTE_REASON="kaspad upgrade"
 make discord-unmute
 ```
+
+Local indexer stack:
+
+```bash
+make indexer-up
+make indexer-smoke
+open http://127.0.0.1:8500/admin
+```
+
+The bundled compose file starts PostgreSQL and the local `simply-kaspa-indexer`
+checkout from `../simply-kaspa-indexer` by default. It uses the existing local
+mainnet kaspad wRPC Borsh endpoint at `ws://host.docker.internal:17110`. Set
+`SIMPLY_KASPA_INDEXER_DIR=/path/to/simply-kaspa-indexer` if the checkout lives
+elsewhere.
 
 Enable watch-only wallet monitoring by adding address labels to `config.json`:
 
