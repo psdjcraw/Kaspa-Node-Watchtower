@@ -3,9 +3,12 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-PYTHON_BIN="${PYTHON_BIN:-python3}"
-if [ -x ".venv/bin/python" ]; then
+if [ -n "${PYTHON_BIN:-}" ]; then
+  PYTHON_BIN="$PYTHON_BIN"
+elif [ -x ".venv/bin/python" ]; then
   PYTHON_BIN=".venv/bin/python"
+else
+  PYTHON_BIN="python3"
 fi
 
 TMP_DIR="$(mktemp -d)"
@@ -19,7 +22,7 @@ trap 'rm -rf "$TMP_DIR"' EXIT
   proto/messages.proto
 
 for generated in messages_pb2.py messages_pb2_grpc.py rpc_pb2.py rpc_pb2_grpc.py; do
-  diff -u "generated_proto/$generated" "$TMP_DIR/$generated" >/dev/null
+  diff -u "generated_proto/$generated" "$TMP_DIR/$generated"
 done
 
 printf 'OK generated protobuf files are current\n'
