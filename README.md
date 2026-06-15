@@ -66,8 +66,9 @@ which supports a more resilient decentralized network.
   RSI 14 badges, a compact Signal Watch summary, and operator-focused time
   ranges from intraday through full monthly history; the market section also
   shows daily KAS exchange-volume bars for Gate, MEXC, KuCoin, Bybit, Bitget,
-  Kraken, HTX, and Total, plus estimated Bybit KAS/USDT futures liquidation
-  heatmaps for 12-hour, 24-hour, 1-week, and 1-month ranges and a linear perp
+  Kraken, HTX, and Total, cross-exchange spot price dispersion for Bybit,
+  Gate, MEXC, KuCoin, Bitget, Kraken, and HTX, plus estimated Bybit KAS/USDT
+  futures liquidation heatmaps for 12-hour, 24-hour, 1-week, and 1-month ranges and a linear perp
   positioning panel for funding, basis, open interest, OI/volume crowding, and
   funding z-score context; a 7-day futures trend panel plots open interest with
   funding-rate bars; browser

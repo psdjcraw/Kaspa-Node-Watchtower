@@ -94,6 +94,12 @@ MARKET_COLUMNS = [
     "spot_high_24h",
     "spot_low_24h",
     "spot_volume_24h",
+    "spot_price_median",
+    "spot_price_min",
+    "spot_price_max",
+    "spot_price_dispersion_pct",
+    "spot_price_sources",
+    "spot_price_source_errors",
     "futures_mark_price",
     "futures_index_price",
     "futures_basis_pct",
@@ -214,6 +220,12 @@ def create_schema(connection: sqlite3.Connection) -> None:
           spot_high_24h real,
           spot_low_24h real,
           spot_volume_24h real,
+          spot_price_median real,
+          spot_price_min real,
+          spot_price_max real,
+          spot_price_dispersion_pct real,
+          spot_price_sources integer,
+          spot_price_source_errors integer,
           futures_mark_price real,
           futures_index_price real,
           futures_basis_pct real,
@@ -244,6 +256,12 @@ def create_schema(connection: sqlite3.Connection) -> None:
         connection,
         "market_snapshots",
         {
+            "spot_price_median": "real",
+            "spot_price_min": "real",
+            "spot_price_max": "real",
+            "spot_price_dispersion_pct": "real",
+            "spot_price_sources": "integer",
+            "spot_price_source_errors": "integer",
             "futures_funding_z_score": "real",
             "futures_oi_volume_ratio": "real",
         },
@@ -456,7 +474,9 @@ def history_summary(connection: sqlite3.Connection, days: int) -> dict[str, Any]
         connection.execute(
             """
             select checked_at, source, ok, error, spot_last_price, spot_change_24h,
-                   spot_volume_24h, futures_basis_pct, futures_funding_rate,
+                   spot_volume_24h, spot_price_median, spot_price_min,
+                   spot_price_max, spot_price_dispersion_pct, spot_price_sources,
+                   spot_price_source_errors, futures_basis_pct, futures_funding_rate,
                    futures_funding_apr_pct, futures_funding_z_score,
                    futures_open_interest, futures_open_interest_value,
                    futures_volume_24h, futures_oi_volume_ratio
@@ -554,6 +574,16 @@ def history_summary(connection: sqlite3.Connection, days: int) -> dict[str, Any]
         "latest_spot_price": None if latest_market is None else numeric(latest_market["spot_last_price"]),
         "latest_spot_change_24h": None if latest_market is None else numeric(latest_market["spot_change_24h"]),
         "latest_spot_volume_24h": None if latest_market is None else numeric(latest_market["spot_volume_24h"]),
+        "latest_spot_price_median": None if latest_market is None else numeric(latest_market["spot_price_median"]),
+        "latest_spot_price_min": None if latest_market is None else numeric(latest_market["spot_price_min"]),
+        "latest_spot_price_max": None if latest_market is None else numeric(latest_market["spot_price_max"]),
+        "latest_spot_price_dispersion_pct": None
+        if latest_market is None
+        else numeric(latest_market["spot_price_dispersion_pct"]),
+        "latest_spot_price_sources": None if latest_market is None else numeric(latest_market["spot_price_sources"]),
+        "latest_spot_price_source_errors": None
+        if latest_market is None
+        else numeric(latest_market["spot_price_source_errors"]),
         "latest_futures_basis_pct": None if latest_market is None else numeric(latest_market["futures_basis_pct"]),
         "avg_futures_basis_pct": None if not market_basis else sum(market_basis) / len(market_basis),
         "latest_futures_funding_rate": None if latest_market is None else numeric(latest_market["futures_funding_rate"]),
@@ -794,6 +824,15 @@ def print_history_summary(summary: dict[str, Any]) -> None:
         f"spot={format_market_price(summary['latest_spot_price'])} "
         f"24h={format_market_fraction_percent(summary['latest_spot_change_24h'])} "
         f"volume={format_market_volume(summary['latest_spot_volume_24h'])}"
+    )
+    print(
+        "market_spot_dispersion="
+        f"median={format_market_price(summary['latest_spot_price_median'])} "
+        f"min={format_market_price(summary['latest_spot_price_min'])} "
+        f"max={format_market_price(summary['latest_spot_price_max'])} "
+        f"dispersion={format_market_percent(summary['latest_spot_price_dispersion_pct'])} "
+        f"sources={format_optional_number(summary['latest_spot_price_sources'])} "
+        f"errors={format_optional_number(summary['latest_spot_price_source_errors'])}"
     )
     print(
         "market_futures="

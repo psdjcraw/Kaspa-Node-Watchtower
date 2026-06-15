@@ -657,6 +657,12 @@ class WatchtowerUnitTests(unittest.TestCase):
                 "spot_last_price": 0.0305,
                 "spot_change_24h": 0.012,
                 "spot_volume_24h": 42000000,
+                "spot_price_median": 0.0304,
+                "spot_price_min": 0.0301,
+                "spot_price_max": 0.0308,
+                "spot_price_dispersion_pct": 2.3026,
+                "spot_price_sources": 7,
+                "spot_price_source_errors": 0,
                 "futures_basis_pct": -0.13,
                 "futures_funding_rate": 0.0001,
                 "futures_funding_apr_pct": 10.95,
@@ -727,6 +733,8 @@ class WatchtowerUnitTests(unittest.TestCase):
         self.assertIn("kaspa_watchtower_benchmark_min_disk_free_gb", metrics)
         self.assertIn('kaspa_watchtower_market_spot_price_usdt{node="test-node",source="Bybit KAS/USDT"} 0.0305', metrics)
         self.assertIn("kaspa_watchtower_market_futures_basis_percent", metrics)
+        self.assertIn("kaspa_watchtower_market_spot_price_dispersion_percent", metrics)
+        self.assertIn('kaspa_watchtower_market_spot_price_sources{node="test-node",source="Bybit KAS/USDT"} 7', metrics)
         self.assertIn('kaspa_watchtower_market_futures_funding_z_score{node="test-node",source="Bybit KAS/USDT"} 1.25', metrics)
         self.assertIn("kaspa_watchtower_market_futures_open_interest_kas", metrics)
         self.assertIn("kaspa_watchtower_market_futures_oi_volume_ratio", metrics)
@@ -813,6 +821,18 @@ class WatchtowerUnitTests(unittest.TestCase):
         self.assertTrue(
             any(
                 target.get("expr") == 'kaspa_watchtower_market_spot_price_usdt{node="$node"}'
+                for target in spot_targets
+            )
+        )
+        self.assertTrue(
+            any(
+                target.get("expr") == 'kaspa_watchtower_market_spot_price_median_usdt{node="$node"}'
+                for target in spot_targets
+            )
+        )
+        self.assertTrue(
+            any(
+                target.get("expr") == 'kaspa_watchtower_market_spot_price_dispersion_percent{node="$node"}'
                 for target in spot_targets
             )
         )
@@ -2490,6 +2510,14 @@ class WatchtowerUnitTests(unittest.TestCase):
                 "high_24h": "0.033",
                 "low_24h": "0.030",
                 "volume_24h": "98765432",
+                "price_dispersion": {
+                    "median": 0.0312,
+                    "min": 0.0310,
+                    "max": 0.0315,
+                    "dispersion_pct": 1.602564,
+                    "sources": 7,
+                    "errors": 0,
+                },
             },
             "futures": {
                 "mark_price": "0.0313",
@@ -2511,6 +2539,9 @@ class WatchtowerUnitTests(unittest.TestCase):
         self.assertIn("Kaspa market snapshot: Bybit KAS/USDT", text)
         self.assertIn("spot=price=$0.03123 24h=+1.23%", text)
         self.assertIn("volume=98.77M KAS", text)
+        self.assertIn("spot_dispersion=median=$0.03120", text)
+        self.assertIn("dispersion=+1.60%", text)
+        self.assertIn("sources=7 errors=0", text)
         self.assertIn("basis=+0.32%", text)
         self.assertIn("funding=+0.01%", text)
         self.assertIn("funding_apr=+5.47%", text)
@@ -2551,13 +2582,39 @@ class WatchtowerUnitTests(unittest.TestCase):
                 ]
             },
         }
-        with mock.patch("watchtower.fetch_json_url", side_effect=[spot_payload, futures_payload]):
+        price_payloads = [
+            [{"last": "0.0302"}],
+            {"price": "0.0301"},
+            {"data": {"price": "0.0304"}},
+            {"data": [{"lastPr": "0.0305"}]},
+            {"result": {"KASUSD": {"c": ["0.0306"]}}},
+            {"tick": {"close": 0.0303}},
+        ]
+        with mock.patch("watchtower.fetch_json_url", side_effect=[spot_payload, futures_payload, *price_payloads]):
             snapshot = watchtower.fetch_market_snapshot(timeout=1)
 
         self.assertTrue(snapshot["ok"])
         self.assertAlmostEqual(snapshot["futures"]["basis_pct"], 1.0)
         self.assertAlmostEqual(snapshot["futures"]["funding_apr_pct"], 10.95)
         self.assertAlmostEqual(snapshot["futures"]["oi_volume_ratio"], 2 / 3)
+        self.assertEqual(snapshot["spot"]["price_dispersion"]["sources"], 7)
+        self.assertAlmostEqual(snapshot["spot"]["price_dispersion"]["median"], 0.0303)
+        self.assertAlmostEqual(snapshot["spot"]["price_dispersion"]["dispersion_pct"], (0.0306 - 0.0300) / 0.0303 * 100)
+
+    def test_market_spot_price_dispersion_summarizes_sources(self):
+        summary = watchtower.market_spot_price_dispersion(
+            [
+                {"source": "A", "price": 0.030},
+                {"source": "B", "price": 0.032},
+                {"source": "C", "price": 0.031},
+            ],
+            errors=1,
+        )
+
+        self.assertEqual(summary["sources"], 3)
+        self.assertEqual(summary["errors"], 1)
+        self.assertAlmostEqual(summary["median"], 0.031)
+        self.assertAlmostEqual(summary["dispersion_pct"], (0.032 - 0.030) / 0.031 * 100)
 
     def test_market_snapshot_item_adds_positioning_risk_metrics(self):
         snapshot = {
@@ -2618,6 +2675,12 @@ class WatchtowerUnitTests(unittest.TestCase):
                         "spot_last_price": 0.0305,
                         "spot_change_24h": 0.012,
                         "spot_volume_24h": 42000000,
+                        "spot_price_median": 0.0304,
+                        "spot_price_min": 0.0301,
+                        "spot_price_max": 0.0308,
+                        "spot_price_dispersion_pct": 2.3026,
+                        "spot_price_sources": 7,
+                        "spot_price_source_errors": 0,
                         "futures_basis_pct": -0.13,
                         "futures_funding_rate": 0.0001,
                         "futures_funding_apr_pct": 10.95,
@@ -2657,6 +2720,9 @@ class WatchtowerUnitTests(unittest.TestCase):
         self.assertIn("market_snapshots imported=1 total=1", completed.stdout)
         self.assertIn("market_snapshots=1 successful=1", completed.stdout)
         self.assertIn("market_latest=2026-06-07T10:01:00+09:00 source=Bybit KAS/USDT spot=$0.03050", completed.stdout)
+        self.assertIn("market_spot_dispersion=median=$0.03040", completed.stdout)
+        self.assertIn("dispersion=+2.30%", completed.stdout)
+        self.assertIn("sources=7 errors=0", completed.stdout)
         self.assertIn("market_futures=basis=-0.13%", completed.stdout)
         self.assertIn("funding_z=+1.50sd", completed.stdout)
         self.assertIn("oi_volume=2.95x", completed.stdout)

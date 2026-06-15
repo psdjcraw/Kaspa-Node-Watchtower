@@ -97,6 +97,9 @@ Last verified manually on `2026-06-08`:
 - Market watch source: Bybit public spot ticker and 15-minute kline endpoints,
   plus 4-hour and daily kline endpoints, fetched by the browser when
   `status.html` is open
+- Spot price dispersion: Bybit, Gate, MEXC, KuCoin, Bitget, Kraken, and HTX
+  spot prices are summarized as median/min/max range, dispersion percent, and
+  source/error counts in persisted market snapshots
 - Exchange-volume chart sources: Gate, MEXC, KuCoin, Bybit, Bitget, Kraken,
   and HTX public daily candles, rendered as KAS base-volume bars plus Total
 - Futures liquidation maps: estimated 12-hour, 24-hour, 1-week, and 1-month

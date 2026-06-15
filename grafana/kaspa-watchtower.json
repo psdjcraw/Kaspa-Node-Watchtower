@@ -1423,6 +1423,16 @@
           "expr": "kaspa_watchtower_market_spot_price_usdt{node=\"$node\"}",
           "legendFormat": "{{source}} spot",
           "refId": "A"
+        },
+        {
+          "expr": "kaspa_watchtower_market_spot_price_median_usdt{node=\"$node\"}",
+          "legendFormat": "{{source}} median",
+          "refId": "B"
+        },
+        {
+          "expr": "kaspa_watchtower_market_spot_price_dispersion_percent{node=\"$node\"}",
+          "legendFormat": "{{source}} dispersion %",
+          "refId": "C"
         }
       ],
       "title": "KAS/USDT Spot Price",

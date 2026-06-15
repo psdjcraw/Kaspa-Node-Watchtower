@@ -2710,6 +2710,110 @@ def market_api_list(payload: dict[str, Any], source: str) -> list[Any]:
     return rows
 
 
+def market_payload_value(payload: Any, path: list[Any]) -> Any:
+    current = payload
+    for part in path:
+        if isinstance(part, int):
+            if not isinstance(current, list) or len(current) <= part:
+                return None
+            current = current[part]
+        else:
+            if not isinstance(current, dict):
+                return None
+            current = current.get(part)
+    return current
+
+
+MARKET_SPOT_PRICE_SOURCES = [
+    {
+        "source": "Gate",
+        "url": "https://api.gateio.ws/api/v4/spot/tickers?currency_pair=KAS_USDT",
+        "path": [0, "last"],
+    },
+    {
+        "source": "MEXC",
+        "url": "https://api.mexc.com/api/v3/ticker/price?symbol=KASUSDT",
+        "path": ["price"],
+    },
+    {
+        "source": "KuCoin",
+        "url": "https://api.kucoin.com/api/v1/market/orderbook/level1?symbol=KAS-USDT",
+        "path": ["data", "price"],
+    },
+    {
+        "source": "Bitget",
+        "url": "https://api.bitget.com/api/v2/spot/market/tickers?symbol=KASUSDT",
+        "path": ["data", 0, "lastPr"],
+    },
+    {
+        "source": "Kraken",
+        "url": "https://api.kraken.com/0/public/Ticker?pair=KASUSD",
+        "path": ["result", "*", "c", 0],
+    },
+    {
+        "source": "HTX",
+        "url": "https://api.huobi.pro/market/detail/merged?symbol=kasusdt",
+        "path": ["tick", "close"],
+    },
+]
+
+
+def market_price_from_payload(payload: Any, path: list[Any]) -> float | None:
+    if "*" in path:
+        wildcard_index = path.index("*")
+        prefix = path[:wildcard_index]
+        suffix = path[wildcard_index + 1 :]
+        parent = market_payload_value(payload, prefix)
+        if not isinstance(parent, dict):
+            return None
+        for value in parent.values():
+            price = numeric(market_payload_value(value, suffix))
+            if price is not None:
+                return price
+        return None
+    return numeric(market_payload_value(payload, path))
+
+
+def market_spot_price_dispersion(prices: list[dict[str, Any]], errors: int = 0) -> dict[str, Any]:
+    values = sorted(price for item in prices if (price := numeric(item.get("price"))) is not None)
+    if not values:
+        return {"sources": 0, "errors": errors}
+    middle = len(values) // 2
+    median = values[middle] if len(values) % 2 else (values[middle - 1] + values[middle]) / 2
+    low = values[0]
+    high = values[-1]
+    dispersion_pct = None if median == 0 else ((high - low) / median) * 100
+    return {
+        "median": median,
+        "min": low,
+        "max": high,
+        "dispersion_pct": dispersion_pct,
+        "sources": len(values),
+        "errors": errors,
+    }
+
+
+def fetch_market_spot_price_sources(bybit_spot: dict[str, Any], timeout: float = 6.0) -> dict[str, Any]:
+    prices = []
+    errors = 0
+    bybit_price = numeric(bybit_spot.get("lastPrice"))
+    if bybit_price is not None:
+        prices.append({"source": "Bybit", "price": bybit_price})
+    else:
+        errors += 1
+    for source in MARKET_SPOT_PRICE_SOURCES:
+        try:
+            payload = fetch_json_url(str(source["url"]), timeout=timeout)
+            price = market_price_from_payload(payload, list(source["path"]))
+            if price is None:
+                errors += 1
+                continue
+            prices.append({"source": source["source"], "price": price})
+        except (OSError, urllib.error.URLError, ValueError, json.JSONDecodeError):
+            errors += 1
+    return {"prices": prices, "dispersion": market_spot_price_dispersion(prices, errors=errors)}
+
+
 def format_market_price(value: Any) -> str:
     parsed = numeric(value)
     if parsed is None:
@@ -2811,6 +2915,7 @@ def fetch_market_snapshot(timeout: float = 6.0) -> dict[str, Any]:
     funding_rate = numeric(futures.get("fundingRate"))
     funding_interval = numeric(futures.get("fundingIntervalHour")) or 8
     funding_apr = None if funding_rate is None else funding_rate * (24 / funding_interval) * 365 * 100
+    spot_sources = fetch_market_spot_price_sources(spot, timeout=timeout)
     return {
         "ok": True,
         "source": "Bybit KAS/USDT",
@@ -2820,6 +2925,8 @@ def fetch_market_snapshot(timeout: float = 6.0) -> dict[str, Any]:
             "volume_24h": spot.get("volume24h"),
             "high_24h": spot.get("highPrice24h"),
             "low_24h": spot.get("lowPrice24h"),
+            "price_sources": spot_sources.get("prices") or [],
+            "price_dispersion": spot_sources.get("dispersion") or {},
         },
         "futures": {
             "mark_price": futures.get("markPrice") or futures.get("lastPrice"),
@@ -2839,6 +2946,7 @@ def fetch_market_snapshot(timeout: float = 6.0) -> dict[str, Any]:
 def market_snapshot_item(snapshot: dict[str, Any], history: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     spot = snapshot.get("spot") or {}
     futures = snapshot.get("futures") or {}
+    spot_dispersion = spot.get("price_dispersion") or {}
     funding_rate = numeric(futures.get("funding_rate"))
     oi_volume_ratio = numeric(futures.get("oi_volume_ratio"))
     if oi_volume_ratio is None:
@@ -2856,6 +2964,12 @@ def market_snapshot_item(snapshot: dict[str, Any], history: list[dict[str, Any]]
         "spot_high_24h": numeric(spot.get("high_24h")),
         "spot_low_24h": numeric(spot.get("low_24h")),
         "spot_volume_24h": numeric(spot.get("volume_24h")),
+        "spot_price_median": numeric(spot_dispersion.get("median")),
+        "spot_price_min": numeric(spot_dispersion.get("min")),
+        "spot_price_max": numeric(spot_dispersion.get("max")),
+        "spot_price_dispersion_pct": numeric(spot_dispersion.get("dispersion_pct")),
+        "spot_price_sources": int(spot_dispersion.get("sources") or 0),
+        "spot_price_source_errors": int(spot_dispersion.get("errors") or 0),
         "futures_mark_price": numeric(futures.get("mark_price")),
         "futures_index_price": numeric(futures.get("index_price")),
         "futures_basis_pct": numeric(futures.get("basis_pct")),
@@ -2882,6 +2996,14 @@ def snapshot_from_market_item(item: dict[str, Any]) -> dict[str, Any]:
             "high_24h": item.get("spot_high_24h"),
             "low_24h": item.get("spot_low_24h"),
             "volume_24h": item.get("spot_volume_24h"),
+            "price_dispersion": {
+                "median": item.get("spot_price_median"),
+                "min": item.get("spot_price_min"),
+                "max": item.get("spot_price_max"),
+                "dispersion_pct": item.get("spot_price_dispersion_pct"),
+                "sources": item.get("spot_price_sources"),
+                "errors": item.get("spot_price_source_errors"),
+            },
         },
         "futures": {
             "mark_price": item.get("futures_mark_price"),
@@ -2910,6 +3032,7 @@ def format_market_snapshot(snapshot: dict[str, Any]) -> str:
         )
     spot = snapshot.get("spot") or {}
     futures = snapshot.get("futures") or {}
+    dispersion = spot.get("price_dispersion") or {}
     return "\n".join(
         [
             f"Kaspa market snapshot: {snapshot.get('source', 'Bybit KAS/USDT')}",
@@ -2920,6 +3043,15 @@ def format_market_snapshot(snapshot: dict[str, Any]) -> str:
                 f"high={format_market_price(spot.get('high_24h'))} "
                 f"low={format_market_price(spot.get('low_24h'))} "
                 f"volume={format_market_volume(spot.get('volume_24h'))}"
+            ),
+            (
+                "spot_dispersion="
+                f"median={format_market_price(dispersion.get('median'))} "
+                f"min={format_market_price(dispersion.get('min'))} "
+                f"max={format_market_price(dispersion.get('max'))} "
+                f"dispersion={format_market_percent_points(dispersion.get('dispersion_pct'))} "
+                f"sources={dispersion.get('sources', 0)} "
+                f"errors={dispersion.get('errors', 0)}"
             ),
             (
                 "futures="
@@ -10236,6 +10368,42 @@ def format_prometheus_metrics(
         lines,
         "kaspa_watchtower_market_spot_volume_24h_kas",
         latest_market.get("spot_volume_24h"),
+        market_labels,
+    )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_market_spot_price_median_usdt",
+        latest_market.get("spot_price_median"),
+        market_labels,
+    )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_market_spot_price_min_usdt",
+        latest_market.get("spot_price_min"),
+        market_labels,
+    )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_market_spot_price_max_usdt",
+        latest_market.get("spot_price_max"),
+        market_labels,
+    )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_market_spot_price_dispersion_percent",
+        latest_market.get("spot_price_dispersion_pct"),
+        market_labels,
+    )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_market_spot_price_sources",
+        latest_market.get("spot_price_sources"),
+        market_labels,
+    )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_market_spot_price_source_errors",
+        latest_market.get("spot_price_source_errors"),
         market_labels,
     )
     add_prometheus_metric(
