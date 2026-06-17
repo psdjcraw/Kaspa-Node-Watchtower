@@ -4,6 +4,7 @@
 
 	redir /game /game/
 	redir /games /games/
+	redir /sns /sns/
 
 	handle_path /game/* {
 		root * /game
@@ -12,6 +13,11 @@
 
 	handle_path /games/* {
 		root * /games
+		file_server
+	}
+
+	handle_path /sns/* {
+		root * /sns
 		file_server
 	}
 

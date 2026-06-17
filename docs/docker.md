@@ -89,8 +89,15 @@ WATCHTOWER_WEB_PORT=18080 WATCHTOWER_INTERVAL_SECONDS=60 docker compose up --bui
 
 The Caddy service serves files from the shared `/state` volume. `/` rewrites to
 `/status.html`, and `/watchtower.prom` exposes the latest textfile metrics when
-Watchtower has generated them. `/game/` serves the first bundled browser game,
-and `/games/` serves the Kaspa metric mini-game arcade.
+Watchtower has generated them. `/sns/` serves the recent Kaspa social snapshot,
+`/game/` serves the first bundled browser game, and `/games/` serves the Kaspa
+metric mini-game arcade.
+
+Refresh the social snapshot from the host:
+
+```bash
+make sns-refresh
+```
 
 ## Process And Recovery Notes
 

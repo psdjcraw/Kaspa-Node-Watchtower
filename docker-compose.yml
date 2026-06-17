@@ -12,7 +12,7 @@ services:
       WATCHTOWER_INTERVAL_SECONDS: ${WATCHTOWER_INTERVAL_SECONDS:-300}
     volumes:
       - ./config.docker.example.json:/config/config.json:ro
-      - watchtower-state:/state
+      - ./state:/state
       - ${KASPAD_LOG_DIR:?Set KASPAD_LOG_DIR to the host directory containing rusty-kaspa.log}:/node/logs:ro
       - ${KASPAD_DATA_DIR:?Set KASPAD_DATA_DIR to the host kaspad datadir}:/node/datadir:ro
     restart: unless-stopped
@@ -27,8 +27,6 @@ services:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - ./web/game:/game:ro
       - ./web/games:/games:ro
-      - watchtower-state:/srv:ro
+      - ./web/sns:/sns:ro
+      - ./state:/srv:ro
     restart: unless-stopped
-
-volumes:
-  watchtower-state:

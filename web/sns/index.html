@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Kaspa SNS Watch</title>
+  <style>
+    :root { color-scheme: dark; --bg: #071012; --panel: #0b181b; --line: rgba(109, 242, 194, 0.22); --text: #eafff8; --muted: #9fc7bd; --kas: #67f0bd; --red: #ff7676; --blue: #65a8ff; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: radial-gradient(circle at 50% 0, #123336, var(--bg) 48%, #020607); color: var(--text); font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; letter-spacing: 0; }
+    header { display: flex; justify-content: space-between; gap: 14px; align-items: end; padding: 18px; border-bottom: 1px solid var(--line); background: rgba(4, 12, 13, 0.84); position: sticky; top: 0; z-index: 2; backdrop-filter: blur(12px); }
+    h1 { margin: 0; font-size: 24px; line-height: 1.05; }
+    .meta { color: var(--muted); font-size: 13px; line-height: 1.4; text-align: right; }
+    .links { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+    a { color: var(--kas); text-decoration: none; }
+    .link { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; background: rgba(8, 19, 21, 0.78); color: var(--text); }
+    main { padding: 18px; }
+    .status { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-bottom: 16px; }
+    .source { border: 1px solid var(--line); background: rgba(8, 19, 21, 0.78); border-radius: 8px; padding: 12px; }
+    .source strong { display: block; font-size: 16px; }
+    .source span { display: block; margin-top: 4px; color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
+    article { border: 1px solid rgba(234, 255, 248, 0.12); background: var(--panel); border-radius: 8px; overflow: hidden; min-height: 260px; display: flex; flex-direction: column; }
+    .thumb { aspect-ratio: 16 / 9; background: #102225; display: grid; place-items: center; overflow: hidden; }
+    .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .fallback { color: var(--muted); font-weight: 800; }
+    .body { padding: 12px; display: flex; flex-direction: column; gap: 8px; flex: 1; }
+    .platform { width: fit-content; border: 1px solid var(--line); border-radius: 999px; padding: 4px 8px; font-size: 12px; color: var(--text); }
+    h2 { margin: 0; font-size: 15px; line-height: 1.28; }
+    .author, .time, .metrics { color: var(--muted); font-size: 12px; line-height: 1.35; }
+    .open { margin-top: auto; color: var(--kas); font-weight: 800; }
+    @media (max-width: 720px) { header { display: block; } .meta { text-align: left; margin-top: 10px; } .status { grid-template-columns: 1fr; } main { padding: 10px; } }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>Kaspa SNS Watch</h1>
+      <div class="links"><a class="link" href="/">Status</a><a class="link" href="/games/">Games</a><a class="link" href="/game/">Relay Run</a></div>
+    </div>
+    <div class="meta" id="meta">Loading</div>
+  </header>
+  <main>
+    <section class="status" id="sources"></section>
+    <section class="grid" id="grid"></section>
+  </main>
+  <script>
+    const metaEl = document.getElementById("meta");
+    const sourcesEl = document.getElementById("sources");
+    const gridEl = document.getElementById("grid");
+
+    function cleanText(text) {
+      return String(text || "").replace(/\s+/g, " ").trim();
+    }
+
+    function sourceCard(name, source) {
+      const ok = source && source.ok;
+      const count = source ? source.count || 0 : 0;
+      const error = source && source.error ? source.error : "";
+      return `<div class="source"><strong>${name} ${ok ? "OK" : "Unavailable"}</strong><span>${count} items${error ? " · " + cleanText(error) : ""}</span></div>`;
+    }
+
+    function metricText(item) {
+      const metrics = item.metrics || {};
+      const parts = [];
+      if (metrics.views) parts.push(Number(metrics.views).toLocaleString() + " views");
+      if (metrics.like_count) parts.push(Number(metrics.like_count).toLocaleString() + " likes");
+      if (metrics.retweet_count) parts.push(Number(metrics.retweet_count).toLocaleString() + " reposts");
+      return parts.join(" · ");
+    }
+
+    function card(item) {
+      const title = cleanText(item.title) || "Kaspa item";
+      const thumb = item.thumbnail ? `<img src="${item.thumbnail}" alt="">` : `<div class="fallback">${item.platform || "SNS"}</div>`;
+      const metrics = metricText(item);
+      return `<article>
+        <a class="thumb" href="${item.url || "#"}" target="_blank" rel="noopener noreferrer">${thumb}</a>
+        <div class="body">
+          <div class="platform">${String(item.platform || "sns").toUpperCase()}</div>
+          <h2>${title}</h2>
+          <div class="author">${cleanText(item.author)}</div>
+          <div class="time">${cleanText(item.created_at)}</div>
+          ${metrics ? `<div class="metrics">${metrics}</div>` : ""}
+          <a class="open" href="${item.url || "#"}" target="_blank" rel="noopener noreferrer">Open</a>
+        </div>
+      </article>`;
+    }
+
+    async function load() {
+      try {
+        const response = await fetch("/social-snapshot.json", { cache: "no-store" });
+        if (!response.ok) throw new Error("snapshot unavailable");
+        const payload = await response.json();
+        metaEl.textContent = `Generated ${payload.generated_at || "unknown"} · ${payload.window_hours || 24}h`;
+        sourcesEl.innerHTML = sourceCard("YouTube", payload.sources && payload.sources.youtube) + sourceCard("X", payload.sources && payload.sources.x);
+        const items = Array.isArray(payload.items) ? payload.items : [];
+        gridEl.innerHTML = items.length ? items.map(card).join("") : `<article><div class="body"><h2>No recent Kaspa SNS thumbnails</h2><div class="author">Run make sns-refresh.</div></div></article>`;
+      } catch (error) {
+        metaEl.textContent = "Snapshot unavailable";
+        sourcesEl.innerHTML = "";
+        gridEl.innerHTML = `<article><div class="body"><h2>SNS snapshot missing</h2><div class="author">${cleanText(error.message)}</div></div></article>`;
+      }
+    }
+    load();
+  </script>
+</body>
+</html>
