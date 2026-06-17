@@ -5718,6 +5718,7 @@ def write_status_page(
       <button class="tab-button" type="button" data-tab-target="tab-ops">Ops</button>
       <button class="tab-button" type="button" data-tab-target="tab-history">History</button>
       <a class="tab-button" href="/game/">Game</a>
+      <a class="tab-button" href="/games/">Games</a>
     </nav>
     <section id="tab-market" class="tab-panel active">
     <div class="subtab-row" aria-label="KAS/USDT timeframe selector">

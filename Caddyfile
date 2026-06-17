@@ -3,9 +3,15 @@
 	encode zstd gzip
 
 	redir /game /game/
+	redir /games /games/
 
 	handle_path /game/* {
 		root * /game
+		file_server
+	}
+
+	handle_path /games/* {
+		root * /games
 		file_server
 	}
 

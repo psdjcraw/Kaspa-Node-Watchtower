@@ -26,6 +26,7 @@ services:
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - ./web/game:/game:ro
+      - ./web/games:/games:ro
       - watchtower-state:/srv:ro
     restart: unless-stopped
 

@@ -1,0 +1,414 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Kaspa Watchtower Arcade</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #061012;
+      --panel: rgba(8, 19, 21, 0.82);
+      --line: rgba(120, 245, 205, 0.22);
+      --text: #eafff8;
+      --muted: #9dc7bd;
+      --kas: #67f0bd;
+      --blue: #64a8ff;
+      --gold: #f5c866;
+      --red: #ff6f6f;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; background: var(--bg); color: var(--text); font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; letter-spacing: 0; }
+    body { min-height: 100vh; overflow: hidden; }
+    .app { display: grid; grid-template-columns: 320px minmax(0, 1fr); height: 100vh; }
+    aside { border-right: 1px solid var(--line); background: rgba(4, 12, 13, 0.94); overflow: auto; padding: 14px; }
+    h1 { margin: 0 0 12px; font-size: 22px; line-height: 1.08; }
+    .back { display: inline-flex; margin-bottom: 12px; color: var(--kas); text-decoration: none; font-size: 13px; }
+    .grid { display: grid; gap: 8px; }
+    .game-card { text-align: left; width: 100%; min-height: 72px; border: 1px solid rgba(234, 255, 248, 0.12); background: #0a191b; color: var(--text); border-radius: 8px; padding: 10px; cursor: pointer; }
+    .game-card.active { border-color: rgba(103, 240, 189, 0.72); background: #0e2b29; }
+    .game-card strong { display: block; font-size: 14px; line-height: 1.2; }
+    .game-card span { display: block; margin-top: 5px; color: var(--muted); font-size: 12px; line-height: 1.28; }
+    main { position: relative; min-width: 0; overflow: hidden; }
+    canvas { display: block; width: 100%; height: 100%; background: radial-gradient(circle at 50% 18%, #143438, #061012 54%, #020607); touch-action: none; cursor: crosshair; }
+    .hud { position: absolute; inset: 14px 14px auto 14px; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; pointer-events: none; }
+    .stat { min-width: 0; border: 1px solid var(--line); background: var(--panel); border-radius: 8px; padding: 9px 10px; backdrop-filter: blur(10px); }
+    .label { color: var(--muted); font-size: 11px; text-transform: uppercase; line-height: 1; }
+    .value { margin-top: 5px; font-size: 18px; line-height: 1; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .actions { position: absolute; inset: auto 14px 14px 14px; display: flex; justify-content: space-between; gap: 10px; align-items: end; }
+    .pill { border: 1px solid rgba(234, 255, 248, 0.14); background: var(--panel); color: var(--text); border-radius: 8px; padding: 10px 12px; backdrop-filter: blur(10px); font-size: 13px; line-height: 1; }
+    button.pill { cursor: pointer; min-height: 40px; min-width: 92px; }
+    button.pill:focus-visible, .game-card:focus-visible { outline: 2px solid var(--kas); outline-offset: 2px; }
+    .launch { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; }
+    .modal { width: min(460px, calc(100vw - 32px)); border: 1px solid rgba(103, 240, 189, 0.34); background: rgba(5, 14, 15, 0.86); border-radius: 8px; padding: 18px; box-shadow: 0 22px 60px rgba(0, 0, 0, 0.38); backdrop-filter: blur(14px); pointer-events: auto; }
+    .modal h2 { margin: 0; font-size: 26px; line-height: 1.06; }
+    .modal p { margin: 10px 0 16px; color: var(--muted); line-height: 1.45; font-size: 14px; }
+    .modal button { width: 100%; border-color: rgba(103, 240, 189, 0.5); background: #0d3a33; color: #eafff8; font-weight: 800; }
+    .hidden { display: none; }
+
+    @media (max-width: 860px) {
+      body { overflow: auto; }
+      .app { grid-template-columns: 1fr; grid-template-rows: auto minmax(560px, 72vh); height: auto; min-height: 100vh; }
+      aside { border-right: 0; border-bottom: 1px solid var(--line); max-height: 42vh; }
+      .hud { grid-template-columns: repeat(2, minmax(0, 1fr)); inset: 10px 10px auto; }
+      .actions { inset: auto 10px 10px; }
+      .pill.status { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside>
+      <a class="back" href="/">Status</a>
+      <h1>Kaspa Watchtower Arcade</h1>
+      <div class="grid" id="gameList"></div>
+    </aside>
+    <main>
+      <canvas id="canvas" aria-label="Kaspa Watchtower Arcade canvas"></canvas>
+      <section class="hud">
+        <div class="stat"><div class="label">Score</div><div class="value" id="score">0</div></div>
+        <div class="stat"><div class="label" id="metricLabel">Metric</div><div class="value" id="metric">0</div></div>
+        <div class="stat"><div class="label">Health</div><div class="value" id="health">100</div></div>
+        <div class="stat"><div class="label">Level</div><div class="value" id="level">1</div></div>
+        <div class="stat"><div class="label">Best</div><div class="value" id="best">0</div></div>
+      </section>
+      <section class="actions">
+        <div class="pill status" id="status">Ready</div>
+        <button class="pill" id="pause">Pause</button>
+      </section>
+      <div class="launch" id="launch">
+        <section class="modal">
+          <h2 id="title">Peer Shield</h2>
+          <p id="desc">Hold the node lane while healthy peers stream in.</p>
+          <button class="pill" id="start">Start</button>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    const modes = [
+      { id: "peer", title: "Peer Shield", metric: "Peers", good: "peer", bad: "isolate", goal: 18, desc: "Catch green peers and avoid isolation bursts." },
+      { id: "tps", title: "TPS Catcher", metric: "TPS", good: "tx", bad: "drop", goal: 1200, desc: "Collect transaction packets before they fall out of relay." },
+      { id: "daa", title: "DAA Climb", metric: "DAA", good: "daa", bad: "lag", goal: 900, desc: "Climb virtual DAA while avoiding lag anchors." },
+      { id: "mempool", title: "Mempool Sort", metric: "Clean", good: "clean", bad: "spam", goal: 64, desc: "Sort valid entries and keep spam out of the queue." },
+      { id: "fork", title: "Fork Sweep", metric: "Blue", good: "blue", bad: "red", goal: 51, desc: "Sweep blue blocks through and dodge red forks." },
+      { id: "block", title: "Block Sprint", metric: "Blocks", good: "block", bad: "stall", goal: 240, desc: "Chain accepted blocks through a fast relay lane." },
+      { id: "utxo", title: "UTXO Stack", metric: "UTXO", good: "utxo", bad: "dust", goal: 100, desc: "Stack clean UTXOs and keep dust from clogging state." },
+      { id: "sync", title: "Sync Gap", metric: "Gap", good: "catchup", bad: "gap", goal: 0, desc: "Close sync gaps before the lag meter breaks." },
+      { id: "fee", title: "Fee Lane", metric: "Priority", good: "fee", bad: "jam", goal: 42, desc: "Route priority transactions around jammed lanes." },
+      { id: "hash", title: "Hashrate Highway", metric: "Hash", good: "hash", bad: "dip", goal: 777, desc: "Keep hashrate pickups flowing across the highway." }
+    ];
+
+    const canvas = document.getElementById("canvas");
+    const ctx = canvas.getContext("2d");
+    const listEl = document.getElementById("gameList");
+    const launchEl = document.getElementById("launch");
+    const titleEl = document.getElementById("title");
+    const descEl = document.getElementById("desc");
+    const scoreEl = document.getElementById("score");
+    const metricLabelEl = document.getElementById("metricLabel");
+    const metricEl = document.getElementById("metric");
+    const healthEl = document.getElementById("health");
+    const levelEl = document.getElementById("level");
+    const bestEl = document.getElementById("best");
+    const statusEl = document.getElementById("status");
+    const startButton = document.getElementById("start");
+    const pauseButton = document.getElementById("pause");
+
+    const state = {
+      modeIndex: 0, running: false, paused: false, over: false, w: 0, h: 0, ratio: 1,
+      last: 0, spawn: 0, score: 0, metric: 0, health: 100, level: 1, speed: 210,
+      player: { x: 0, y: 0, r: 18, vx: 0, vy: 0 },
+      keys: new Set(), items: [], sparks: [], stars: []
+    };
+
+    function bestKey() { return "kaspaArcadeBest:" + modes[state.modeIndex].id; }
+    function mode() { return modes[state.modeIndex]; }
+    function bestScore() { return Number(localStorage.getItem(bestKey()) || "0"); }
+
+    function renderList() {
+      listEl.innerHTML = "";
+      modes.forEach((game, index) => {
+        const button = document.createElement("button");
+        button.className = "game-card" + (index === state.modeIndex ? " active" : "");
+        button.type = "button";
+        button.innerHTML = "<strong>" + game.title + "</strong><span>" + game.desc + "</span>";
+        button.addEventListener("click", () => selectMode(index));
+        listEl.appendChild(button);
+      });
+    }
+
+    function selectMode(index) {
+      state.modeIndex = index;
+      state.running = false;
+      state.paused = false;
+      state.over = false;
+      state.items = [];
+      state.sparks = [];
+      titleEl.textContent = mode().title;
+      descEl.textContent = mode().desc;
+      startButton.textContent = "Start";
+      launchEl.classList.remove("hidden");
+      metricLabelEl.textContent = mode().metric;
+      statusEl.textContent = "Ready";
+      bestEl.textContent = bestScore().toLocaleString();
+      renderList();
+      resetPlayer();
+      draw();
+    }
+
+    function resize() {
+      const rect = canvas.getBoundingClientRect();
+      state.ratio = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+      state.w = Math.floor(rect.width);
+      state.h = Math.floor(rect.height);
+      canvas.width = Math.floor(state.w * state.ratio);
+      canvas.height = Math.floor(state.h * state.ratio);
+      ctx.setTransform(state.ratio, 0, 0, state.ratio, 0, 0);
+      resetPlayer();
+      seedStars();
+      draw();
+    }
+
+    function resetPlayer() {
+      state.player.x = state.w * 0.5;
+      state.player.y = state.h * 0.72;
+      state.player.vx = 0;
+      state.player.vy = 0;
+    }
+
+    function seedStars() {
+      const target = Math.max(80, Math.floor(state.w * state.h / 10000));
+      while (state.stars.length < target) {
+        state.stars.push({ x: Math.random() * state.w, y: Math.random() * state.h, z: 0.45 + Math.random() * 1.7 });
+      }
+      state.stars.length = target;
+    }
+
+    function startGame() {
+      state.running = true; state.paused = false; state.over = false;
+      state.last = performance.now(); state.spawn = 0; state.score = 0;
+      state.metric = mode().id === "sync" ? 120 : 0;
+      state.health = 100; state.level = 1; state.speed = 210; state.items = []; state.sparks = [];
+      resetPlayer(); launchEl.classList.add("hidden"); pauseButton.textContent = "Pause"; statusEl.textContent = mode().title;
+      requestAnimationFrame(loop);
+    }
+
+    function endGame() {
+      state.running = false; state.over = true;
+      const best = Math.max(bestScore(), Math.floor(state.score));
+      localStorage.setItem(bestKey(), String(best));
+      bestEl.textContent = best.toLocaleString();
+      titleEl.textContent = mode().title;
+      descEl.textContent = "Score " + Math.floor(state.score).toLocaleString();
+      startButton.textContent = "Retry";
+      launchEl.classList.remove("hidden");
+      statusEl.textContent = "Stopped";
+    }
+
+    function spawnItem() {
+      const m = mode();
+      const badChance = Math.min(0.42, 0.18 + state.level * 0.018);
+      const bad = Math.random() < badChance;
+      const size = bad ? 18 + Math.random() * 12 : 16 + Math.random() * 10;
+      state.items.push({
+        x: 28 + Math.random() * Math.max(1, state.w - 56),
+        y: -36,
+        r: size,
+        vy: state.speed * (0.72 + Math.random() * 0.65),
+        bad,
+        kind: bad ? m.bad : m.good,
+        spin: Math.random() * Math.PI * 2
+      });
+    }
+
+    function goodValue() {
+      const id = mode().id;
+      if (id === "tps") return 55;
+      if (id === "daa") return 21;
+      if (id === "sync") return -8;
+      if (id === "hash") return 33;
+      return 1;
+    }
+
+    function badValue() {
+      const id = mode().id;
+      if (id === "sync") return 12;
+      if (id === "tps") return -90;
+      return -1;
+    }
+
+    function collect(item) {
+      if (item.bad) {
+        state.health -= 14;
+        state.metric += badValue();
+        spark(item.x, item.y, "#ff6f6f", 16);
+      } else {
+        state.score += 180 + state.level * 16;
+        state.metric += goodValue();
+        state.health = Math.min(100, state.health + 4);
+        spark(item.x, item.y, itemColor(item), 18);
+      }
+      if (mode().id !== "sync" && state.metric < 0) state.metric = 0;
+      item.y = state.h + 100;
+      if (state.health <= 0) endGame();
+    }
+
+    function update(dt) {
+      const p = state.player;
+      const left = state.keys.has("ArrowLeft") || state.keys.has("a");
+      const right = state.keys.has("ArrowRight") || state.keys.has("d");
+      const up = state.keys.has("ArrowUp") || state.keys.has("w");
+      const down = state.keys.has("ArrowDown") || state.keys.has("s");
+      const accel = 940;
+      const drag = Math.pow(0.001, dt);
+      p.vx += (right - left) * accel * dt;
+      p.vy += (down - up) * accel * dt;
+      p.vx *= drag; p.vy *= drag;
+      p.x = Math.max(p.r + 4, Math.min(state.w - p.r - 4, p.x + p.vx * dt));
+      p.y = Math.max(92, Math.min(state.h - p.r - 18, p.y + p.vy * dt));
+
+      state.score += dt * (18 + state.level * 2);
+      state.level = Math.max(1, Math.floor(state.score / 1600) + 1);
+      state.speed += dt * (7 + state.level * 0.4);
+      state.spawn -= dt;
+      while (state.spawn <= 0) {
+        spawnItem();
+        state.spawn += Math.max(0.16, 0.58 - state.level * 0.025);
+      }
+
+      for (const star of state.stars) {
+        star.y += (26 + state.speed * 0.08) * star.z * dt;
+        if (star.y > state.h + 8) { star.y = -8; star.x = Math.random() * state.w; }
+      }
+      for (const item of state.items) {
+        item.y += item.vy * dt;
+        item.spin += dt * (item.bad ? 4.5 : 2.4);
+        if (Math.hypot(item.x - p.x, item.y - p.y) < item.r + p.r * 0.82) collect(item);
+      }
+      state.items = state.items.filter((item) => item.y < state.h + 80);
+      for (const s of state.sparks) {
+        s.age += dt; s.x += s.vx * dt; s.y += s.vy * dt; s.vy += 120 * dt;
+      }
+      state.sparks = state.sparks.filter((s) => s.age < s.life);
+      renderHud();
+    }
+
+    function itemColor(item) {
+      if (item.bad) return "#ff6f6f";
+      const map = { peer: "#67f0bd", tx: "#64a8ff", daa: "#f5c866", clean: "#67f0bd", blue: "#64a8ff", block: "#f5c866", utxo: "#b78cff", catchup: "#67f0bd", fee: "#f5c866", hash: "#63e6ff" };
+      return map[item.kind] || "#67f0bd";
+    }
+
+    function spark(x, y, color, count) {
+      for (let i = 0; i < count; i += 1) {
+        const a = Math.random() * Math.PI * 2;
+        const v = 70 + Math.random() * 160;
+        state.sparks.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, color, age: 0, life: 0.4 + Math.random() * 0.45 });
+      }
+    }
+
+    function drawItem(item) {
+      ctx.save(); ctx.translate(item.x, item.y); ctx.rotate(item.spin);
+      ctx.lineWidth = 3; ctx.strokeStyle = itemColor(item); ctx.fillStyle = item.bad ? "#42191b" : "#10272b";
+      const r = item.r;
+      if (["tx", "fee", "utxo"].includes(item.kind)) {
+        ctx.fillRect(-r, -r * 0.62, r * 2, r * 1.24); ctx.strokeRect(-r, -r * 0.62, r * 2, r * 1.24);
+      } else if (["hash", "catchup", "peer"].includes(item.kind)) {
+        ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      } else {
+        ctx.beginPath();
+        for (let i = 0; i < 6; i += 1) {
+          const a = Math.PI / 6 + i * Math.PI / 3;
+          const x = Math.cos(a) * r, y = Math.sin(a) * r;
+          if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        }
+        ctx.closePath(); ctx.fill(); ctx.stroke();
+      }
+      ctx.restore();
+    }
+
+    function drawPlayer() {
+      const p = state.player;
+      ctx.save(); ctx.translate(p.x, p.y);
+      ctx.fillStyle = "rgba(103, 240, 189, 0.12)";
+      ctx.beginPath(); ctx.arc(0, 0, p.r * 2.2, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = "#67f0bd"; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(0, 0, p.r, 0, Math.PI * 2); ctx.stroke();
+      ctx.fillStyle = "#eafff8"; ctx.beginPath(); ctx.arc(0, 0, p.r * 0.38, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, state.w, state.h);
+      const bg = ctx.createLinearGradient(0, 0, 0, state.h);
+      bg.addColorStop(0, "#0a2023"); bg.addColorStop(1, "#020607");
+      ctx.fillStyle = bg; ctx.fillRect(0, 0, state.w, state.h);
+      for (const star of state.stars) {
+        ctx.fillStyle = "rgba(220, 255, 248, " + (0.18 + star.z * 0.22) + ")";
+        ctx.fillRect(star.x, star.y, star.z * 1.5, star.z * 5);
+      }
+      ctx.strokeStyle = "rgba(103, 240, 189, 0.13)"; ctx.lineWidth = 2;
+      for (let x = state.w * 0.15; x < state.w; x += state.w * 0.17) {
+        ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(state.w * 0.5 + (x - state.w * 0.5) * 0.25, state.h); ctx.stroke();
+      }
+      for (const item of state.items) drawItem(item);
+      for (const s of state.sparks) {
+        const alpha = Math.max(0, 1 - s.age / s.life);
+        ctx.globalAlpha = alpha; ctx.fillStyle = s.color; ctx.beginPath(); ctx.arc(s.x, s.y, 2 + alpha * 3, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1;
+      }
+      drawPlayer();
+      if (state.paused) { ctx.fillStyle = "rgba(0, 0, 0, 0.38)"; ctx.fillRect(0, 0, state.w, state.h); }
+    }
+
+    function renderHud() {
+      scoreEl.textContent = Math.floor(state.score).toLocaleString();
+      metricEl.textContent = Math.floor(state.metric).toLocaleString();
+      healthEl.textContent = Math.max(0, Math.floor(state.health)).toString();
+      levelEl.textContent = state.level.toString();
+      bestEl.textContent = bestScore().toLocaleString();
+      statusEl.textContent = state.paused ? "Paused" : mode().title;
+    }
+
+    function loop(now) {
+      if (!state.running) return;
+      const dt = Math.min(0.034, (now - state.last) / 1000 || 0);
+      state.last = now;
+      if (!state.paused) update(dt);
+      draw();
+      requestAnimationFrame(loop);
+    }
+
+    function togglePause() {
+      if (!state.running) return;
+      state.paused = !state.paused;
+      pauseButton.textContent = state.paused ? "Resume" : "Pause";
+      renderHud(); draw();
+    }
+
+    window.addEventListener("resize", resize);
+    window.addEventListener("keydown", (event) => {
+      const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
+      if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "a", "d", "w", "s"].includes(key)) { event.preventDefault(); state.keys.add(key); }
+      if (key === " ") { event.preventDefault(); togglePause(); }
+    });
+    window.addEventListener("keyup", (event) => state.keys.delete(event.key.length === 1 ? event.key.toLowerCase() : event.key));
+    canvas.addEventListener("pointermove", (event) => {
+      if (!state.running || state.paused) return;
+      const rect = canvas.getBoundingClientRect();
+      state.player.x = event.clientX - rect.left;
+      state.player.y = event.clientY - rect.top;
+    });
+    canvas.addEventListener("pointerdown", (event) => {
+      canvas.setPointerCapture(event.pointerId);
+      if (!state.running) startGame();
+    });
+    startButton.addEventListener("click", startGame);
+    pauseButton.addEventListener("click", togglePause);
+
+    renderList(); selectMode(0); resize();
+  </script>
+</body>
+</html>
