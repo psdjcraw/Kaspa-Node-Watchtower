@@ -120,13 +120,37 @@ Formula syntax check:
 ruby -c packaging/homebrew/kaspa-node-watchtower.rb
 ```
 
-## Candidate: Container Image
+## Docker Hub Image
 
-Use a container image when:
+Use the Docker image when:
 
 - the watchtower should run beside containerized Prometheus/Grafana
 - host paths can be mounted read-only
 - deployment should be uniform across Linux hosts
+
+Build and smoke test:
+
+```bash
+make docker-smoke
+```
+
+Push to Docker Hub:
+
+```bash
+docker login
+make docker-build DOCKER_TAG=0.7.0
+make docker-push DOCKER_TAG=0.7.0
+```
+
+Default image:
+
+```text
+psdjc/kaspa-node-watchtower
+```
+
+See `docs/docker.md` for compose, mounts, and host process caveats.
+The bundled GitHub Actions workflow can publish multi-arch Docker Hub images
+when `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` repository secrets are set.
 
 Pros:
 

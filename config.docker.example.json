@@ -1,0 +1,114 @@
+{
+  "config_version": 1,
+  "node_name": "kaspa-mainnet-docker",
+  "process_match": "kaspad",
+  "log_scan_bytes": 100000000,
+  "log_path": "/node/logs/rusty-kaspa.log",
+  "data_dir": "/node/datadir",
+  "rpc_endpoint": "host.docker.internal:16110",
+  "grpc_endpoint": "host.docker.internal:16110",
+  "state_path": "/state/watchtower-state.json",
+  "status_page_path": "/state/status.html",
+  "canvas_status_page_path": "",
+  "stream_page_path": "/state/stream.html",
+  "canvas_stream_page_path": "",
+  "benchmark_path": "/state/benchmarks.jsonl",
+  "sqlite_history_path": "/state/watchtower-history.sqlite",
+  "market_snapshot_path": "/state/market-snapshots.jsonl",
+  "prometheus_metrics_path": "/state/watchtower.prom",
+  "recovery_history_path": "/state/recovery-history.jsonl",
+  "retention": {
+    "state_history_entries": 100,
+    "benchmark_entries": 1000
+  },
+  "maintenance": {
+    "enabled": false,
+    "mute_until": "",
+    "critical_only": true,
+    "reason": ""
+  },
+  "wallet": {
+    "enabled": false,
+    "alert_on_change": true,
+    "alert_min_delta_sompi": 1,
+    "alert_directions": "all",
+    "large_outgoing_alert_sompi": 0,
+    "mining_reward_stale_hours": 0,
+    "event_history_entries": 50,
+    "watch_addresses": []
+  },
+  "mining": {
+    "enabled": false,
+    "mode": "container",
+    "process_match": "",
+    "log_path": "",
+    "pool_url": "",
+    "wallet_address": "",
+    "worker_name": "",
+    "expected_hashrate_min_hs": 0,
+    "stale_share_minutes": 0
+  },
+  "whale_watch": {
+    "enabled": false,
+    "confirmed_enabled": true,
+    "min_amount_sompi": 100000000000000,
+    "alert_enabled": true,
+    "event_history_entries": 100,
+    "explorer_base_url": "",
+    "explorer_tx_path": "/txs/{tx_id}",
+    "explorer_address_path": "/addresses/{address}"
+  },
+  "indexer": {
+    "enabled": false,
+    "base_url": "http://localhost:8500",
+    "health_path": "/api/health",
+    "metrics_path": "/api/metrics",
+    "timeout_seconds": 2,
+    "require_metrics": false,
+    "max_lag_seconds": 60,
+    "max_checkpoint_age_seconds": 300,
+    "transaction_path": "/api/transactions/{tx_id}",
+    "address_transactions_path": "/api/addresses/{address}/transactions",
+    "address_balance_path": "/api/addresses/{address}/balance",
+    "address_utxos_path": "/api/addresses/{address}/utxos",
+    "search_path": "/api/search?q={query}"
+  },
+  "indexer_watch": {
+    "enabled": false,
+    "alert_enabled": true,
+    "event_history_entries": 100,
+    "watch_addresses": []
+  },
+  "thresholds": {
+    "alert_repeat_minutes": 60,
+    "stale_log_minutes": 15,
+    "stale_processed_stats_minutes": 3,
+    "progress_window_minutes": 10,
+    "min_relay_blocks_in_window": 1,
+    "min_peer_count": 1,
+    "min_active_peer_count": 1,
+    "require_grpc_metrics": true,
+    "require_synced": false,
+    "require_relay_progress_when_unsynced": false,
+    "require_sync_progress_when_unsynced": true,
+    "sync_progress_stall_minutes": 30,
+    "min_sync_daa_delta": 1,
+    "min_sync_block_delta": 1,
+    "min_sync_header_delta": 1,
+    "disk_free_gb_min": 20,
+    "disk_free_percent_min": 5,
+    "require_rpc": true
+  },
+  "recovery": {
+    "mode": "manual",
+    "post_recovery_wait_seconds": 20,
+    "policy": {
+      "require_critical": true,
+      "min_consecutive_failures": 3,
+      "min_incident_minutes": 5,
+      "require_same_failed_checks": true,
+      "allow_during_maintenance": false
+    },
+    "restart_command": []
+  }
+}

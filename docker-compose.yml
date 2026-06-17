@@ -1,0 +1,32 @@
+services:
+  watchtower:
+    image: ${WATCHTOWER_IMAGE:-psdjc/kaspa-node-watchtower:latest}
+    build:
+      context: .
+    user: "0:0"
+    entrypoint: ["/usr/bin/tini", "--", "/app/scripts/docker_watchtower_loop.sh"]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      WATCHTOWER_CONFIG: /config/config.json
+      WATCHTOWER_INTERVAL_SECONDS: ${WATCHTOWER_INTERVAL_SECONDS:-300}
+    volumes:
+      - ./config.docker.example.json:/config/config.json:ro
+      - watchtower-state:/state
+      - ${KASPAD_LOG_DIR:?Set KASPAD_LOG_DIR to the host directory containing rusty-kaspa.log}:/node/logs:ro
+      - ${KASPAD_DATA_DIR:?Set KASPAD_DATA_DIR to the host kaspad datadir}:/node/datadir:ro
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2-alpine
+    depends_on:
+      - watchtower
+    ports:
+      - "0.0.0.0:${WATCHTOWER_WEB_PORT:-8080}:8080"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - watchtower-state:/srv:ro
+    restart: unless-stopped
+
+volumes:
+  watchtower-state:

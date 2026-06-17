@@ -119,6 +119,7 @@ Current target environment:
 - [Sample status reports](docs/sample-status-reports.md)
 - [Long-lived storage options](docs/storage-options.md)
 - [Packaging options](docs/packaging-options.md)
+- [Docker image](docs/docker.md)
 - [Indexer integration plan](docs/indexer-integration-plan.md)
 - [v0.7.0 release notes](docs/release-notes-v0.7.0.md)
 - [v0.6.1 release notes](docs/release-notes-v0.6.1.md)
@@ -163,6 +164,17 @@ For a concise operator summary:
 .venv/bin/python watchtower.py --market-summary
 make diagnostics-summary
 ```
+
+Build a Docker Hub-ready image:
+
+```bash
+make docker-smoke
+make docker-build DOCKER_TAG=0.7.0
+make docker-push DOCKER_TAG=0.7.0
+```
+
+The default image name is `psdjc/kaspa-node-watchtower`. See
+[Docker image](docs/docker.md) for compose, mounts, and Docker Hub push notes.
 
 For a planned restart or upgrade window:
 
