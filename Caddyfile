@@ -2,6 +2,11 @@
 	root * /srv
 	encode zstd gzip
 
+	handle_path /game/* {
+		root * /game
+		file_server
+	}
+
 	@root path /
 	rewrite @root /status.html
 

@@ -25,6 +25,7 @@ services:
       - "0.0.0.0:${WATCHTOWER_WEB_PORT:-8080}:8080"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./web/game:/game:ro
       - watchtower-state:/srv:ro
     restart: unless-stopped
 

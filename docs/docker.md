@@ -89,7 +89,7 @@ WATCHTOWER_WEB_PORT=18080 WATCHTOWER_INTERVAL_SECONDS=60 docker compose up --bui
 
 The Caddy service serves files from the shared `/state` volume. `/` rewrites to
 `/status.html`, and `/watchtower.prom` exposes the latest textfile metrics when
-Watchtower has generated them.
+Watchtower has generated them. `/game/` serves the bundled browser game.
 
 ## Process And Recovery Notes
 

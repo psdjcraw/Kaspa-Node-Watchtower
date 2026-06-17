@@ -1,0 +1,544 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Kaspa Relay Run</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #071012;
+      --panel: rgba(9, 20, 22, 0.78);
+      --text: #e8fbf6;
+      --muted: #95b8b1;
+      --kas: #6df2c2;
+      --gold: #f4c95d;
+      --danger: #ff6b6b;
+      --blue: #62a8ff;
+    }
+
+    * { box-sizing: border-box; }
+
+    html,
+    body {
+      margin: 0;
+      min-height: 100%;
+      background: radial-gradient(circle at 50% 18%, #123336 0, var(--bg) 48%, #030607 100%);
+      color: var(--text);
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      letter-spacing: 0;
+      overflow: hidden;
+    }
+
+    body {
+      display: grid;
+      place-items: stretch;
+    }
+
+    .shell {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+      min-height: 520px;
+      isolation: isolate;
+    }
+
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+      background: #061012;
+      cursor: crosshair;
+      touch-action: none;
+    }
+
+    .hud {
+      position: absolute;
+      inset: 16px 16px auto 16px;
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 8px;
+      pointer-events: none;
+    }
+
+    .stat {
+      min-width: 0;
+      border: 1px solid rgba(109, 242, 194, 0.24);
+      background: var(--panel);
+      backdrop-filter: blur(10px);
+      border-radius: 8px;
+      padding: 9px 10px;
+      box-shadow: 0 12px 36px rgba(0, 0, 0, 0.26);
+    }
+
+    .label {
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.1;
+      text-transform: uppercase;
+    }
+
+    .value {
+      margin-top: 4px;
+      font-size: 18px;
+      font-weight: 700;
+      line-height: 1;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .overlay {
+      position: absolute;
+      inset: auto 16px 16px 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: end;
+      gap: 12px;
+      pointer-events: none;
+    }
+
+    .badge,
+    .button {
+      border: 1px solid rgba(232, 251, 246, 0.18);
+      background: var(--panel);
+      color: var(--text);
+      border-radius: 8px;
+      padding: 10px 12px;
+      backdrop-filter: blur(10px);
+      box-shadow: 0 12px 36px rgba(0, 0, 0, 0.22);
+      font-size: 13px;
+      line-height: 1;
+    }
+
+    .button {
+      pointer-events: auto;
+      appearance: none;
+      cursor: pointer;
+      min-height: 40px;
+    }
+
+    .button:focus-visible {
+      outline: 2px solid var(--kas);
+      outline-offset: 2px;
+    }
+
+    .center {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      pointer-events: none;
+    }
+
+    .start {
+      width: min(420px, calc(100vw - 32px));
+      border: 1px solid rgba(109, 242, 194, 0.3);
+      background: rgba(5, 14, 15, 0.82);
+      border-radius: 8px;
+      padding: 18px;
+      box-shadow: 0 22px 60px rgba(0, 0, 0, 0.38);
+      backdrop-filter: blur(14px);
+      pointer-events: auto;
+    }
+
+    .start h1 {
+      margin: 0;
+      font-size: 28px;
+      line-height: 1.05;
+      font-weight: 800;
+    }
+
+    .start p {
+      margin: 10px 0 16px;
+      color: var(--muted);
+      line-height: 1.45;
+      font-size: 14px;
+    }
+
+    .start .button {
+      width: 100%;
+      border-color: rgba(109, 242, 194, 0.5);
+      background: #0d3a33;
+      color: #eafff8;
+      font-weight: 800;
+    }
+
+    .hidden { display: none; }
+
+    @media (max-width: 720px) {
+      .shell { min-height: 100vh; }
+      .hud {
+        inset: 10px 10px auto 10px;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+      .stat { padding: 8px; }
+      .value { font-size: 17px; }
+      .overlay {
+        inset: auto 10px 10px 10px;
+        align-items: stretch;
+      }
+      .badge { display: none; }
+      .button { width: 92px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <canvas id="game" aria-label="Kaspa Relay Run game canvas"></canvas>
+    <section class="hud" aria-live="polite">
+      <div class="stat"><div class="label">Score</div><div class="value" id="score">0</div></div>
+      <div class="stat"><div class="label">Peers</div><div class="value" id="peers">8</div></div>
+      <div class="stat"><div class="label">DAA</div><div class="value" id="daa">0</div></div>
+      <div class="stat"><div class="label">Best</div><div class="value" id="best">0</div></div>
+    </section>
+    <div class="center" id="center">
+      <section class="start">
+        <h1>Kaspa Relay Run</h1>
+        <p>Keep the relay lane alive, collect blue blocks, and avoid stale red forks.</p>
+        <button class="button" id="start">Start</button>
+      </section>
+    </div>
+    <section class="overlay">
+      <div class="badge" id="status">Ready</div>
+      <button class="button" id="pause">Pause</button>
+    </section>
+  </main>
+
+  <script>
+    const canvas = document.getElementById("game");
+    const ctx = canvas.getContext("2d");
+    const scoreEl = document.getElementById("score");
+    const peersEl = document.getElementById("peers");
+    const daaEl = document.getElementById("daa");
+    const bestEl = document.getElementById("best");
+    const statusEl = document.getElementById("status");
+    const centerEl = document.getElementById("center");
+    const startButton = document.getElementById("start");
+    const pauseButton = document.getElementById("pause");
+
+    const state = {
+      running: false,
+      paused: false,
+      over: false,
+      width: 0,
+      height: 0,
+      ratio: 1,
+      last: 0,
+      spawn: 0,
+      score: 0,
+      best: Number(localStorage.getItem("kaspaRelayBest") || "0"),
+      peers: 8,
+      daa: 0,
+      speed: 220,
+      player: { x: 0, y: 0, r: 18, vx: 0, vy: 0 },
+      keys: new Set(),
+      blocks: [],
+      stars: [],
+      particles: []
+    };
+
+    bestEl.textContent = state.best.toLocaleString();
+
+    function resize() {
+      state.ratio = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+      const rect = canvas.getBoundingClientRect();
+      state.width = Math.floor(rect.width);
+      state.height = Math.floor(rect.height);
+      canvas.width = Math.floor(state.width * state.ratio);
+      canvas.height = Math.floor(state.height * state.ratio);
+      ctx.setTransform(state.ratio, 0, 0, state.ratio, 0, 0);
+      if (!state.running) resetPlayer();
+      seedStars();
+    }
+
+    function resetPlayer() {
+      state.player.x = state.width * 0.5;
+      state.player.y = state.height * 0.72;
+      state.player.vx = 0;
+      state.player.vy = 0;
+    }
+
+    function seedStars() {
+      const target = Math.max(80, Math.floor((state.width * state.height) / 9500));
+      while (state.stars.length < target) {
+        state.stars.push({
+          x: Math.random() * state.width,
+          y: Math.random() * state.height,
+          z: 0.4 + Math.random() * 1.6
+        });
+      }
+      state.stars.length = target;
+    }
+
+    function startGame() {
+      state.running = true;
+      state.paused = false;
+      state.over = false;
+      state.last = performance.now();
+      state.spawn = 0;
+      state.score = 0;
+      state.peers = 8;
+      state.daa = 0;
+      state.speed = 220;
+      state.blocks = [];
+      state.particles = [];
+      resetPlayer();
+      centerEl.classList.add("hidden");
+      statusEl.textContent = "Syncing";
+      requestAnimationFrame(loop);
+    }
+
+    function endGame() {
+      state.over = true;
+      state.running = false;
+      state.best = Math.max(state.best, Math.floor(state.score));
+      localStorage.setItem("kaspaRelayBest", String(state.best));
+      bestEl.textContent = state.best.toLocaleString();
+      statusEl.textContent = "Reorg";
+      centerEl.classList.remove("hidden");
+      centerEl.querySelector("h1").textContent = "Reorg";
+      centerEl.querySelector("p").textContent = "Score " + Math.floor(state.score).toLocaleString();
+      startButton.textContent = "Retry";
+    }
+
+    function spawnBlock() {
+      const bad = Math.random() < Math.min(0.38, 0.16 + state.score / 18000);
+      const size = bad ? 22 + Math.random() * 12 : 18 + Math.random() * 10;
+      state.blocks.push({
+        x: 32 + Math.random() * Math.max(1, state.width - 64),
+        y: -40,
+        r: size,
+        vy: state.speed * (0.75 + Math.random() * 0.55),
+        spin: Math.random() * Math.PI,
+        bad
+      });
+    }
+
+    function burst(x, y, color, count) {
+      for (let i = 0; i < count; i += 1) {
+        const angle = Math.random() * Math.PI * 2;
+        const speed = 70 + Math.random() * 160;
+        state.particles.push({
+          x,
+          y,
+          vx: Math.cos(angle) * speed,
+          vy: Math.sin(angle) * speed,
+          life: 0.45 + Math.random() * 0.45,
+          age: 0,
+          color
+        });
+      }
+    }
+
+    function loop(now) {
+      if (!state.running) return;
+      const dt = Math.min(0.033, (now - state.last) / 1000 || 0);
+      state.last = now;
+      if (!state.paused) update(dt);
+      draw();
+      requestAnimationFrame(loop);
+    }
+
+    function update(dt) {
+      const p = state.player;
+      const accel = 920;
+      const drag = Math.pow(0.001, dt);
+      const left = state.keys.has("ArrowLeft") || state.keys.has("a");
+      const right = state.keys.has("ArrowRight") || state.keys.has("d");
+      const up = state.keys.has("ArrowUp") || state.keys.has("w");
+      const down = state.keys.has("ArrowDown") || state.keys.has("s");
+      p.vx += (right - left) * accel * dt;
+      p.vy += (down - up) * accel * dt;
+      p.vx *= drag;
+      p.vy *= drag;
+      p.x = Math.max(p.r + 4, Math.min(state.width - p.r - 4, p.x + p.vx * dt));
+      p.y = Math.max(96, Math.min(state.height - p.r - 18, p.y + p.vy * dt));
+
+      state.speed += 9 * dt;
+      state.spawn -= dt;
+      while (state.spawn <= 0) {
+        spawnBlock();
+        state.spawn += Math.max(0.18, 0.58 - state.score / 18000);
+      }
+
+      for (const star of state.stars) {
+        star.y += (24 + state.speed * 0.08) * star.z * dt;
+        if (star.y > state.height + 8) {
+          star.y = -8;
+          star.x = Math.random() * state.width;
+        }
+      }
+
+      for (const block of state.blocks) {
+        block.y += block.vy * dt;
+        block.spin += dt * (block.bad ? 4 : 2);
+        const dx = block.x - p.x;
+        const dy = block.y - p.y;
+        const hit = Math.hypot(dx, dy) < block.r + p.r * 0.78;
+        if (!hit) continue;
+        if (block.bad) {
+          state.peers -= 1;
+          burst(block.x, block.y, "#ff6b6b", 18);
+          block.y = state.height + 120;
+          if (state.peers <= 0) endGame();
+        } else {
+          state.score += 220 + state.peers * 15;
+          state.daa += 1;
+          state.peers = Math.min(12, state.peers + 1);
+          burst(block.x, block.y, "#62a8ff", 16);
+          block.y = state.height + 120;
+        }
+      }
+      state.blocks = state.blocks.filter((block) => block.y < state.height + 80);
+
+      for (const part of state.particles) {
+        part.age += dt;
+        part.x += part.vx * dt;
+        part.y += part.vy * dt;
+        part.vy += 140 * dt;
+      }
+      state.particles = state.particles.filter((part) => part.age < part.life);
+      state.score += dt * 24;
+      renderHud();
+    }
+
+    function drawNode(x, y, r) {
+      const pulse = 1 + Math.sin(performance.now() / 110) * 0.06;
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.fillStyle = "rgba(109, 242, 194, 0.12)";
+      ctx.beginPath();
+      ctx.arc(0, 0, r * 2.2 * pulse, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = "#6df2c2";
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(0, 0, r, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.fillStyle = "#d8fff4";
+      ctx.beginPath();
+      ctx.arc(0, 0, r * 0.38, 0, Math.PI * 2);
+      ctx.fill();
+      for (let i = 0; i < 6; i += 1) {
+        const a = i * Math.PI / 3 + performance.now() / 900;
+        ctx.strokeStyle = i % 2 ? "#f4c95d" : "#62a8ff";
+        ctx.beginPath();
+        ctx.moveTo(Math.cos(a) * r * 0.75, Math.sin(a) * r * 0.75);
+        ctx.lineTo(Math.cos(a) * r * 1.45, Math.sin(a) * r * 1.45);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+
+    function drawBlock(block) {
+      ctx.save();
+      ctx.translate(block.x, block.y);
+      ctx.rotate(block.spin);
+      ctx.fillStyle = block.bad ? "#431719" : "#102c48";
+      ctx.strokeStyle = block.bad ? "#ff6b6b" : "#62a8ff";
+      ctx.lineWidth = 3;
+      const r = block.r;
+      ctx.beginPath();
+      for (let i = 0; i < 6; i += 1) {
+        const a = Math.PI / 6 + i * Math.PI / 3;
+        const x = Math.cos(a) * r;
+        const y = Math.sin(a) * r;
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, state.width, state.height);
+      const gradient = ctx.createLinearGradient(0, 0, 0, state.height);
+      gradient.addColorStop(0, "#061315");
+      gradient.addColorStop(1, "#020607");
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, 0, state.width, state.height);
+
+      for (const star of state.stars) {
+        ctx.fillStyle = "rgba(214, 255, 245, " + (0.18 + star.z * 0.25) + ")";
+        ctx.fillRect(star.x, star.y, star.z * 1.6, star.z * 5);
+      }
+
+      ctx.strokeStyle = "rgba(109, 242, 194, 0.16)";
+      ctx.lineWidth = 2;
+      for (let x = state.width * 0.18; x < state.width; x += state.width * 0.16) {
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(state.width * 0.5 + (x - state.width * 0.5) * 0.25, state.height);
+        ctx.stroke();
+      }
+
+      for (const block of state.blocks) drawBlock(block);
+
+      for (const part of state.particles) {
+        const alpha = 1 - part.age / part.life;
+        ctx.fillStyle = part.color.replace(")", ", " + alpha + ")").replace("rgb", "rgba");
+        ctx.beginPath();
+        ctx.arc(part.x, part.y, 2.8 * alpha + 0.8, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      drawNode(state.player.x, state.player.y, state.player.r);
+      if (state.paused) {
+        ctx.fillStyle = "rgba(0, 0, 0, 0.38)";
+        ctx.fillRect(0, 0, state.width, state.height);
+      }
+    }
+
+    function renderHud() {
+      scoreEl.textContent = Math.floor(state.score).toLocaleString();
+      peersEl.textContent = String(state.peers);
+      daaEl.textContent = state.daa.toLocaleString();
+      statusEl.textContent = state.paused ? "Paused" : (state.peers > 3 ? "Relay" : "Degraded");
+    }
+
+    function togglePause() {
+      if (!state.running) return;
+      state.paused = !state.paused;
+      pauseButton.textContent = state.paused ? "Resume" : "Pause";
+      statusEl.textContent = state.paused ? "Paused" : "Relay";
+    }
+
+    window.addEventListener("resize", resize);
+    window.addEventListener("keydown", (event) => {
+      const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
+      if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "a", "d", "w", "s"].includes(key)) {
+        event.preventDefault();
+        state.keys.add(key);
+      }
+      if (key === " ") {
+        event.preventDefault();
+        togglePause();
+      }
+    });
+    window.addEventListener("keyup", (event) => {
+      const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
+      state.keys.delete(key);
+    });
+
+    canvas.addEventListener("pointermove", (event) => {
+      if (!state.running || state.paused) return;
+      const rect = canvas.getBoundingClientRect();
+      state.player.x = event.clientX - rect.left;
+      state.player.y = event.clientY - rect.top;
+    });
+    canvas.addEventListener("pointerdown", (event) => {
+      canvas.setPointerCapture(event.pointerId);
+      if (!state.running) startGame();
+    });
+
+    startButton.addEventListener("click", startGame);
+    pauseButton.addEventListener("click", togglePause);
+
+    resize();
+    draw();
+  </script>
+</body>
+</html>
