@@ -32,7 +32,11 @@
     .game-card span { display: block; margin-top: 5px; color: var(--muted); font-size: 12px; line-height: 1.28; }
     main { position: relative; min-width: 0; overflow: hidden; }
     canvas { display: block; width: 100%; height: 100%; background: radial-gradient(circle at 50% 18%, #143438, #061012 54%, #020607); touch-action: none; cursor: crosshair; }
-    .hud { position: absolute; inset: 14px 14px auto 14px; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; pointer-events: none; }
+    .top-picker { position: absolute; inset: 12px 14px auto 14px; display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; scrollbar-width: thin; z-index: 3; }
+    .top-game { flex: 0 0 auto; min-height: 38px; border: 1px solid rgba(234, 255, 248, 0.14); background: rgba(8, 19, 21, 0.84); color: var(--text); border-radius: 8px; padding: 9px 11px; cursor: pointer; backdrop-filter: blur(10px); font-size: 13px; font-weight: 800; white-space: nowrap; }
+    .top-game.active { border-color: rgba(103, 240, 189, 0.74); background: #0e2b29; color: #eafff8; }
+    .top-game:focus-visible { outline: 2px solid var(--kas); outline-offset: 2px; }
+    .hud { position: absolute; inset: 66px 14px auto 14px; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; pointer-events: none; }
     .stat { min-width: 0; border: 1px solid var(--line); background: var(--panel); border-radius: 8px; padding: 9px 10px; backdrop-filter: blur(10px); }
     .label { color: var(--muted); font-size: 11px; text-transform: uppercase; line-height: 1; }
     .value { margin-top: 5px; font-size: 18px; line-height: 1; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -51,7 +55,8 @@
       body { overflow: auto; }
       .app { grid-template-columns: 1fr; grid-template-rows: auto minmax(560px, 72vh); height: auto; min-height: 100vh; }
       aside { border-right: 0; border-bottom: 1px solid var(--line); max-height: 42vh; }
-      .hud { grid-template-columns: repeat(2, minmax(0, 1fr)); inset: 10px 10px auto; }
+      .top-picker { inset: 10px 10px auto; }
+      .hud { grid-template-columns: repeat(2, minmax(0, 1fr)); inset: 62px 10px auto; }
       .actions { inset: auto 10px 10px; }
       .pill.status { display: none; }
     }
@@ -66,6 +71,7 @@
     </aside>
     <main>
       <canvas id="canvas" aria-label="Kaspa Watchtower Arcade canvas"></canvas>
+      <nav class="top-picker" id="topGames" aria-label="Game selector"></nav>
       <section class="hud">
         <div class="stat"><div class="label">Score</div><div class="value" id="score">0</div></div>
         <div class="stat"><div class="label" id="metricLabel">Metric</div><div class="value" id="metric">0</div></div>
@@ -104,6 +110,7 @@
     const canvas = document.getElementById("canvas");
     const ctx = canvas.getContext("2d");
     const listEl = document.getElementById("gameList");
+    const topGamesEl = document.getElementById("topGames");
     const launchEl = document.getElementById("launch");
     const titleEl = document.getElementById("title");
     const descEl = document.getElementById("desc");
@@ -130,6 +137,7 @@
 
     function renderList() {
       listEl.innerHTML = "";
+      topGamesEl.innerHTML = "";
       modes.forEach((game, index) => {
         const button = document.createElement("button");
         button.className = "game-card" + (index === state.modeIndex ? " active" : "");
@@ -137,6 +145,13 @@
         button.innerHTML = "<strong>" + game.title + "</strong><span>" + game.desc + "</span>";
         button.addEventListener("click", () => selectMode(index));
         listEl.appendChild(button);
+
+        const topButton = document.createElement("button");
+        topButton.className = "top-game" + (index === state.modeIndex ? " active" : "");
+        topButton.type = "button";
+        topButton.textContent = game.title;
+        topButton.addEventListener("click", () => selectMode(index));
+        topGamesEl.appendChild(topButton);
       });
     }
 
@@ -155,6 +170,8 @@
       statusEl.textContent = "Ready";
       bestEl.textContent = bestScore().toLocaleString();
       renderList();
+      const activeTop = topGamesEl.querySelector(".top-game.active");
+      if (activeTop) activeTop.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
       resetPlayer();
       draw();
     }
