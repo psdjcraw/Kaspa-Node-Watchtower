@@ -95,16 +95,16 @@
 
   <script>
     const modes = [
-      { id: "peer", title: "Peer Shield", metric: "Peers", good: "peer", bad: "isolate", goal: 18, desc: "Catch green peers and avoid isolation bursts." },
-      { id: "tps", title: "TPS Catcher", metric: "TPS", good: "tx", bad: "drop", goal: 1200, desc: "Collect transaction packets before they fall out of relay." },
-      { id: "daa", title: "DAA Climb", metric: "DAA", good: "daa", bad: "lag", goal: 900, desc: "Climb virtual DAA while avoiding lag anchors." },
-      { id: "mempool", title: "Mempool Sort", metric: "Clean", good: "clean", bad: "spam", goal: 64, desc: "Sort valid entries and keep spam out of the queue." },
-      { id: "fork", title: "Fork Sweep", metric: "Blue", good: "blue", bad: "red", goal: 51, desc: "Sweep blue blocks through and dodge red forks." },
-      { id: "block", title: "Block Sprint", metric: "Blocks", good: "block", bad: "stall", goal: 240, desc: "Chain accepted blocks through a fast relay lane." },
-      { id: "utxo", title: "UTXO Stack", metric: "UTXO", good: "utxo", bad: "dust", goal: 100, desc: "Stack clean UTXOs and keep dust from clogging state." },
-      { id: "sync", title: "Sync Gap", metric: "Gap", good: "catchup", bad: "gap", goal: 0, desc: "Close sync gaps before the lag meter breaks." },
-      { id: "fee", title: "Fee Lane", metric: "Priority", good: "fee", bad: "jam", goal: 42, desc: "Route priority transactions around jammed lanes." },
-      { id: "hash", title: "Hashrate Highway", metric: "Hash", good: "hash", bad: "dip", goal: 777, desc: "Keep hashrate pickups flowing across the highway." }
+      { id: "peer", mechanic: "collector", title: "Peer Shield", metric: "Peers", good: "peer", bad: "isolate", goal: 18, desc: "Catch green peers and avoid isolation bursts." },
+      { id: "tps", mechanic: "lane", title: "TPS Catcher", metric: "TPS", good: "tx", bad: "drop", goal: 1200, desc: "Route transaction packets through three relay lanes." },
+      { id: "daa", mechanic: "orbit", title: "DAA Climb", metric: "DAA", good: "daa", bad: "lag", goal: 900, desc: "Orbit the virtual DAA core and absorb gold checkpoints." },
+      { id: "mempool", mechanic: "shooter", title: "Mempool Sort", metric: "Clean", good: "clean", bad: "spam", goal: 64, desc: "Shoot spam out of the mempool while preserving valid entries." },
+      { id: "fork", mechanic: "shooter", title: "Fork Sweep", metric: "Blue", good: "blue", bad: "red", goal: 51, desc: "Blast red forks before they cross the blue-block line." },
+      { id: "block", mechanic: "lane", title: "Block Sprint", metric: "Blocks", good: "block", bad: "stall", goal: 240, desc: "Switch lanes to keep accepted blocks moving." },
+      { id: "utxo", mechanic: "stack", title: "UTXO Stack", metric: "UTXO", good: "utxo", bad: "dust", goal: 100, desc: "Stack clean UTXOs into a stable tower and reject dust." },
+      { id: "sync", mechanic: "chase", title: "Sync Gap", metric: "Gap", good: "catchup", bad: "gap", goal: 0, desc: "Chase catch-up packets from right to left to close sync lag." },
+      { id: "fee", mechanic: "lane", title: "Fee Lane", metric: "Priority", good: "fee", bad: "jam", goal: 42, desc: "Switch fee lanes before jammed transactions collide." },
+      { id: "hash", mechanic: "orbit", title: "Hashrate Highway", metric: "Hash", good: "hash", bad: "dip", goal: 777, desc: "Orbit the hashrate core and collect cyan power spikes." }
     ];
 
     const canvas = document.getElementById("canvas");
@@ -128,7 +128,7 @@
       modeIndex: 0, running: false, paused: false, over: false, w: 0, h: 0, ratio: 1,
       last: 0, spawn: 0, score: 0, metric: 0, health: 100, level: 1, speed: 210,
       player: { x: 0, y: 0, r: 18, vx: 0, vy: 0 },
-      keys: new Set(), items: [], sparks: [], stars: []
+      keys: new Set(), items: [], bullets: [], sparks: [], stars: [], lane: 1, angle: -Math.PI / 2, stack: 0
     };
 
     function bestKey() { return "kaspaArcadeBest:" + modes[state.modeIndex].id; }
@@ -161,6 +161,7 @@
       state.paused = false;
       state.over = false;
       state.items = [];
+      state.bullets = [];
       state.sparks = [];
       titleEl.textContent = mode().title;
       descEl.textContent = mode().desc;
@@ -191,9 +192,12 @@
 
     function resetPlayer() {
       state.player.x = state.w * 0.5;
-      state.player.y = state.h * 0.72;
+      state.player.y = mode().mechanic === "shooter" || mode().mechanic === "stack" ? state.h - 64 : state.h * 0.72;
       state.player.vx = 0;
       state.player.vy = 0;
+      state.lane = 1;
+      state.angle = -Math.PI / 2;
+      if (mode().mechanic === "orbit") orbitPlayer();
     }
 
     function seedStars() {
@@ -208,7 +212,7 @@
       state.running = true; state.paused = false; state.over = false;
       state.last = performance.now(); state.spawn = 0; state.score = 0;
       state.metric = mode().id === "sync" ? 120 : 0;
-      state.health = 100; state.level = 1; state.speed = 210; state.items = []; state.sparks = [];
+      state.health = 100; state.level = 1; state.speed = 210; state.items = []; state.bullets = []; state.sparks = []; state.stack = 0;
       resetPlayer(); launchEl.classList.add("hidden"); pauseButton.textContent = "Pause"; statusEl.textContent = mode().title;
       requestAnimationFrame(loop);
     }
@@ -230,15 +234,49 @@
       const badChance = Math.min(0.42, 0.18 + state.level * 0.018);
       const bad = Math.random() < badChance;
       const size = bad ? 18 + Math.random() * 12 : 16 + Math.random() * 10;
-      state.items.push({
+      const item = {
         x: 28 + Math.random() * Math.max(1, state.w - 56),
         y: -36,
         r: size,
         vy: state.speed * (0.72 + Math.random() * 0.65),
+        vx: 0,
+        lane: Math.floor(Math.random() * 3),
         bad,
         kind: bad ? m.bad : m.good,
         spin: Math.random() * Math.PI * 2
-      });
+      };
+      if (m.mechanic === "lane") item.x = laneX(item.lane);
+      if (m.mechanic === "chase") {
+        item.x = state.w + 44;
+        item.y = 100 + Math.random() * Math.max(120, state.h - 180);
+        item.vx = -state.speed * (0.88 + Math.random() * 0.45);
+        item.vy = (Math.random() - 0.5) * 50;
+      }
+      if (m.mechanic === "orbit") {
+        const a = Math.random() * Math.PI * 2;
+        const radius = Math.max(state.w, state.h) * 0.55;
+        item.x = state.w * 0.5 + Math.cos(a) * radius;
+        item.y = state.h * 0.52 + Math.sin(a) * radius;
+        item.vx = (state.w * 0.5 - item.x) * 0.22;
+        item.vy = (state.h * 0.52 - item.y) * 0.22;
+      }
+      state.items.push(item);
+    }
+
+    function laneX(lane) {
+      return state.w * (0.25 + lane * 0.25);
+    }
+
+    function orbitPlayer() {
+      const radius = Math.min(state.w, state.h) * 0.28;
+      state.player.x = state.w * 0.5 + Math.cos(state.angle) * radius;
+      state.player.y = state.h * 0.52 + Math.sin(state.angle) * radius;
+    }
+
+    function shoot() {
+      if (!state.running || state.paused) return;
+      const p = state.player;
+      state.bullets.push({ x: p.x, y: p.y - p.r, vy: -620, r: 4 });
     }
 
     function goodValue() {
@@ -275,17 +313,34 @@
 
     function update(dt) {
       const p = state.player;
+      const m = mode();
       const left = state.keys.has("ArrowLeft") || state.keys.has("a");
       const right = state.keys.has("ArrowRight") || state.keys.has("d");
       const up = state.keys.has("ArrowUp") || state.keys.has("w");
       const down = state.keys.has("ArrowDown") || state.keys.has("s");
       const accel = 940;
       const drag = Math.pow(0.001, dt);
-      p.vx += (right - left) * accel * dt;
-      p.vy += (down - up) * accel * dt;
-      p.vx *= drag; p.vy *= drag;
-      p.x = Math.max(p.r + 4, Math.min(state.w - p.r - 4, p.x + p.vx * dt));
-      p.y = Math.max(92, Math.min(state.h - p.r - 18, p.y + p.vy * dt));
+      if (m.mechanic === "orbit") {
+        state.angle += (right - left) * dt * 3.8;
+        orbitPlayer();
+      } else if (m.mechanic === "lane") {
+        p.vx += (right - left) * accel * dt;
+        p.vx *= drag;
+        p.x = Math.max(p.r + 4, Math.min(state.w - p.r - 4, p.x + p.vx * dt));
+        p.y = state.h - 72;
+        state.lane = Math.max(0, Math.min(2, Math.round((p.x / state.w - 0.25) / 0.25)));
+      } else if (m.mechanic === "shooter" || m.mechanic === "stack") {
+        p.vx += (right - left) * accel * dt;
+        p.vx *= drag;
+        p.x = Math.max(p.r + 4, Math.min(state.w - p.r - 4, p.x + p.vx * dt));
+        p.y = state.h - 64;
+      } else {
+        p.vx += (right - left) * accel * dt;
+        p.vy += (down - up) * accel * dt;
+        p.vx *= drag; p.vy *= drag;
+        p.x = Math.max(p.r + 4, Math.min(state.w - p.r - 4, p.x + p.vx * dt));
+        p.y = Math.max(92, Math.min(state.h - p.r - 18, p.y + p.vy * dt));
+      }
 
       state.score += dt * (18 + state.level * 2);
       state.level = Math.max(1, Math.floor(state.score / 1600) + 1);
@@ -300,12 +355,39 @@
         star.y += (26 + state.speed * 0.08) * star.z * dt;
         if (star.y > state.h + 8) { star.y = -8; star.x = Math.random() * state.w; }
       }
+      for (const bullet of state.bullets) bullet.y += bullet.vy * dt;
+      state.bullets = state.bullets.filter((bullet) => bullet.y > -20);
       for (const item of state.items) {
+        item.x += item.vx * dt;
         item.y += item.vy * dt;
         item.spin += dt * (item.bad ? 4.5 : 2.4);
-        if (Math.hypot(item.x - p.x, item.y - p.y) < item.r + p.r * 0.82) collect(item);
+        if (m.mechanic === "shooter") {
+          for (const bullet of state.bullets) {
+            if (Math.hypot(item.x - bullet.x, item.y - bullet.y) < item.r + bullet.r) {
+              if (item.bad) collect(item);
+              else { state.health -= 6; spark(item.x, item.y, "#f5c866", 10); item.y = state.h + 100; }
+              bullet.y = -100;
+              break;
+            }
+          }
+          if (!item.bad && Math.hypot(item.x - p.x, item.y - p.y) < item.r + p.r * 0.82) collect(item);
+          if (item.bad && item.y > state.h - 90) { state.health -= 10; spark(item.x, item.y, "#ff6f6f", 12); item.y = state.h + 100; }
+        } else if (m.mechanic === "stack") {
+          if (Math.hypot(item.x - p.x, item.y - p.y) < item.r + p.r * 0.82) {
+            collect(item);
+            if (!item.bad) state.stack = Math.min(12, state.stack + 1);
+            else state.stack = Math.max(0, state.stack - 2);
+          }
+        } else {
+          if (Math.hypot(item.x - p.x, item.y - p.y) < item.r + p.r * 0.82) collect(item);
+        }
+        if (m.mechanic === "orbit" && Math.hypot(item.x - state.w * 0.5, item.y - state.h * 0.52) < item.r + 18) {
+          if (item.bad) state.health -= 10;
+          else state.metric += Math.floor(goodValue() / 2);
+          item.y = state.h + 100;
+        }
       }
-      state.items = state.items.filter((item) => item.y < state.h + 80);
+      state.items = state.items.filter((item) => item.y < state.h + 80 && item.x > -80 && item.x < state.w + 100);
       for (const s of state.sparks) {
         s.age += dt; s.x += s.vx * dt; s.y += s.vy * dt; s.vy += 120 * dt;
       }
@@ -360,6 +442,7 @@
 
     function draw() {
       ctx.clearRect(0, 0, state.w, state.h);
+      const m = mode();
       const bg = ctx.createLinearGradient(0, 0, 0, state.h);
       bg.addColorStop(0, "#0a2023"); bg.addColorStop(1, "#020607");
       ctx.fillStyle = bg; ctx.fillRect(0, 0, state.w, state.h);
@@ -371,7 +454,31 @@
       for (let x = state.w * 0.15; x < state.w; x += state.w * 0.17) {
         ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(state.w * 0.5 + (x - state.w * 0.5) * 0.25, state.h); ctx.stroke();
       }
+      if (m.mechanic === "lane") {
+        for (let lane = 0; lane < 3; lane += 1) {
+          ctx.strokeStyle = lane === state.lane ? "rgba(103, 240, 189, 0.55)" : "rgba(100, 168, 255, 0.18)";
+          ctx.lineWidth = lane === state.lane ? 4 : 2;
+          ctx.beginPath(); ctx.moveTo(laneX(lane), 80); ctx.lineTo(laneX(lane), state.h - 36); ctx.stroke();
+        }
+      }
+      if (m.mechanic === "orbit") {
+        ctx.strokeStyle = "rgba(245, 200, 102, 0.45)";
+        ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.arc(state.w * 0.5, state.h * 0.52, Math.min(state.w, state.h) * 0.28, 0, Math.PI * 2); ctx.stroke();
+        ctx.fillStyle = "rgba(245, 200, 102, 0.12)";
+        ctx.beginPath(); ctx.arc(state.w * 0.5, state.h * 0.52, 28, 0, Math.PI * 2); ctx.fill();
+      }
+      if (m.mechanic === "stack") {
+        for (let i = 0; i < state.stack; i += 1) {
+          ctx.fillStyle = i % 2 ? "#64a8ff" : "#67f0bd";
+          ctx.fillRect(18 + i * 18, state.h - 28, 14, -18 - i * 3);
+        }
+      }
       for (const item of state.items) drawItem(item);
+      for (const bullet of state.bullets) {
+        ctx.fillStyle = "#f5c866";
+        ctx.beginPath(); ctx.arc(bullet.x, bullet.y, bullet.r, 0, Math.PI * 2); ctx.fill();
+      }
       for (const s of state.sparks) {
         const alpha = Math.max(0, 1 - s.age / s.life);
         ctx.globalAlpha = alpha; ctx.fillStyle = s.color; ctx.beginPath(); ctx.arc(s.x, s.y, 2 + alpha * 3, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1;
@@ -409,7 +516,11 @@
     window.addEventListener("keydown", (event) => {
       const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
       if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "a", "d", "w", "s"].includes(key)) { event.preventDefault(); state.keys.add(key); }
-      if (key === " ") { event.preventDefault(); togglePause(); }
+      if (key === " ") {
+        event.preventDefault();
+        if (mode().mechanic === "shooter") shoot();
+        else togglePause();
+      }
     });
     window.addEventListener("keyup", (event) => state.keys.delete(event.key.length === 1 ? event.key.toLowerCase() : event.key));
     canvas.addEventListener("pointermove", (event) => {
@@ -421,6 +532,7 @@
     canvas.addEventListener("pointerdown", (event) => {
       canvas.setPointerCapture(event.pointerId);
       if (!state.running) startGame();
+      else if (mode().mechanic === "shooter") shoot();
     });
     startButton.addEventListener("click", startGame);
     pauseButton.addEventListener("click", togglePause);
