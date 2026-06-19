@@ -472,7 +472,9 @@ SDK subscriptions for block, virtual-chain, and DAA events. Add addresses to
 read-only watchlist fallback when the indexer is unavailable. UTXO changes are
 deduped into Watchtower state, exposed as `kaspa_watchtower_sdk_event_*`
 metrics, and can trigger Discord alert output when `sdk_probe.alert_enabled`
-is true.
+is true. SDK subscriptions also reuse valid addresses from `wallet.watch_addresses`,
+`indexer_watch.watch_addresses`, and `mining.wallet_address`, so one configured
+watchlist can feed both indexer and SDK fallback monitoring.
 
 Serve the metrics over HTTP:
 

@@ -87,7 +87,11 @@ subscription samples covering block, virtual-chain, DAA, and optional UTXO
 watchlist fallback events. UTXO watchlist changes are persisted in Watchtower
 state, deduped by source/direction/tx/address/amount, and exported through
 `kaspa_watchtower_sdk_event_history_total` and
-`kaspa_watchtower_sdk_new_events`.
+`kaspa_watchtower_sdk_new_events`. The SDK watchlist automatically merges
+valid addresses from `sdk_probe.subscription_watch_addresses`,
+`wallet.watch_addresses`, `indexer_watch.watch_addresses`, and
+`mining.wallet_address`; source comparison metrics are exposed as
+`kaspa_watchtower_watch_source_*`.
 
 For the current local stack, copy it to:
 

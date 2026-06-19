@@ -88,7 +88,7 @@ class WatchtowerUnitTests(unittest.TestCase):
         config["sdk_probe"]["python_bin"] = "/tmp/sdk-python"
         config["sdk_probe"]["subscription_enabled"] = True
         config["sdk_probe"]["subscription_duration_seconds"] = 2
-        config["sdk_probe"]["subscription_watch_addresses"] = [{"label": "ops", "address": "kaspa:qtest"}]
+        config["sdk_probe"]["subscription_watch_addresses"] = [{"label": "ops", "address": "kaspa:" + "q" * 61}]
         responses = [
             subprocess.CompletedProcess(
                 args=[],
@@ -120,6 +120,20 @@ class WatchtowerUnitTests(unittest.TestCase):
         second_command = run.call_args_list[1].args[0]
         self.assertIn("--subscriptions", second_command)
         self.assertIn("--address", second_command)
+
+    def test_sdk_subscription_watch_targets_merge_existing_watchlists(self):
+        config = copy.deepcopy(watchtower.DEFAULT_CONFIG)
+        shared = "kaspa:" + "q" * 61
+        wallet_only = "kaspa:" + "p" * 61
+        mining = "kaspa:" + "r" * 61
+        config["sdk_probe"]["subscription_watch_addresses"] = [{"label": "sdk", "address": shared}]
+        config["wallet"]["watch_addresses"] = [{"label": "wallet", "address": wallet_only}]
+        config["indexer_watch"]["watch_addresses"] = [{"label": "indexer", "address": shared}]
+        config["mining"]["wallet_address"] = mining
+
+        targets = watchtower.sdk_subscription_watch_targets(config)
+
+        self.assertEqual({item["address"] for item in targets}, {shared, wallet_only, mining})
 
     def test_fetch_optional_indexer_status_reads_health_and_metrics(self):
         config = copy.deepcopy(watchtower.DEFAULT_CONFIG)
@@ -907,9 +921,15 @@ class WatchtowerUnitTests(unittest.TestCase):
                 "subscription_virtual_chain_changed_total": 3,
                 "subscription_virtual_daa_score_changed_total": 3,
                 "subscription_watch_addresses": 1,
+                "subscription_watch_targets": [{"label": "ops", "address": "kaspa:qtest"}],
                 "subscription_utxos_added": 1,
                 "events": [{"event_key": "old"}],
                 "new_events": [{"event_key": "new"}],
+            },
+            "indexer_watch": {
+                "watch_addresses": [{"label": "ops", "address": "kaspa:qtest"}],
+                "events": [{"event_key": "idx"}],
+                "new_events": [],
             },
             "progress": {
                 "relay_blocks_in_window": 0,
@@ -947,6 +967,8 @@ class WatchtowerUnitTests(unittest.TestCase):
             'kaspa_watchtower_sdk_new_events{encoding="borsh",endpoint="127.0.0.1:17110",network="mainnet",node="test-node"} 1',
             metrics,
         )
+        self.assertIn('kaspa_watchtower_watch_source_addresses{node="test-node",source="both"} 1', metrics)
+        self.assertIn('kaspa_watchtower_watch_source_events_total{node="test-node",source="sdk"} 1', metrics)
 
     def test_grafana_dashboard_includes_processed_freshness_panel(self):
         dashboard = json.loads(Path("grafana/kaspa-watchtower.json").read_text(encoding="utf-8"))
@@ -1057,6 +1079,7 @@ class WatchtowerUnitTests(unittest.TestCase):
         self.assertIn("SDK Subscription Freshness", panels)
         self.assertIn("SDK UTXO Watch Fallback", panels)
         self.assertIn("SDK Persisted Watch Events", panels)
+        self.assertIn("Watch Source Coverage", panels)
         targets = panels["SDK DAA / Peers"].get("targets") or []
         self.assertTrue(
             any(

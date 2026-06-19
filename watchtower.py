@@ -380,6 +380,25 @@ def sdk_probe_config(config: dict) -> dict[str, Any]:
     return {**DEFAULT_CONFIG["sdk_probe"], **(config.get("sdk_probe") or {})}
 
 
+def sdk_subscription_watch_targets(config: dict[str, Any]) -> list[dict[str, str]]:
+    sdk_config = sdk_probe_config(config)
+    targets: list[dict[str, str]] = []
+    targets.extend(normalize_watch_addresses(sdk_config.get("subscription_watch_addresses")))
+    targets.extend(normalize_watch_addresses((config.get("wallet") or {}).get("watch_addresses")))
+    targets.extend(normalize_watch_addresses((config.get("indexer_watch") or {}).get("watch_addresses")))
+    mining_address = str((config.get("mining") or {}).get("wallet_address") or "").strip()
+    if mining_address:
+        targets.append({"label": "mining", "address": mining_address})
+    by_address: dict[str, dict[str, str]] = {}
+    for target in targets:
+        address = str(target.get("address") or "").strip()
+        if not looks_like_kaspa_address(address):
+            continue
+        label = str(target.get("label") or "unlabeled").strip() or "unlabeled"
+        by_address.setdefault(address, {"address": address, "label": label})
+    return list(by_address.values())
+
+
 def run_sdk_probe_subprocess(
     python_bin: str,
     endpoint: str,
@@ -465,11 +484,8 @@ def fetch_optional_sdk_metrics(config: dict, fallback_endpoint: str) -> dict[str
         )
     if sdk_config.get("subscription_enabled"):
         duration_seconds = float(sdk_config.get("subscription_duration_seconds") or 5)
-        watch_addresses = [
-            str(item.get("address") if isinstance(item, dict) else item)
-            for item in (sdk_config.get("subscription_watch_addresses") or [])
-            if (item.get("address") if isinstance(item, dict) else item)
-        ]
+        watch_targets = sdk_subscription_watch_targets(config)
+        watch_addresses = [item["address"] for item in watch_targets]
         try:
             if python_bin:
                 subscription_result = run_sdk_probe_subprocess(
@@ -492,6 +508,7 @@ def fetch_optional_sdk_metrics(config: dict, fallback_endpoint: str) -> dict[str
                     watch_addresses=watch_addresses,
                 )
             result.update(subscription_result)
+            result["subscription_watch_targets"] = watch_targets
         except Exception as exc:
             result.update(
                 {
@@ -10458,6 +10475,26 @@ def format_prometheus_metrics(
         len(sdk_metrics.get("new_events") or []),
         sdk_labels,
     )
+    indexer_addresses = {
+        str(item.get("address") or "")
+        for item in normalize_watch_addresses(indexer_watch.get("watch_addresses"))
+        if item.get("address")
+    }
+    sdk_addresses = {
+        str(item.get("address") or "")
+        for item in normalize_watch_addresses(sdk_metrics.get("subscription_watch_targets"))
+        if item.get("address")
+    }
+    watch_source_specs = [
+        ("indexer", len(indexer_addresses), len(indexer_watch.get("events") or []), len(indexer_watch.get("new_events") or [])),
+        ("sdk", len(sdk_addresses), len(sdk_metrics.get("events") or []), len(sdk_metrics.get("new_events") or [])),
+        ("both", len(indexer_addresses & sdk_addresses), 0, 0),
+    ]
+    for source, address_count, event_count, new_count in watch_source_specs:
+        source_labels = {**node_labels, "source": source}
+        add_prometheus_metric(lines, "kaspa_watchtower_watch_source_addresses", address_count, source_labels)
+        add_prometheus_metric(lines, "kaspa_watchtower_watch_source_events_total", event_count, source_labels)
+        add_prometheus_metric(lines, "kaspa_watchtower_watch_source_new_events", new_count, source_labels)
     add_prometheus_metric(
         lines,
         "kaspa_watchtower_latest_processed_blocks",
