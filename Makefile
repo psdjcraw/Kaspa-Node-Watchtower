@@ -20,7 +20,7 @@ DOCKER_IMAGE ?= psdjc/kaspa-node-watchtower
 DOCKER_TAG ?= latest
 SNS_QUERY ?= Kaspa KAS
 
-.PHONY: help onboard bootstrap proto-check version status stream summary sync-report diagnostics-summary incident-report json alert discord-status discord-incidents discord-wallet discord-wallet-txs discord-mining discord-whales discord-tx discord-address discord-balance discord-utxos discord-search discord-watch-list discord-watch-add discord-watch-remove discord-watch-test indexer-up indexer-down indexer-logs indexer-smoke mining-set-address mining-clear-address discord-maintenance discord-mute discord-mute-all discord-unmute maintenance-status mute mute-all unmute smoke ci integrations simulate-exporter-failure ensure-exporter launchd-status launchd-install launchd-restart launchd-uninstall diagnostics diagnostics-archive daily-report weekly-report weekly-archive benchmark benchmark-report prometheus export-history history-report history-multi-node history-archive upload-archive sns-refresh package docker-build docker-smoke docker-push prune validate recover-dry-run recover force-recover-dry-run
+.PHONY: help onboard bootstrap proto-check version status stream summary sync-report diagnostics-summary incident-report json alert discord-status discord-incidents discord-wallet discord-wallet-txs discord-mining discord-whales discord-tx discord-address discord-balance discord-utxos discord-search discord-watch-list discord-watch-check discord-watch-add discord-watch-remove discord-watch-test indexer-up indexer-down indexer-logs indexer-smoke mining-set-address mining-clear-address discord-maintenance discord-mute discord-mute-all discord-unmute maintenance-status mute mute-all unmute smoke ci integrations simulate-exporter-failure ensure-exporter launchd-status launchd-install launchd-restart launchd-uninstall diagnostics diagnostics-archive daily-report weekly-report weekly-archive benchmark benchmark-report prometheus export-history history-report history-multi-node history-archive upload-archive sns-refresh package docker-build docker-smoke docker-push prune validate recover-dry-run recover force-recover-dry-run
 
 help:
 	@printf 'Kaspa Node Watchtower operator commands\n'
@@ -48,6 +48,7 @@ help:
 	@printf '  make discord-utxos       Query indexer address UTXOs; set ADDRESS=kaspa:...\n'
 	@printf '  make discord-search      Search indexer; set QUERY=...\n'
 	@printf '  make discord-watch-list  Print indexer watchlist\n'
+	@printf '  make discord-watch-check Check live watch readiness\n'
 	@printf '  make discord-watch-add   Add watch address; set ADDRESS=kaspa:... LABEL=...\n'
 	@printf '  make discord-watch-remove Remove watch address; set ADDRESS=kaspa:...\n'
 	@printf '  make discord-watch-test  Test watch address reads; set ADDRESS=kaspa:...\n'
@@ -170,6 +171,9 @@ discord-search:
 
 discord-watch-list:
 	@$(PYTHON) scripts/discord_command_handler.py -c $(CONFIG) watch-list
+
+discord-watch-check:
+	@$(PYTHON) scripts/discord_command_handler.py -c $(CONFIG) watch-check
 
 discord-watch-add:
 	@test -n "$(ADDRESS)" || (printf 'ADDRESS is required\n' >&2; exit 2)

@@ -30,6 +30,7 @@ COMMANDS = {
     "balance",
     "utxos",
     "watch-list",
+    "watch-check",
     "watch-add",
     "watch-remove",
     "watch-test",
@@ -89,6 +90,8 @@ def parse_discord_payload(payload: dict[str, Any]) -> tuple[str, float, str, str
         command = "wallet-txs"
     if command in {"watch_list", "watchlist"}:
         command = "watch-list"
+    if command in {"watch_check", "watchcheck"}:
+        command = "watch-check"
     if command in {"watch_add", "watchadd"}:
         command = "watch-add"
     if command in {"watch_remove", "watchremove"}:

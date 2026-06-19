@@ -2852,6 +2852,84 @@ def format_indexer_watch_status(report: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def watch_readiness_ok(report: dict[str, Any]) -> bool:
+    watch = report.get("indexer_watch") or {}
+    sdk = report.get("sdk_metrics") or {}
+    address_states = list(watch.get("address_states") or [])
+    indexer_ready = bool(watch.get("enabled")) and bool(watch.get("ok")) and bool(address_states)
+    addresses_ready = all(bool(item.get("ok")) for item in address_states)
+    sdk_enabled = bool(sdk.get("enabled"))
+    sdk_ready = True
+    if sdk_enabled:
+        sdk_ready = bool(sdk.get("ok"))
+        if sdk.get("subscription_enabled"):
+            sdk_ready = sdk_ready and bool(sdk.get("subscription_ok"))
+        if sdk.get("subscription_watch_addresses") is not None:
+            sdk_ready = sdk_ready and int(sdk.get("subscription_watch_addresses") or 0) >= len(address_states)
+    return indexer_ready and addresses_ready and sdk_ready
+
+
+def format_watch_readiness(report: dict[str, Any]) -> str:
+    watch = report.get("indexer_watch") or {}
+    sdk = report.get("sdk_metrics") or {}
+    address_states = list(watch.get("address_states") or [])
+    sdk_targets = {
+        str(item.get("address") or "")
+        for item in normalize_watch_addresses(sdk.get("subscription_watch_targets"))
+        if item.get("address")
+    }
+    events = list(watch.get("events") or [])
+    new_events = list(watch.get("new_events") or [])
+    sdk_events = list(sdk.get("events") or [])
+    sdk_new_events = list(sdk.get("new_events") or [])
+    lines = [
+        "Kaspa watch readiness:",
+        (
+            f"ready={watch_readiness_ok(report)} "
+            f"indexer_ok={watch.get('ok', False)} "
+            f"sdk_ok={sdk.get('ok', False)} "
+            f"addresses={len(address_states)} "
+            f"indexer_events={len(events)} "
+            f"indexer_new={len(new_events)} "
+            f"sdk_watch_events={len(sdk_events)} "
+            f"sdk_new={len(sdk_new_events)}"
+        ),
+        f"indexer_detail={watch.get('detail', 'unknown')}",
+        (
+            "sdk_subscription="
+            f"enabled={sdk.get('subscription_enabled', False)} "
+            f"ok={sdk.get('subscription_ok', False)} "
+            f"live_events={sdk.get('subscription_events_total', 0)} "
+            f"last_event_age={sdk.get('subscription_last_event_age_seconds', 'unknown')}s "
+            f"watch_addresses={sdk.get('subscription_watch_addresses', 0)}"
+        ),
+    ]
+    if not address_states:
+        lines.append("- none")
+    for item in address_states:
+        address = str(item.get("address") or "unknown")
+        lines.append(
+            "- "
+            f"{item.get('label') or 'unlabeled'}: "
+            f"{address} "
+            f"indexer_ready={bool(item.get('ok'))} "
+            f"sdk_target={address in sdk_targets if sdk_targets else bool(sdk.get('subscription_watch_addresses'))} "
+            f"balance={format_kas(item.get('balance_sompi'))} "
+            f"utxos={item.get('utxo_count', 'unknown')} "
+            f"txs={item.get('tx_count', 'unknown')} "
+            f"last_check={item.get('last_checked_at') or 'unknown'}"
+        )
+    if new_events or sdk_new_events:
+        lines.append("new_events:")
+        for event in new_events[-5:]:
+            lines.append(format_watch_event_line(event, default_source="indexer"))
+        for event in sdk_new_events[-5:]:
+            lines.append(format_watch_event_line(event, default_source="sdk_subscription"))
+    else:
+        lines.append("new_events=none")
+    return "\n".join(lines)
+
+
 def update_indexer_watch_config(
     config_path: Path,
     *,
@@ -9730,11 +9808,15 @@ def discord_command(
         )
         return 0
 
-    if command in {"watch-list", "watch-add", "watch-remove", "watch-test"}:
+    if command in {"watch-list", "watch-check", "watch-add", "watch-remove", "watch-test"}:
         if command == "watch-list":
             report, _state = build_stateful_report(config)
             print(format_indexer_watch_status(report))
             return 0
+        if command == "watch-check":
+            report, _state = build_stateful_report(config)
+            print(format_watch_readiness(report))
+            return 0 if watch_readiness_ok(report) else 1
         if command == "watch-test":
             return indexer_watch_test(config, query_value, reason)
         if config_path is None:
@@ -11919,6 +12001,7 @@ def main() -> int:
             "balance",
             "utxos",
             "watch-list",
+            "watch-check",
             "watch-add",
             "watch-remove",
             "watch-test",

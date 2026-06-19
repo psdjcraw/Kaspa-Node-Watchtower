@@ -455,6 +455,7 @@ make discord-incidents
 make discord-maintenance
 make discord-mute MUTE_MINUTES=30 MUTE_REASON="kaspad upgrade"
 make discord-unmute
+make discord-watch-check
 ```
 
 Suggested Discord mapping:
@@ -464,6 +465,20 @@ Suggested Discord mapping:
 - `/kaspa maintenance` -> `make discord-maintenance`
 - `/kaspa mute minutes:30 reason:kaspad upgrade` -> `make discord-mute`
 - `/kaspa unmute` -> `make discord-unmute`
+- `/kaspa watch check` -> `make discord-watch-check`
+- `/kaspa watch list` -> `make discord-watch-list`
+- `/kaspa watch test address:kaspa:...` -> `make discord-watch-test ADDRESS=kaspa:...`
+
+Watch readiness:
+
+```bash
+make discord-watch-check
+```
+
+This prints the live indexer watch state, SDK subscription health, watched
+address coverage, latest balance/UTXO/transaction baseline, and any newly
+detected watch events. It exits non-zero when the watch path is not ready, which
+makes it suitable for an operator check while waiting for a real address event.
 
 The cron wrapper prefers `.venv/bin/python` so the gRPC dependencies can stay
 local to this repository.

@@ -376,6 +376,69 @@ class WatchtowerUnitTests(unittest.TestCase):
         self.assertIn("mining: kaspa:qabc ready=True balance=3.00000000 KAS utxos=2 txs=5", text)
         self.assertIn("recent_events=none", text)
 
+    def test_discord_watch_check_prints_readiness(self):
+        config = copy.deepcopy(watchtower.DEFAULT_CONFIG)
+        report = {
+            "indexer_watch": {
+                "enabled": True,
+                "ok": True,
+                "watch_addresses": [{"label": "mining", "address": "kaspa:qabc"}],
+                "address_states": [
+                    {
+                        "label": "mining",
+                        "address": "kaspa:qabc",
+                        "ok": True,
+                        "balance_sompi": 300000000,
+                        "utxo_count": 2,
+                        "tx_count": 5,
+                        "last_checked_at": "2026-06-19T22:00:00+09:00",
+                    }
+                ],
+                "events": [],
+                "new_events": [],
+                "detail": "watched=1 new_events=0 total_events=0",
+            },
+            "sdk_metrics": {
+                "enabled": True,
+                "ok": True,
+                "subscription_enabled": True,
+                "subscription_ok": True,
+                "subscription_events_total": 9,
+                "subscription_last_event_age_seconds": 0.1,
+                "subscription_watch_addresses": 1,
+                "subscription_watch_targets": [{"label": "mining", "address": "kaspa:qabc"}],
+                "events": [],
+                "new_events": [],
+            },
+        }
+
+        with (
+            mock.patch("watchtower.build_stateful_report", return_value=(report, {})),
+            mock.patch("builtins.print") as printed,
+        ):
+            code = watchtower.discord_command(config, "watch-check")
+
+        self.assertEqual(code, 0)
+        text = printed.call_args.args[0]
+        self.assertIn("Kaspa watch readiness:", text)
+        self.assertIn("ready=True indexer_ok=True sdk_ok=True addresses=1", text)
+        self.assertIn("sdk_subscription=enabled=True ok=True live_events=9", text)
+        self.assertIn("mining: kaspa:qabc indexer_ready=True sdk_target=True", text)
+        self.assertIn("new_events=none", text)
+
+    def test_watch_check_fails_when_indexer_watch_is_not_ready(self):
+        report = {
+            "indexer_watch": {
+                "enabled": True,
+                "ok": False,
+                "watch_addresses": [{"label": "mining", "address": "kaspa:qabc"}],
+                "address_states": [{"label": "mining", "address": "kaspa:qabc", "ok": False}],
+            },
+            "sdk_metrics": {"enabled": False},
+        }
+
+        self.assertFalse(watchtower.watch_readiness_ok(report))
+
     def test_indexer_watch_test_queries_address_endpoints(self):
         config = copy.deepcopy(watchtower.DEFAULT_CONFIG)
         config["indexer"]["enabled"] = True
