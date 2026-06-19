@@ -7,6 +7,7 @@ import argparse
 import asyncio
 import json
 import time
+from datetime import datetime, timezone
 from typing import Any
 
 
@@ -30,6 +31,11 @@ def _dict(value: Any) -> dict[str, Any]:
 def _sompi_from_utxo(item: dict[str, Any]) -> int:
     entry = item.get("utxoEntry") or item.get("utxo_entry") or {}
     return _int(entry.get("amount"))
+
+
+def _tx_id_from_utxo(item: dict[str, Any]) -> str:
+    outpoint = item.get("outpoint") or {}
+    return str(outpoint.get("transactionId") or outpoint.get("transaction_id") or "")
 
 
 async def fetch_sdk_metrics_async(
@@ -159,6 +165,7 @@ async def collect_subscription_metrics_async(
         "subscription_utxos_removed": 0,
         "subscription_utxo_added_sompi": 0,
         "subscription_utxo_removed_sompi": 0,
+        "subscription_utxo_events": [],
         "subscription_connect_events": 0,
         "subscription_disconnect_events": 0,
         "subscription_last_event_age_seconds": None,
@@ -215,6 +222,24 @@ async def collect_subscription_metrics_async(
         metrics["subscription_utxos_removed"] += len(removed)
         metrics["subscription_utxo_added_sompi"] += sum(_sompi_from_utxo(item) for item in added)
         metrics["subscription_utxo_removed_sompi"] += sum(_sompi_from_utxo(item) for item in removed)
+        observed_at = datetime.now(timezone.utc).isoformat()
+        for direction, items in (("incoming", added), ("outgoing", removed)):
+            for item in items:
+                amount_sompi = _sompi_from_utxo(item)
+                address = str(item.get("address") or "")
+                tx_id = _tx_id_from_utxo(item)
+                metrics["subscription_utxo_events"].append(
+                    {
+                        "observed_at": observed_at,
+                        "source": "sdk_subscription",
+                        "type": "utxo_changed",
+                        "direction": direction,
+                        "address": address,
+                        "tx_id": tx_id,
+                        "amount_sompi": amount_sompi,
+                        "amount_kas": amount_sompi / 100_000_000,
+                    }
+                )
 
     try:
         client.add_event_listener("connect", on_connect)

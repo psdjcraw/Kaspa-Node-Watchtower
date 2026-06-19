@@ -865,7 +865,12 @@ class WatchtowerUnitTests(unittest.TestCase):
             "severity": "ok",
             "checks": [],
             "grpc_metrics": {"is_synced": True},
-            "progress": {},
+            "progress": {
+                "relay_blocks_in_window": 0,
+                "relay_events_in_window": 0,
+                "window_minutes": 10,
+                "latest_relay_age_seconds": None,
+            },
             "monitoring": {},
             "disk": {},
         }
@@ -903,8 +908,14 @@ class WatchtowerUnitTests(unittest.TestCase):
                 "subscription_virtual_daa_score_changed_total": 3,
                 "subscription_watch_addresses": 1,
                 "subscription_utxos_added": 1,
+                "events": [{"event_key": "old"}],
+                "new_events": [{"event_key": "new"}],
             },
-            "progress": {},
+            "progress": {
+                "relay_blocks_in_window": 0,
+                "window_minutes": 10,
+                "latest_relay_age_seconds": None,
+            },
             "monitoring": {},
             "disk": {},
         }
@@ -926,6 +937,14 @@ class WatchtowerUnitTests(unittest.TestCase):
         )
         self.assertIn(
             'kaspa_watchtower_sdk_subscription_utxos_added{encoding="borsh",endpoint="127.0.0.1:17110",network="mainnet",node="test-node"} 1',
+            metrics,
+        )
+        self.assertIn(
+            'kaspa_watchtower_sdk_event_history_total{encoding="borsh",endpoint="127.0.0.1:17110",network="mainnet",node="test-node"} 1',
+            metrics,
+        )
+        self.assertIn(
+            'kaspa_watchtower_sdk_new_events{encoding="borsh",endpoint="127.0.0.1:17110",network="mainnet",node="test-node"} 1',
             metrics,
         )
 
@@ -1037,6 +1056,7 @@ class WatchtowerUnitTests(unittest.TestCase):
         self.assertIn("SDK Subscription Events", panels)
         self.assertIn("SDK Subscription Freshness", panels)
         self.assertIn("SDK UTXO Watch Fallback", panels)
+        self.assertIn("SDK Persisted Watch Events", panels)
         targets = panels["SDK DAA / Peers"].get("targets") or []
         self.assertTrue(
             any(
@@ -1782,6 +1802,96 @@ class WatchtowerUnitTests(unittest.TestCase):
 
         self.assertEqual(events, [])
         self.assertEqual(state["wallet_events"], [existing])
+
+    def test_update_sdk_subscription_event_state_records_utxo_events(self):
+        config = copy.deepcopy(watchtower.DEFAULT_CONFIG)
+        config["sdk_probe"]["event_history_entries"] = 2
+        report = {
+            "checked_at": "2026-06-19T21:00:00+09:00",
+            "sdk_metrics": {
+                "subscription_utxo_events": [
+                    {
+                        "direction": "incoming",
+                        "address": "kaspa:qtest",
+                        "tx_id": "tx1",
+                        "amount_sompi": 123000000,
+                    }
+                ]
+            },
+        }
+        state = {"sdk_subscription_events": [{"event_key": "old"}, {"event_key": "older"}]}
+
+        events = watchtower.update_sdk_subscription_event_state(state, report, config)
+
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0]["event_key"], "sdk_subscription|incoming|tx1|kaspa:qtest|123000000")
+        self.assertEqual(len(state["sdk_subscription_events"]), 2)
+        self.assertEqual(report["sdk_metrics"]["new_events"], events)
+
+    def test_update_sdk_subscription_event_state_dedupes_repeated_events(self):
+        config = copy.deepcopy(watchtower.DEFAULT_CONFIG)
+        existing = {
+            "event_key": "sdk_subscription|incoming|tx1|kaspa:qtest|123000000",
+            "direction": "incoming",
+            "address": "kaspa:qtest",
+            "tx_id": "tx1",
+            "amount_sompi": 123000000,
+        }
+        report = {
+            "checked_at": "2026-06-19T21:00:00+09:00",
+            "sdk_metrics": {
+                "subscription_utxo_events": [
+                    {
+                        "direction": "incoming",
+                        "address": "kaspa:qtest",
+                        "tx_id": "tx1",
+                        "amount_sompi": 123000000,
+                    }
+                ]
+            },
+        }
+        state = {"sdk_subscription_events": [existing]}
+
+        events = watchtower.update_sdk_subscription_event_state(state, report, config)
+
+        self.assertEqual(events, [])
+        self.assertEqual(state["sdk_subscription_events"], [existing])
+
+    def test_format_alert_includes_sdk_watch_events(self):
+        report = {
+            "node_name": "test-node",
+            "checked_at": "2026-06-19T21:00:00+09:00",
+            "status": "ok",
+            "severity": "ok",
+            "health_score": 100,
+            "checks": [],
+            "latest_throughput": None,
+            "grpc_metrics": {},
+            "progress": {
+                "relay_blocks_in_window": 0,
+                "relay_events_in_window": 0,
+                "window_minutes": 10,
+                "latest_relay_age_seconds": None,
+            },
+            "disk": {},
+            "sdk_metrics": {
+                "subscription_watch_addresses": 1,
+                "new_events": [
+                    {
+                        "direction": "incoming",
+                        "address": "kaspa:qtest",
+                        "tx_id": "abcdef1234567890",
+                        "amount_sompi": 123000000,
+                    }
+                ],
+            },
+        }
+
+        text = watchtower.format_alert(report, event="sdk_watch_event")
+
+        self.assertIn("SDK watched address tx", text)
+        self.assertIn("SDK watch: watched=1 new_events=1", text)
+        self.assertIn("amount=1.23000000 KAS", text)
 
     def test_mining_reward_summary_uses_mining_incoming_events(self):
         now = dt.datetime(2026, 6, 11, 8, 0, tzinfo=dt.timezone(dt.timedelta(hours=9)))

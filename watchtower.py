@@ -120,6 +120,8 @@ DEFAULT_CONFIG = {
         "subscription_enabled": False,
         "subscription_duration_seconds": 5,
         "subscription_watch_addresses": [],
+        "event_history_entries": 100,
+        "alert_enabled": True,
         "require_ok": False,
     },
     "thresholds": {
@@ -511,6 +513,53 @@ def fetch_optional_sdk_metrics(config: dict, fallback_endpoint: str) -> dict[str
     if not result.get("ok"):
         result["detail"] = result.get("detail") or result.get("error") or "SDK probe failed"
     return result
+
+
+def sdk_subscription_event_key(event: dict[str, Any]) -> str:
+    return "|".join(
+        [
+            str(event.get("source") or "sdk_subscription"),
+            str(event.get("direction") or "unknown"),
+            str(event.get("tx_id") or ""),
+            str(event.get("address") or ""),
+            str(int(event.get("amount_sompi") or 0)),
+        ]
+    )
+
+
+def update_sdk_subscription_event_state(
+    state: dict[str, Any],
+    report: dict[str, Any],
+    config: dict[str, Any],
+) -> list[dict[str, Any]]:
+    sdk_config = sdk_probe_config(config)
+    sdk_metrics = report.get("sdk_metrics") or {}
+    raw_events = [
+        item
+        for item in (sdk_metrics.get("subscription_utxo_events") or [])
+        if isinstance(item, dict)
+    ]
+    limit = positive_int(sdk_config.get("event_history_entries"), DEFAULT_CONFIG["sdk_probe"]["event_history_entries"])
+    events = list(state.get("sdk_subscription_events") or [])
+    seen = {str(event.get("event_key") or sdk_subscription_event_key(event)) for event in events}
+    new_events = []
+    for raw in raw_events:
+        event = dict(raw)
+        event.setdefault("observed_at", report.get("checked_at"))
+        event.setdefault("source", "sdk_subscription")
+        event.setdefault("type", "utxo_changed")
+        event["event_key"] = str(event.get("event_key") or sdk_subscription_event_key(event))
+        if event["event_key"] in seen:
+            continue
+        seen.add(event["event_key"])
+        new_events.append(event)
+    events.extend(new_events)
+    state["sdk_subscription_events"] = events[-limit:]
+    sdk_metrics["events"] = list(state.get("sdk_subscription_events") or [])
+    sdk_metrics["new_events"] = new_events
+    sdk_metrics["event_history_entries"] = len(sdk_metrics["events"])
+    report["sdk_metrics"] = sdk_metrics
+    return new_events
 
 
 def kas_from_sompi(value: Any) -> float | None:
@@ -1733,6 +1782,7 @@ def build_stateful_report(config: dict) -> tuple[dict[str, Any], dict[str, Any]]
     update_whale_confirmed_candidates(state, report, config)
     update_whale_event_state(state, report, config)
     apply_indexer_watchlist(report, state, config)
+    update_sdk_subscription_event_state(state, report, config)
     apply_wallet_policy_checks(report, config)
     enrich_operational_fields(report, config, state)
     return report, state
@@ -8632,6 +8682,8 @@ def alert(config: dict) -> int:
     new_whale_events = update_whale_event_state(state, report, config)
     whale_event = "whale_tx_detected" if new_whale_events and bool(whale_watch_config(config).get("alert_enabled", True)) else None
     indexer_watch_event = apply_indexer_watchlist(report, state, config)
+    new_sdk_events = update_sdk_subscription_event_state(state, report, config)
+    sdk_watch_event = "sdk_watch_event" if new_sdk_events and bool(sdk_probe_config(config).get("alert_enabled", True)) else None
     apply_wallet_policy_checks(report, config)
     incident_event = update_incident_state(state, report)
     enrich_operational_fields(report, config, state)
@@ -8649,7 +8701,7 @@ def alert(config: dict) -> int:
         and previous_indexer.get("state") == "syncing"
         and current_indexer.get("state") == "up"
     )
-    event = indexer_watch_event or whale_event or wallet_event or (
+    event = sdk_watch_event or indexer_watch_event or whale_event or wallet_event or (
         "indexer_ready" if indexer_ready else ("sync_completed" if sync_completed else incident_event)
     )
     should_emit = (
@@ -8659,6 +8711,7 @@ def alert(config: dict) -> int:
         or bool(wallet_event)
         or bool(whale_event)
         or bool(indexer_watch_event)
+        or bool(sdk_watch_event)
     )
     if alert_muted_by_maintenance(report):
         should_emit = False
@@ -8727,6 +8780,8 @@ def format_alert(
         title = f"Kaspa watchtower: {report['node_name']} whale tx detected"
     elif event == "indexer_watch_event":
         title = f"Kaspa watchtower: {report['node_name']} watched address tx"
+    elif event == "sdk_watch_event":
+        title = f"Kaspa watchtower: {report['node_name']} SDK watched address tx"
     elif event == "wallet_large_outgoing":
         title = f"Kaspa watchtower: {report['node_name']} large wallet outgoing"
     elif event == "wallet_changed":
@@ -8812,6 +8867,23 @@ def format_alert(
             lines.append(
                 f"- {label}: tx={short_tx} address={short_address or 'unknown'} "
                 f"amount={format_kas(item.get('amount_sompi'))}"
+            )
+    elif event == "sdk_watch_event":
+        sdk = report.get("sdk_metrics") or {}
+        new_events = sdk.get("new_events") or []
+        lines.append(
+            "SDK watch: "
+            f"watched={sdk.get('subscription_watch_addresses', 0)} "
+            f"new_events={len(new_events)}"
+        )
+        for item in new_events[:5]:
+            tx_id = str(item.get("tx_id") or "unknown")
+            short_tx = tx_id if len(tx_id) <= 18 else f"{tx_id[:10]}...{tx_id[-6:]}"
+            address = str(item.get("address") or "")
+            short_address = address if len(address) <= 24 else f"{address[:12]}...{address[-8:]}"
+            lines.append(
+                f"- {item.get('direction', 'unknown')}: tx={short_tx} "
+                f"address={short_address or 'unknown'} amount={format_kas(item.get('amount_sompi'))}"
             )
     elif event in {"wallet_changed", "wallet_large_outgoing"}:
         wallet = report.get("wallet") or {}
@@ -10372,6 +10444,18 @@ def format_prometheus_metrics(
         lines,
         "kaspa_watchtower_sdk_subscription_utxo_removed_sompi",
         sdk_metrics.get("subscription_utxo_removed_sompi"),
+        sdk_labels,
+    )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_sdk_event_history_total",
+        len(sdk_metrics.get("events") or []),
+        sdk_labels,
+    )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_sdk_new_events",
+        len(sdk_metrics.get("new_events") or []),
         sdk_labels,
     )
     add_prometheus_metric(

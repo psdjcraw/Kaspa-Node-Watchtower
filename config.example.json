@@ -99,6 +99,8 @@
     "subscription_enabled": false,
     "subscription_duration_seconds": 5,
     "subscription_watch_addresses": [],
+    "event_history_entries": 100,
+    "alert_enabled": true,
     "require_ok": false
   },
   "thresholds": {

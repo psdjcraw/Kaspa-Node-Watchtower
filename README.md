@@ -469,7 +469,10 @@ has the SDK installed.
 Set `sdk_probe.subscription_enabled=true` to collect a short live sample from
 SDK subscriptions for block, virtual-chain, and DAA events. Add addresses to
 `sdk_probe.subscription_watch_addresses` to use SDK UTXO notifications as a
-read-only watchlist fallback when the indexer is unavailable.
+read-only watchlist fallback when the indexer is unavailable. UTXO changes are
+deduped into Watchtower state, exposed as `kaspa_watchtower_sdk_event_*`
+metrics, and can trigger Discord alert output when `sdk_probe.alert_enabled`
+is true.
 
 Serve the metrics over HTTP:
 

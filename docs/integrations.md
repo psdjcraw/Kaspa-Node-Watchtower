@@ -84,7 +84,10 @@ a compatible wheel before enabling the probe in production. Use
 `sdk_probe.python_bin` when the main Watchtower runtime should stay on a
 different Python version. Enable `sdk_probe.subscription_enabled` for short
 subscription samples covering block, virtual-chain, DAA, and optional UTXO
-watchlist fallback events.
+watchlist fallback events. UTXO watchlist changes are persisted in Watchtower
+state, deduped by source/direction/tx/address/amount, and exported through
+`kaspa_watchtower_sdk_event_history_total` and
+`kaspa_watchtower_sdk_new_events`.
 
 For the current local stack, copy it to:
 
