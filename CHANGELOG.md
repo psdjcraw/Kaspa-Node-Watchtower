@@ -6,6 +6,23 @@ All notable changes to Kaspa Node Watchtower are tracked here.
 
 ### Added
 
+- Optional Kaspa Python SDK wRPC probe metrics can report SDK availability,
+  RPC connectivity, latency, peer count, sync state, virtual DAA score, block
+  count, header count, and tip count without using wallet keys or signing APIs.
+- Optional SDK subscription sampling can collect live block-added,
+  virtual-chain, virtual-DAA, and UTXO-watch events, with Prometheus metrics,
+  alert rules, and Grafana panels for subscription freshness and event counts.
+- SDK UTXO watch events are persisted and deduped in Watchtower state, exposed
+  through `kaspa_watchtower_sdk_event_*` metrics, and can emit Discord alert
+  output when `sdk_probe.alert_enabled` is true.
+- SDK subscription watch targets now merge valid addresses from
+  `sdk_probe.subscription_watch_addresses`, `wallet.watch_addresses`,
+  `indexer_watch.watch_addresses`, and `mining.wallet_address`, with
+  `kaspa_watchtower_watch_source_*` metrics comparing indexer, SDK, and shared
+  watch coverage.
+- `docs/release-notes-v0.8.0.md` documents the v0.8.0 release candidate scope,
+  operator commands, SDK metrics, alert rules, verification checklist, and known
+  limitations.
 - `scripts/onboard_local.sh` and `make onboard` provide guided local onboarding
   checks for workspace, Python, config, state, launchd hints, optional
   bootstrap, and optional smoke validation.
@@ -20,7 +37,8 @@ All notable changes to Kaspa Node Watchtower are tracked here.
   files, and optional `MULTI_NODE_*` threshold overrides.
 - `docs/release-install-guide-v0.8.md` documents the fresh macOS host
   install, launchd services, multi-node naming/history checks,
-  Prometheus/Grafana setup, alert bridge verification, and handoff checklist.
+  Prometheus/Grafana setup, SDK probe setup, alert bridge verification, and
+  handoff checklist.
 - Homebrew formula now points to the v0.7.0 commit archive and includes
   post-install guidance for CLI validation plus source-checkout smoke,
   launchd, Prometheus, and Grafana workflows.

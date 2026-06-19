@@ -183,6 +183,60 @@ Run the integration check when the local stack is available:
 make integrations
 ```
 
+## Optional Kaspa Python SDK Probe
+
+The SDK probe is read-only. It uses Kaspa Python SDK wRPC calls and
+subscriptions for operational visibility, not wallet keys or signing APIs.
+
+Install the SDK in a compatible Python environment:
+
+```bash
+python3.11 -m venv .venv-sdk-py311
+.venv-sdk-py311/bin/python -m pip install --upgrade pip kaspa
+```
+
+If the main Watchtower virtualenv can install `kaspa`, `sdk_probe.python_bin`
+can stay empty. Otherwise, point it at the SDK-specific Python:
+
+```json
+"sdk_probe": {
+  "enabled": true,
+  "endpoint": "127.0.0.1:17110",
+  "network_id": "mainnet",
+  "encoding": "borsh",
+  "timeout_seconds": 5,
+  "python_bin": "/path/to/.venv-sdk-py311/bin/python",
+  "subscription_enabled": true,
+  "subscription_duration_seconds": 5,
+  "subscription_watch_addresses": [],
+  "event_history_entries": 100,
+  "alert_enabled": true,
+  "require_ok": false
+}
+```
+
+Validate the SDK path before making it part of routine monitoring:
+
+```bash
+.venv-sdk-py311/bin/python kaspa_sdk_probe.py \
+  --endpoint 127.0.0.1:17110 \
+  --network-id mainnet
+
+.venv-sdk-py311/bin/python kaspa_sdk_probe.py \
+  --endpoint 127.0.0.1:17110 \
+  --network-id mainnet \
+  --subscriptions \
+  --duration 5
+
+make prometheus
+grep kaspa_watchtower_sdk state/watchtower.prom
+```
+
+SDK subscription watch targets automatically merge valid addresses from
+`sdk_probe.subscription_watch_addresses`, `wallet.watch_addresses`,
+`indexer_watch.watch_addresses`, and `mining.wallet_address`. Use the same
+watchlist for indexer and SDK fallback monitoring where possible.
+
 ## Alert Bridge
 
 Check Prometheus alerts directly:
@@ -237,6 +291,7 @@ Before handing the host to routine operation, confirm:
 - exporter health endpoint returns OK
 - Prometheus target is up
 - Grafana dashboard loads with current node data
+- optional SDK probe metrics are either disabled intentionally or returning OK
 - `prometheus/run_rule_tests.sh` passes
 - `scripts/check_prometheus_alerts.sh` reports no active alerts
 - `make history-multi-node` works after history exists

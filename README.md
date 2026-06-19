@@ -122,6 +122,7 @@ Current target environment:
 - [Packaging options](docs/packaging-options.md)
 - [Docker image](docs/docker.md)
 - [Indexer integration plan](docs/indexer-integration-plan.md)
+- [v0.8.0 release notes](docs/release-notes-v0.8.0.md)
 - [v0.7.0 release notes](docs/release-notes-v0.7.0.md)
 - [v0.6.1 release notes](docs/release-notes-v0.6.1.md)
 - [v0.6.0 release notes](docs/release-notes-v0.6.0.md)
