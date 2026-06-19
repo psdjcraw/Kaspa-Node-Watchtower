@@ -2,6 +2,12 @@
 
 All notable changes to Kaspa Node Watchtower are tracked here.
 
+## Unreleased
+
+### Changed
+
+- Homebrew formula now points to the v0.8.0 GitHub Release asset and checksum.
+
 ## 0.8.0 - 2026-06-19
 
 ### Added

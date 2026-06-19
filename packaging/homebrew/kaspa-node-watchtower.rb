@@ -4,9 +4,9 @@
 class KaspaNodeWatchtower < Formula
   desc "Local-first operator toolkit for monitoring self-hosted Kaspa nodes"
   homepage "https://github.com/psdjcraw/Kaspa-Node-Watchtower"
-  url "https://github.com/psdjcraw/Kaspa-Node-Watchtower/archive/26adcb98698f84012486b355783a67bfb740b17f.tar.gz"
-  version "0.7.0"
-  sha256 "8c43939ae8f238d7a40942668f09b0358a538bea079e054fc93c86e44b7d75dc"
+  url "https://github.com/psdjcraw/Kaspa-Node-Watchtower/releases/download/v0.8.0/kaspa-node-watchtower-0.8.0-aba3228.tar.gz"
+  version "0.8.0"
+  sha256 "eb8213f4eab9ba94ec161681ad065c13301a62e9aa94183638562f3699c6061e"
   license "Apache-2.0"
 
   depends_on "python@3.12"

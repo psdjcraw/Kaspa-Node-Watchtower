@@ -256,7 +256,7 @@ The `alerts` LaunchAgent runs the same bridge every 5 minutes after
 
 ## Homebrew Formula
 
-The draft Homebrew formula installs the stable v0.7.0 CLI archive and exposes:
+The draft Homebrew formula installs the stable v0.8.0 CLI archive and exposes:
 
 ```bash
 kaspa-watchtower --version
