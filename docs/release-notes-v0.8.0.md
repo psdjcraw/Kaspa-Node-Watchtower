@@ -1,6 +1,6 @@
 # Kaspa Node Watchtower v0.8.0 Release Notes
 
-Release date: TBD
+Release date: 2026-06-19
 
 v0.8.0 turns the watchtower into a fuller handoff-ready operations bundle. It
 adds guided onboarding, managed launchd services, a stricter host validation
@@ -59,7 +59,7 @@ python3 watchtower.py -c config.json --prometheus
 RC package example:
 
 ```bash
-scripts/package_release.sh --dist-dir dist --label v0.8.0-rc1
+scripts/package_release.sh --dist-dir dist
 ```
 
 ## SDK Configuration
@@ -132,9 +132,9 @@ python3 -m unittest discover -s tests
 prometheus/run_rule_tests.sh
 python3 -m json.tool grafana/kaspa-watchtower.json
 make smoke
-scripts/package_release.sh --dist-dir dist --label v0.8.0-rc1
-tar -tzf dist/kaspa-node-watchtower-v0.8.0-rc1.tar.gz >/dev/null
-shasum -a 256 -c dist/kaspa-node-watchtower-v0.8.0-rc1.tar.gz.sha256
+make package
+tar -tzf dist/kaspa-node-watchtower-0.8.0-$(git rev-parse --short HEAD).tar.gz >/dev/null
+shasum -a 256 -c dist/kaspa-node-watchtower-0.8.0-$(git rev-parse --short HEAD).tar.gz.sha256
 ```
 
 When the local stack is available, also verify:

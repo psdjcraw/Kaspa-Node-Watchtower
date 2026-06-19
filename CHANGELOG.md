@@ -2,7 +2,7 @@
 
 All notable changes to Kaspa Node Watchtower are tracked here.
 
-## Unreleased
+## 0.8.0 - 2026-06-19
 
 ### Added
 
@@ -39,9 +39,12 @@ All notable changes to Kaspa Node Watchtower are tracked here.
   install, launchd services, multi-node naming/history checks,
   Prometheus/Grafana setup, SDK probe setup, alert bridge verification, and
   handoff checklist.
-- Homebrew formula now points to the v0.7.0 commit archive and includes
-  post-install guidance for CLI validation plus source-checkout smoke,
-  launchd, Prometheus, and Grafana workflows.
+- Homebrew formula includes post-install guidance for CLI validation plus
+  source-checkout smoke, launchd, Prometheus, and Grafana workflows.
+
+### Changed
+
+- Version now reports `0.8.0` for the v0.8.0 release.
 
 ## 0.7.0 - 2026-06-09
 

@@ -171,8 +171,8 @@ Build a Docker Hub-ready image:
 
 ```bash
 make docker-smoke
-make docker-build DOCKER_TAG=0.7.0
-make docker-push DOCKER_TAG=0.7.0
+make docker-build DOCKER_TAG=0.8.0
+make docker-push DOCKER_TAG=0.8.0
 ```
 
 The default image name is `psdjc/kaspa-node-watchtower`. See
