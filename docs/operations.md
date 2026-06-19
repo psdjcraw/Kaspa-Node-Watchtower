@@ -363,6 +363,10 @@ Prometheus alert bridge:
 scripts/check_prometheus_alerts.sh
 ```
 
+The bridge stays quiet when active alert fingerprints are unchanged. It emits
+`Kaspa Prometheus alerts changed` for new or partially resolved alerts and
+`Kaspa Prometheus alerts recovered` once when all tracked alerts clear.
+
 Unit tests:
 
 ```bash

@@ -33,7 +33,7 @@ if data.get("status") != "success":
     print("Kaspa Prometheus alert bridge failed: Prometheus API returned non-success status")
     raise SystemExit(1)
 
-alerts = []
+alerts_by_fingerprint = {}
 for alert in data.get("data", {}).get("alerts", []):
     labels = alert.get("labels") or {}
     if labels.get("service") != "kaspa-watchtower":
@@ -41,27 +41,32 @@ for alert in data.get("data", {}).get("alerts", []):
     if alert.get("state") not in {"pending", "firing"}:
         continue
     annotations = alert.get("annotations") or {}
-    alerts.append(
-        {
-            "state": alert.get("state", "unknown"),
-            "alertname": labels.get("alertname", "unknown"),
-            "node": labels.get("node", labels.get("instance", "unknown")),
-            "severity": labels.get("severity", "unknown"),
-            "summary": annotations.get("summary", ""),
-            "description": annotations.get("description", ""),
-        }
-    )
+    item = {
+        "state": alert.get("state", "unknown"),
+        "alertname": labels.get("alertname", "unknown"),
+        "node": labels.get("node", labels.get("instance", "unknown")),
+        "severity": labels.get("severity", "unknown"),
+        "summary": annotations.get("summary", ""),
+        "description": annotations.get("description", ""),
+    }
+    fingerprint = f"{item['state']}:{item['alertname']}:{item['node']}:{item['severity']}"
+    alerts_by_fingerprint[fingerprint] = item
 
-fingerprints = sorted(
-    f"{item['state']}:{item['alertname']}:{item['node']}:{item['severity']}"
-    for item in alerts
-)
+fingerprints = sorted(alerts_by_fingerprint)
+alerts = [alerts_by_fingerprint[fingerprint] for fingerprint in fingerprints]
 
 previous = {}
 if state_path.exists():
-    with state_path.open(encoding="utf-8") as handle:
-        previous = json.load(handle)
-previous_fingerprints = previous.get("fingerprints") or []
+    try:
+        with state_path.open(encoding="utf-8") as handle:
+            previous = json.load(handle)
+    except (OSError, json.JSONDecodeError):
+        previous = {}
+previous_fingerprints = sorted(set(previous.get("fingerprints") or []))
+previous_set = set(previous_fingerprints)
+current_set = set(fingerprints)
+new_fingerprints = sorted(current_set - previous_set)
+resolved_fingerprints = sorted(previous_set - current_set)
 
 state_path.parent.mkdir(parents=True, exist_ok=True)
 with state_path.open("w", encoding="utf-8") as handle:
@@ -81,13 +86,25 @@ if not fingerprints:
     if previous_fingerprints:
         print("Kaspa Prometheus alerts recovered")
         print(f"previous_alerts={len(previous_fingerprints)}")
+        if resolved_fingerprints:
+            print("resolved:")
+            for fingerprint in resolved_fingerprints:
+                print(f"- {fingerprint}")
     raise SystemExit(0)
 
 if fingerprints == previous_fingerprints:
     raise SystemExit(0)
 
-print("Kaspa Prometheus alerts active")
-for item in alerts:
+print("Kaspa Prometheus alerts changed")
+print(f"active_alerts={len(fingerprints)} new_alerts={len(new_fingerprints)} resolved_alerts={len(resolved_fingerprints)}")
+if resolved_fingerprints:
+    print("resolved:")
+    for fingerprint in resolved_fingerprints:
+        print(f"- {fingerprint}")
+
+items_to_print = [alerts_by_fingerprint[fingerprint] for fingerprint in new_fingerprints] or alerts
+print("active:")
+for item in items_to_print:
     detail = item["description"] or item["summary"] or "no detail"
     print(
         f"- {item['state']} {item['severity']} {item['alertname']} "
