@@ -30,6 +30,56 @@ class WatchtowerUnitTests(unittest.TestCase):
         )
         self.assertEqual(set(watchtower.DEFAULT_CONFIG["indexer"]), set(example["indexer"]))
         self.assertEqual(set(watchtower.DEFAULT_CONFIG["indexer_watch"]), set(example["indexer_watch"]))
+        self.assertEqual(set(watchtower.DEFAULT_CONFIG["sdk_probe"]), set(example["sdk_probe"]))
+
+    def test_fetch_optional_sdk_metrics_disabled_by_default(self):
+        config = copy.deepcopy(watchtower.DEFAULT_CONFIG)
+
+        status = watchtower.fetch_optional_sdk_metrics(config, "127.0.0.1:17110")
+
+        self.assertFalse(status["enabled"])
+        self.assertFalse(status["configured"])
+
+    def test_fetch_optional_sdk_metrics_uses_probe(self):
+        config = copy.deepcopy(watchtower.DEFAULT_CONFIG)
+        config["sdk_probe"]["enabled"] = True
+        config["sdk_probe"]["endpoint"] = "127.0.0.1:17110"
+
+        with mock.patch(
+            "kaspa_sdk_probe.fetch_sdk_metrics",
+            return_value={
+                "ok": True,
+                "sdk_installed": True,
+                "peer_count": 8,
+                "virtual_daa_score": 123,
+            },
+        ) as fetch:
+            status = watchtower.fetch_optional_sdk_metrics(config, "127.0.0.1:16110")
+
+        self.assertTrue(status["ok"])
+        self.assertEqual(status["endpoint"], "127.0.0.1:17110")
+        self.assertEqual(status["peer_count"], 8)
+        fetch.assert_called_once_with("127.0.0.1:17110", network_id="mainnet", timeout=5.0, encoding="borsh")
+
+    def test_fetch_optional_sdk_metrics_can_use_external_python(self):
+        config = copy.deepcopy(watchtower.DEFAULT_CONFIG)
+        config["sdk_probe"]["enabled"] = True
+        config["sdk_probe"]["endpoint"] = "127.0.0.1:17110"
+        config["sdk_probe"]["python_bin"] = "/tmp/sdk-python"
+        completed = subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout=json.dumps({"ok": True, "sdk_installed": True, "peer_count": 4}),
+            stderr="",
+        )
+
+        with mock.patch("watchtower.subprocess.run", return_value=completed) as run:
+            status = watchtower.fetch_optional_sdk_metrics(config, "")
+
+        self.assertTrue(status["ok"])
+        self.assertEqual(status["peer_count"], 4)
+        self.assertEqual(status["python_bin"], "/tmp/sdk-python")
+        self.assertEqual(run.call_args.args[0][0], "/tmp/sdk-python")
 
     def test_fetch_optional_indexer_status_reads_health_and_metrics(self):
         config = copy.deepcopy(watchtower.DEFAULT_CONFIG)
@@ -786,6 +836,42 @@ class WatchtowerUnitTests(unittest.TestCase):
         self.assertIn('kaspa_watchtower_sync_baseline_available{node="test-node"} 0', metrics)
         self.assertIn('kaspa_watchtower_sync_daa_rate_per_hour{node="test-node"} 0', metrics)
 
+    def test_prometheus_metrics_emit_sdk_probe_metrics(self):
+        report = {
+            "node_name": "test-node",
+            "status": "ok",
+            "severity": "ok",
+            "checks": [],
+            "grpc_metrics": {},
+            "sdk_metrics": {
+                "enabled": True,
+                "configured": True,
+                "sdk_installed": True,
+                "ok": True,
+                "endpoint": "127.0.0.1:17110",
+                "network_id": "mainnet",
+                "encoding": "borsh",
+                "rpc_latency_ms": 12.5,
+                "peer_count": 8,
+                "virtual_daa_score": 123456,
+            },
+            "progress": {},
+            "monitoring": {},
+            "disk": {},
+        }
+
+        metrics = watchtower.format_prometheus_metrics(report, {}, {}, {})
+
+        self.assertIn('kaspa_watchtower_sdk_enabled{node="test-node"} 1', metrics)
+        self.assertIn(
+            'kaspa_watchtower_sdk_rpc_up{encoding="borsh",endpoint="127.0.0.1:17110",network="mainnet",node="test-node"} 1',
+            metrics,
+        )
+        self.assertIn(
+            'kaspa_watchtower_sdk_peer_count{encoding="borsh",endpoint="127.0.0.1:17110",network="mainnet",node="test-node"} 8',
+            metrics,
+        )
+
     def test_grafana_dashboard_includes_processed_freshness_panel(self):
         dashboard = json.loads(Path("grafana/kaspa-watchtower.json").read_text(encoding="utf-8"))
         panels = {panel.get("title"): panel for panel in dashboard.get("panels", [])}
@@ -881,6 +967,21 @@ class WatchtowerUnitTests(unittest.TestCase):
             any(
                 target.get("expr") == 'kaspa_watchtower_multi_node_daa_lag{node="$node"}'
                 for target in lag_targets
+            )
+        )
+
+    def test_grafana_dashboard_includes_sdk_probe_panels(self):
+        dashboard = json.loads(Path("grafana/kaspa-watchtower.json").read_text(encoding="utf-8"))
+        panels = {panel.get("title"): panel for panel in dashboard.get("panels", [])}
+
+        self.assertIn("SDK RPC Up", panels)
+        self.assertIn("SDK RPC Latency", panels)
+        self.assertIn("SDK DAA / Peers", panels)
+        targets = panels["SDK DAA / Peers"].get("targets") or []
+        self.assertTrue(
+            any(
+                target.get("expr") == 'kaspa_watchtower_sdk_virtual_daa_score{node="$node"}'
+                for target in targets
             )
         )
 

@@ -64,9 +64,9 @@ grafana/kaspa-watchtower.json
 ```
 
 The dashboard includes node health, DAG/relay progress, relay freshness,
-mempool size, persisted KAS/USDT market snapshot context, benchmark rates,
-recovery history, recovery action mix, and mainnet bootstrap sync progress
-panels.
+mempool size, optional Kaspa Python SDK wRPC probe health, persisted KAS/USDT
+market snapshot context, benchmark rates, recovery history, recovery action
+mix, and mainnet bootstrap sync progress panels.
 
 Benchmark stability metrics are also exported for longer-window panels and
 alerts:
@@ -77,6 +77,12 @@ alerts:
 - `kaspa_watchtower_benchmark_critical_snapshots`
 - `kaspa_watchtower_benchmark_min_peer_count`
 - `kaspa_watchtower_benchmark_min_disk_free_gb`
+
+Optional SDK probe metrics are emitted as `kaspa_watchtower_sdk_*` when
+`sdk_probe.enabled=true`. Install the `kaspa` package in a Python version with
+a compatible wheel before enabling the probe in production. Use
+`sdk_probe.python_bin` when the main Watchtower runtime should stay on a
+different Python version.
 
 For the current local stack, copy it to:
 

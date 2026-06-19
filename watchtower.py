@@ -14,6 +14,7 @@ import shutil
 import socket
 import sqlite3
 import subprocess
+import sys
 import time
 import urllib.error
 import urllib.parse
@@ -108,6 +109,15 @@ DEFAULT_CONFIG = {
         "alert_enabled": True,
         "event_history_entries": 100,
         "watch_addresses": [],
+    },
+    "sdk_probe": {
+        "enabled": False,
+        "endpoint": "",
+        "network_id": "mainnet",
+        "encoding": "borsh",
+        "timeout_seconds": 5,
+        "python_bin": "",
+        "require_ok": False,
     },
     "thresholds": {
         "alert_repeat_minutes": 60,
@@ -359,6 +369,90 @@ def fetch_optional_grpc_metrics(endpoint: str) -> dict[str, Any]:
     if not metrics.get("ok"):
         metrics["detail"] = metrics.get("error") or "gRPC probe failed"
     return metrics
+
+
+def sdk_probe_config(config: dict) -> dict[str, Any]:
+    return {**DEFAULT_CONFIG["sdk_probe"], **(config.get("sdk_probe") or {})}
+
+
+def fetch_optional_sdk_metrics(config: dict, fallback_endpoint: str) -> dict[str, Any]:
+    sdk_config = sdk_probe_config(config)
+    if not sdk_config.get("enabled"):
+        return {"enabled": False, "configured": False, "ok": False, "detail": "disabled"}
+    endpoint = str(sdk_config.get("endpoint") or fallback_endpoint or "")
+    metrics: dict[str, Any] = {
+        "enabled": True,
+        "configured": bool(endpoint),
+        "ok": False,
+        "endpoint": endpoint,
+        "network_id": sdk_config.get("network_id") or "mainnet",
+        "encoding": sdk_config.get("encoding") or "borsh",
+    }
+    if not endpoint:
+        metrics["detail"] = "not configured"
+        return metrics
+    timeout_seconds = float(sdk_config.get("timeout_seconds") or 5)
+    network_id = str(sdk_config.get("network_id") or "mainnet")
+    encoding = str(sdk_config.get("encoding") or "borsh")
+    python_bin = str(sdk_config.get("python_bin") or "")
+    if python_bin:
+        probe_path = Path(__file__).resolve().parent / "kaspa_sdk_probe.py"
+        try:
+            completed = subprocess.run(
+                [
+                    python_bin,
+                    str(probe_path),
+                    "--endpoint",
+                    endpoint,
+                    "--network-id",
+                    network_id,
+                    "--timeout",
+                    str(timeout_seconds),
+                    "--encoding",
+                    encoding,
+                ],
+                capture_output=True,
+                text=True,
+                timeout=timeout_seconds + 2,
+                check=False,
+            )
+        except Exception as exc:
+            metrics["detail"] = f"SDK probe subprocess failed: {exc}"
+            return metrics
+        if completed.returncode != 0:
+            detail = (completed.stderr or completed.stdout or "").strip()
+            metrics["detail"] = f"SDK probe subprocess exited {completed.returncode}: {detail}"
+            return metrics
+        try:
+            result = json.loads(completed.stdout)
+        except json.JSONDecodeError as exc:
+            metrics["detail"] = f"SDK probe subprocess returned invalid JSON: {exc}"
+            return metrics
+    else:
+        try:
+            from kaspa_sdk_probe import fetch_sdk_metrics
+        except Exception as exc:
+            metrics["detail"] = f"SDK probe unavailable: {exc}"
+            return metrics
+        result = fetch_sdk_metrics(
+            endpoint,
+            network_id=network_id,
+            timeout=timeout_seconds,
+            encoding=encoding,
+        )
+    result.update(
+        {
+            "enabled": True,
+            "configured": True,
+            "endpoint": endpoint,
+            "network_id": network_id or result.get("network_id") or "mainnet",
+            "encoding": encoding or result.get("encoding") or "borsh",
+            "python_bin": python_bin or sys.executable,
+        }
+    )
+    if not result.get("ok"):
+        result["detail"] = result.get("detail") or result.get("error") or "SDK probe failed"
+    return result
 
 
 def kas_from_sompi(value: Any) -> float | None:
@@ -1262,6 +1356,7 @@ def build_report(config: dict) -> dict[str, Any]:
     disk = disk_usage(config.get("data_dir", ""))
     rpc = check_tcp_endpoint(config.get("rpc_endpoint") or "")
     grpc_metrics = fetch_optional_grpc_metrics(grpc_endpoint)
+    sdk_metrics = fetch_optional_sdk_metrics(config, grpc_endpoint)
     wallet = fetch_optional_wallet_balances(config, grpc_endpoint)
     mining = fetch_optional_mining_status(config)
     whale_watch = fetch_optional_whale_watch(config, grpc_endpoint)
@@ -1315,6 +1410,16 @@ def build_report(config: dict) -> dict[str, Any]:
                     f"{int(grpc_metrics.get('active_peers') or 0)} active peers "
                     f"(threshold={min_active_peer_count}, total={grpc_metrics.get('peer_count')})"
                 ),
+            )
+        )
+
+    sdk_config = sdk_probe_config(config)
+    if sdk_metrics.get("enabled") and (sdk_config.get("require_ok") or sdk_metrics.get("configured")):
+        checks.append(
+            Check(
+                "sdk_probe",
+                bool(sdk_metrics.get("ok")) or not bool(sdk_config.get("require_ok")),
+                "read ok" if sdk_metrics.get("ok") else sdk_metrics.get("detail", "failed"),
             )
         )
 
@@ -1527,6 +1632,7 @@ def build_report(config: dict) -> dict[str, Any]:
         "rpc": rpc,
         "grpc_endpoint": grpc_endpoint,
         "grpc_metrics": grpc_metrics,
+        "sdk_metrics": sdk_metrics,
         "wallet": wallet,
         "mining": mining,
         "whale_watch": whale_watch,
@@ -9870,6 +9976,7 @@ def format_prometheus_metrics(
 ) -> str:
     node_labels = {"node": report["node_name"]}
     grpc_metrics = report.get("grpc_metrics") or {}
+    sdk_metrics = report.get("sdk_metrics") or {}
     progress = report.get("progress") or {}
     latest_processed = progress.get("latest_processed") or {}
     sync_progress = report.get("sync_progress") or {}
@@ -10100,6 +10207,30 @@ def format_prometheus_metrics(
     )
     add_prometheus_metric(lines, "kaspa_watchtower_mempool_size", grpc_metrics.get("mempool_size"), node_labels)
     add_prometheus_metric(lines, "kaspa_watchtower_tip_count", grpc_metrics.get("tip_count"), node_labels)
+    sdk_labels = {
+        **node_labels,
+        "endpoint": sdk_metrics.get("endpoint") or "unknown",
+        "network": sdk_metrics.get("network_id") or "unknown",
+        "encoding": sdk_metrics.get("encoding") or "unknown",
+    }
+    add_prometheus_metric(lines, "kaspa_watchtower_sdk_enabled", bool(sdk_metrics.get("enabled")), node_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_sdk_configured", bool(sdk_metrics.get("configured")), node_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_sdk_installed", bool(sdk_metrics.get("sdk_installed")), sdk_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_sdk_rpc_up", bool(sdk_metrics.get("ok")), sdk_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_sdk_connected", bool(sdk_metrics.get("is_connected")), sdk_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_sdk_connect_latency_ms", sdk_metrics.get("connect_latency_ms"), sdk_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_sdk_rpc_latency_ms", sdk_metrics.get("rpc_latency_ms"), sdk_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_sdk_peer_count", sdk_metrics.get("peer_count"), sdk_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_sdk_synced", sdk_metrics.get("is_synced"), sdk_labels)
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_sdk_virtual_daa_score",
+        sdk_metrics.get("virtual_daa_score"),
+        sdk_labels,
+    )
+    add_prometheus_metric(lines, "kaspa_watchtower_sdk_block_count", sdk_metrics.get("block_count"), sdk_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_sdk_header_count", sdk_metrics.get("header_count"), sdk_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_sdk_tip_count", sdk_metrics.get("tip_count"), sdk_labels)
     add_prometheus_metric(
         lines,
         "kaspa_watchtower_latest_processed_blocks",

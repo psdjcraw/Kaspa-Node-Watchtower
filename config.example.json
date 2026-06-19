@@ -89,6 +89,15 @@
       }
     ]
   },
+  "sdk_probe": {
+    "enabled": false,
+    "endpoint": "127.0.0.1:17110",
+    "network_id": "mainnet",
+    "encoding": "borsh",
+    "timeout_seconds": 5,
+    "python_bin": "",
+    "require_ok": false
+  },
   "thresholds": {
     "alert_repeat_minutes": 60,
     "stale_log_minutes": 15,

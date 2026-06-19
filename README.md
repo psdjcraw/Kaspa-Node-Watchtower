@@ -106,6 +106,7 @@ Current target environment:
 - Local `rusty-kaspa` / `kaspad`
 - macOS host
 - Discord-based operational updates
+- Optional Kaspa Python SDK read-only wRPC probe metrics
 
 ## Documentation
 
@@ -456,6 +457,14 @@ Write Prometheus textfile metrics:
 ```bash
 .venv/bin/python watchtower.py -c config.json --prometheus
 ```
+
+Optional Kaspa Python SDK probe metrics can be enabled with
+`sdk_probe.enabled=true` and a wRPC endpoint such as `127.0.0.1:17110`. The
+probe emits `kaspa_watchtower_sdk_*` metrics for SDK availability, RPC up,
+latency, peers, sync state, and DAA progress. It is read-only and does not use
+wallet keys or signing APIs. If the main Watchtower Python cannot install a
+compatible `kaspa` wheel, set `sdk_probe.python_bin` to a separate Python that
+has the SDK installed.
 
 Serve the metrics over HTTP:
 
