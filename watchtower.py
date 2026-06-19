@@ -2186,6 +2186,39 @@ def short_hash(value: Any, length: int = 12) -> str:
     return text[:length] if text else "unknown"
 
 
+def short_middle(value: Any, *, head: int = 12, tail: int = 8, max_length: int = 28) -> str:
+    text = str(value or "")
+    if not text:
+        return "unknown"
+    if len(text) <= max_length:
+        return text
+    return f"{text[:head]}...{text[-tail:]}"
+
+
+def format_watch_event_line(event: dict[str, Any], *, default_source: str = "watch") -> str:
+    label = str(event.get("label") or "unlabeled")
+    source = str(event.get("source") or default_source)
+    direction = str(event.get("direction") or event.get("type") or "tx")
+    tx_id = short_middle(event.get("tx_id"), head=10, tail=6, max_length=18)
+    address = short_middle(event.get("address"), head=12, tail=8, max_length=24)
+    amount = format_kas(event.get("amount_sompi"))
+    parts = [
+        f"- {label}",
+        f"source={source}",
+        f"direction={direction}",
+        f"amount={amount}",
+        f"tx={tx_id}",
+        f"address={address}",
+    ]
+    if event.get("transaction_time"):
+        parts.append(f"time={event.get('transaction_time')}")
+    if event.get("observed_at"):
+        parts.append(f"observed={event.get('observed_at')}")
+    if event.get("tx_url"):
+        parts.append(f"link={event.get('tx_url')}")
+    return " ".join(parts)
+
+
 def format_processed_progress(progress: dict[str, Any]) -> str:
     latest = progress.get("latest_processed") or {}
     tx_rate = numeric(latest.get("transactions_per_second"))
@@ -8873,35 +8906,22 @@ def format_alert(
         lines.append(
             "Indexer watch: "
             f"watched={len(watch.get('watch_addresses') or [])} "
-            f"new_events={len(new_events)}"
+            f"new_events={len(new_events)} "
+            f"total_events={len(watch.get('events') or [])}"
         )
         for item in new_events[:5]:
-            tx_id = str(item.get("tx_id") or "unknown")
-            short_tx = tx_id if len(tx_id) <= 18 else f"{tx_id[:10]}...{tx_id[-6:]}"
-            label = item.get("label") or "unlabeled"
-            address = str(item.get("address") or "")
-            short_address = address if len(address) <= 24 else f"{address[:12]}...{address[-8:]}"
-            lines.append(
-                f"- {label}: tx={short_tx} address={short_address or 'unknown'} "
-                f"amount={format_kas(item.get('amount_sompi'))}"
-            )
+            lines.append(format_watch_event_line(item, default_source="indexer"))
     elif event == "sdk_watch_event":
         sdk = report.get("sdk_metrics") or {}
         new_events = sdk.get("new_events") or []
         lines.append(
             "SDK watch: "
             f"watched={sdk.get('subscription_watch_addresses', 0)} "
-            f"new_events={len(new_events)}"
+            f"new_events={len(new_events)} "
+            f"total_events={len(sdk.get('events') or [])}"
         )
         for item in new_events[:5]:
-            tx_id = str(item.get("tx_id") or "unknown")
-            short_tx = tx_id if len(tx_id) <= 18 else f"{tx_id[:10]}...{tx_id[-6:]}"
-            address = str(item.get("address") or "")
-            short_address = address if len(address) <= 24 else f"{address[:12]}...{address[-8:]}"
-            lines.append(
-                f"- {item.get('direction', 'unknown')}: tx={short_tx} "
-                f"address={short_address or 'unknown'} amount={format_kas(item.get('amount_sompi'))}"
-            )
+            lines.append(format_watch_event_line(item, default_source="sdk_subscription"))
     elif event in {"wallet_changed", "wallet_large_outgoing"}:
         wallet = report.get("wallet") or {}
         change = wallet.get("change") or {}

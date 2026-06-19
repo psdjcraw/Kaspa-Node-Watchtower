@@ -414,6 +414,7 @@ class WatchtowerUnitTests(unittest.TestCase):
                 "new_events": [
                     {
                         "label": "mining",
+                        "type": "indexer_address_tx",
                         "address": "kaspa:qabc",
                         "tx_id": "abcdef1234567890",
                         "amount_sompi": 123456789,
@@ -425,8 +426,10 @@ class WatchtowerUnitTests(unittest.TestCase):
         text = watchtower.format_alert(report, event="indexer_watch_event")
 
         self.assertIn("watched address tx", text)
-        self.assertIn("Indexer watch: watched=1 new_events=1", text)
-        self.assertIn("mining: tx=abcdef1234567890", text)
+        self.assertIn("Indexer watch: watched=1 new_events=1 total_events=0", text)
+        self.assertIn("- mining source=indexer direction=indexer_address_tx", text)
+        self.assertIn("tx=abcdef1234567890", text)
+        self.assertIn("amount=1.23456789 KAS", text)
 
     def test_prune_jsonl_keeps_latest_entries(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -1080,6 +1083,8 @@ class WatchtowerUnitTests(unittest.TestCase):
         self.assertIn("SDK UTXO Watch Fallback", panels)
         self.assertIn("SDK Persisted Watch Events", panels)
         self.assertIn("Watch Source Coverage", panels)
+        self.assertIn("Indexer Watch Events", panels)
+        self.assertIn("Watchlist Ready State", panels)
         targets = panels["SDK DAA / Peers"].get("targets") or []
         self.assertTrue(
             any(
@@ -1092,6 +1097,20 @@ class WatchtowerUnitTests(unittest.TestCase):
             any(
                 target.get("expr") == 'kaspa_watchtower_sdk_subscription_events_total{node="$node"}'
                 for target in subscription_targets
+            )
+        )
+        indexer_watch_targets = panels["Indexer Watch Events"].get("targets") or []
+        self.assertTrue(
+            any(
+                target.get("expr") == 'kaspa_watchtower_indexer_watch_events_total{node="$node"}'
+                for target in indexer_watch_targets
+            )
+        )
+        ready_targets = panels["Watchlist Ready State"].get("targets") or []
+        self.assertTrue(
+            any(
+                target.get("expr") == 'kaspa_watchtower_sdk_subscription_watch_addresses{node="$node"}'
+                for target in ready_targets
             )
         )
 
@@ -1902,6 +1921,8 @@ class WatchtowerUnitTests(unittest.TestCase):
                 "new_events": [
                     {
                         "direction": "incoming",
+                        "label": "mining",
+                        "source": "sdk_subscription",
                         "address": "kaspa:qtest",
                         "tx_id": "abcdef1234567890",
                         "amount_sompi": 123000000,
@@ -1913,7 +1934,8 @@ class WatchtowerUnitTests(unittest.TestCase):
         text = watchtower.format_alert(report, event="sdk_watch_event")
 
         self.assertIn("SDK watched address tx", text)
-        self.assertIn("SDK watch: watched=1 new_events=1", text)
+        self.assertIn("SDK watch: watched=1 new_events=1 total_events=0", text)
+        self.assertIn("- mining source=sdk_subscription direction=incoming", text)
         self.assertIn("amount=1.23000000 KAS", text)
 
     def test_mining_reward_summary_uses_mining_incoming_events(self):
