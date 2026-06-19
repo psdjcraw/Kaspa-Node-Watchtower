@@ -339,6 +339,43 @@ class WatchtowerUnitTests(unittest.TestCase):
             loaded = watchtower.load_raw_config(config_path)
             self.assertEqual(loaded["indexer_watch"]["watch_addresses"][0]["label"], "mining")
 
+    def test_discord_watch_list_prints_live_address_state(self):
+        config = copy.deepcopy(watchtower.DEFAULT_CONFIG)
+        report = {
+            "indexer_watch": {
+                "enabled": True,
+                "ok": True,
+                "watch_addresses": [{"label": "mining", "address": "kaspa:qabc"}],
+                "address_states": [
+                    {
+                        "label": "mining",
+                        "address": "kaspa:qabc",
+                        "ok": True,
+                        "balance_sompi": 300000000,
+                        "utxo_count": 2,
+                        "tx_count": 5,
+                        "last_checked_at": "2026-06-19T22:00:00+09:00",
+                    }
+                ],
+                "events": [],
+                "new_events": [],
+                "detail": "watched=1 new_events=0 total_events=0",
+            }
+        }
+
+        with (
+            mock.patch("watchtower.build_stateful_report", return_value=(report, {})),
+            mock.patch("builtins.print") as printed,
+        ):
+            code = watchtower.discord_command(config, "watch-list")
+
+        self.assertEqual(code, 0)
+        text = printed.call_args.args[0]
+        self.assertIn("Kaspa indexer watchlist:", text)
+        self.assertIn("enabled=True ok=True addresses=1 events=0 new=0", text)
+        self.assertIn("mining: kaspa:qabc ready=True balance=3.00000000 KAS utxos=2 txs=5", text)
+        self.assertIn("recent_events=none", text)
+
     def test_indexer_watch_test_queries_address_endpoints(self):
         config = copy.deepcopy(watchtower.DEFAULT_CONFIG)
         config["indexer"]["enabled"] = True

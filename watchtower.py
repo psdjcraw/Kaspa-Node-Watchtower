@@ -2809,6 +2809,49 @@ def format_indexer_watchlist(config: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def format_indexer_watch_status(report: dict[str, Any]) -> str:
+    watch = report.get("indexer_watch") or {}
+    address_states = list(watch.get("address_states") or [])
+    lines = [
+        "Kaspa indexer watchlist:",
+        (
+            f"enabled={watch.get('enabled', False)} "
+            f"ok={watch.get('ok', False)} "
+            f"addresses={len(watch.get('watch_addresses') or [])} "
+            f"events={len(watch.get('events') or [])} "
+            f"new={len(watch.get('new_events') or [])}"
+        ),
+        f"detail={watch.get('detail', 'unknown')}",
+    ]
+    if not address_states:
+        lines.append("- none")
+    for item in address_states:
+        lines.append(
+            "- "
+            f"{item.get('label') or 'unlabeled'}: "
+            f"{item.get('address') or 'unknown'} "
+            f"ready={bool(item.get('ok'))} "
+            f"balance={format_kas(item.get('balance_sompi'))} "
+            f"utxos={item.get('utxo_count', 'unknown')} "
+            f"txs={item.get('tx_count', 'unknown')} "
+            f"last_check={item.get('last_checked_at') or 'unknown'}"
+        )
+        if item.get("balance_error") or item.get("utxo_error"):
+            lines.append(
+                "  warnings="
+                f"balance={item.get('balance_error') or 'ok'} "
+                f"utxos={item.get('utxo_error') or 'ok'}"
+            )
+    events = list(watch.get("events") or [])
+    if events:
+        lines.append("recent_events:")
+        for event in reversed(events[-5:]):
+            lines.append(format_watch_event_line(event, default_source="indexer"))
+    else:
+        lines.append("recent_events=none")
+    return "\n".join(lines)
+
+
 def update_indexer_watch_config(
     config_path: Path,
     *,
@@ -9689,7 +9732,8 @@ def discord_command(
 
     if command in {"watch-list", "watch-add", "watch-remove", "watch-test"}:
         if command == "watch-list":
-            print(format_indexer_watchlist(config))
+            report, _state = build_stateful_report(config)
+            print(format_indexer_watch_status(report))
             return 0
         if command == "watch-test":
             return indexer_watch_test(config, query_value, reason)
@@ -11950,7 +11994,8 @@ def main() -> int:
         if sum(bool(item) for item in (args.indexer_watch_list, args.indexer_watch_add, args.indexer_watch_remove)) != 1:
             parser.error("use exactly one of --indexer-watch-list, --indexer-watch-add, or --indexer-watch-remove")
         if args.indexer_watch_list:
-            print(format_indexer_watchlist(config))
+            report, _state = build_stateful_report(config)
+            print(format_indexer_watch_status(report))
             return 0
         try:
             watch_state = update_indexer_watch_config(
