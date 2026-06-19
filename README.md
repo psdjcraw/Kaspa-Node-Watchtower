@@ -466,6 +466,11 @@ wallet keys or signing APIs. If the main Watchtower Python cannot install a
 compatible `kaspa` wheel, set `sdk_probe.python_bin` to a separate Python that
 has the SDK installed.
 
+Set `sdk_probe.subscription_enabled=true` to collect a short live sample from
+SDK subscriptions for block, virtual-chain, and DAA events. Add addresses to
+`sdk_probe.subscription_watch_addresses` to use SDK UTXO notifications as a
+read-only watchlist fallback when the indexer is unavailable.
+
 Serve the metrics over HTTP:
 
 ```bash

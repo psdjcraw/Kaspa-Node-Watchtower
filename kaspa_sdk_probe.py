@@ -27,6 +27,11 @@ def _dict(value: Any) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
+def _sompi_from_utxo(item: dict[str, Any]) -> int:
+    entry = item.get("utxoEntry") or item.get("utxo_entry") or {}
+    return _int(entry.get("amount"))
+
+
 async def fetch_sdk_metrics_async(
     endpoint: str,
     network_id: str = "mainnet",
@@ -131,16 +136,181 @@ def fetch_sdk_metrics(
     return asyncio.run(fetch_sdk_metrics_async(endpoint, network_id, timeout, encoding))
 
 
+async def collect_subscription_metrics_async(
+    endpoint: str,
+    network_id: str = "mainnet",
+    timeout: float = 5.0,
+    encoding: str = "borsh",
+    duration: float = 5.0,
+    watch_addresses: list[str] | None = None,
+    include_accepted_transaction_ids: bool = True,
+) -> dict[str, Any]:
+    metrics: dict[str, Any] = {
+        "subscription_ok": False,
+        "subscription_enabled": True,
+        "subscription_duration_seconds": duration,
+        "subscription_watch_addresses": len(watch_addresses or []),
+        "subscription_events_total": 0,
+        "subscription_block_added_total": 0,
+        "subscription_virtual_chain_changed_total": 0,
+        "subscription_virtual_daa_score_changed_total": 0,
+        "subscription_utxos_changed_total": 0,
+        "subscription_utxos_added": 0,
+        "subscription_utxos_removed": 0,
+        "subscription_utxo_added_sompi": 0,
+        "subscription_utxo_removed_sompi": 0,
+        "subscription_connect_events": 0,
+        "subscription_disconnect_events": 0,
+        "subscription_last_event_age_seconds": None,
+        "subscription_last_virtual_daa_score": None,
+    }
+    if not endpoint:
+        metrics["subscription_detail"] = "not configured"
+        return metrics
+
+    try:
+        from kaspa import Address, RpcClient
+    except Exception as exc:
+        metrics["subscription_detail"] = f"Kaspa Python SDK unavailable: {exc}"
+        return metrics
+
+    url = wrpc_url_from_endpoint(endpoint)
+    client = RpcClient(url=url, network_id=network_id, encoding=encoding)
+    watched = [Address(address) for address in watch_addresses or []]
+    last_event_monotonic: float | None = None
+
+    def mark_event() -> None:
+        nonlocal last_event_monotonic
+        metrics["subscription_events_total"] += 1
+        last_event_monotonic = time.monotonic()
+
+    def on_connect(_event: dict[str, Any]) -> None:
+        metrics["subscription_connect_events"] += 1
+
+    def on_disconnect(_event: dict[str, Any]) -> None:
+        metrics["subscription_disconnect_events"] += 1
+
+    def on_block_added(_event: dict[str, Any]) -> None:
+        mark_event()
+        metrics["subscription_block_added_total"] += 1
+
+    def on_virtual_chain_changed(_event: dict[str, Any]) -> None:
+        mark_event()
+        metrics["subscription_virtual_chain_changed_total"] += 1
+
+    def on_virtual_daa_score_changed(event: dict[str, Any]) -> None:
+        mark_event()
+        metrics["subscription_virtual_daa_score_changed_total"] += 1
+        data = _dict(event.get("data"))
+        score = data.get("virtualDaaScore") or data.get("virtual_daa_score")
+        if score is not None:
+            metrics["subscription_last_virtual_daa_score"] = _int(score)
+
+    def on_utxos_changed(event: dict[str, Any]) -> None:
+        mark_event()
+        added = [item for item in event.get("added") or [] if isinstance(item, dict)]
+        removed = [item for item in event.get("removed") or [] if isinstance(item, dict)]
+        metrics["subscription_utxos_changed_total"] += 1
+        metrics["subscription_utxos_added"] += len(added)
+        metrics["subscription_utxos_removed"] += len(removed)
+        metrics["subscription_utxo_added_sompi"] += sum(_sompi_from_utxo(item) for item in added)
+        metrics["subscription_utxo_removed_sompi"] += sum(_sompi_from_utxo(item) for item in removed)
+
+    try:
+        client.add_event_listener("connect", on_connect)
+        client.add_event_listener("disconnect", on_disconnect)
+        client.add_event_listener("block-added", on_block_added)
+        client.add_event_listener("virtual-chain-changed", on_virtual_chain_changed)
+        client.add_event_listener("virtual-daa-score-changed", on_virtual_daa_score_changed)
+        if watched:
+            client.add_event_listener("utxos-changed", on_utxos_changed)
+        await asyncio.wait_for(
+            client.connect(
+                strategy="fallback",
+                timeout_duration=max(1, int(timeout * 1000)),
+                retry_interval=1000,
+            ),
+            timeout=timeout + 1.0,
+        )
+        await asyncio.wait_for(client.subscribe_block_added(), timeout=timeout)
+        await asyncio.wait_for(
+            client.subscribe_virtual_chain_changed(include_accepted_transaction_ids),
+            timeout=timeout,
+        )
+        await asyncio.wait_for(client.subscribe_virtual_daa_score_changed(), timeout=timeout)
+        if watched:
+            await asyncio.wait_for(client.subscribe_utxos_changed(watched), timeout=timeout)
+        await asyncio.sleep(max(0.1, duration))
+        metrics["subscription_ok"] = True
+        metrics["subscription_detail"] = "read ok"
+        if last_event_monotonic is not None:
+            metrics["subscription_last_event_age_seconds"] = round(time.monotonic() - last_event_monotonic, 2)
+        return metrics
+    except Exception as exc:
+        metrics["subscription_detail"] = f"SDK subscription probe failed: {exc}"
+        metrics["subscription_error"] = str(exc)
+        return metrics
+    finally:
+        try:
+            if watched:
+                await client.unsubscribe_utxos_changed(watched)
+            await client.unsubscribe_virtual_daa_score_changed()
+            await client.unsubscribe_virtual_chain_changed(include_accepted_transaction_ids)
+            await client.unsubscribe_block_added()
+        except Exception:
+            pass
+        try:
+            await client.disconnect()
+        except Exception:
+            pass
+
+
+def collect_subscription_metrics(
+    endpoint: str,
+    network_id: str = "mainnet",
+    timeout: float = 5.0,
+    encoding: str = "borsh",
+    duration: float = 5.0,
+    watch_addresses: list[str] | None = None,
+    include_accepted_transaction_ids: bool = True,
+) -> dict[str, Any]:
+    return asyncio.run(
+        collect_subscription_metrics_async(
+            endpoint,
+            network_id,
+            timeout,
+            encoding,
+            duration,
+            watch_addresses or [],
+            include_accepted_transaction_ids,
+        )
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Probe a Kaspa node through the Kaspa Python SDK.")
     parser.add_argument("--endpoint", default="127.0.0.1:17110", help="wRPC endpoint, with or without ws://.")
     parser.add_argument("--network-id", default="mainnet")
     parser.add_argument("--timeout", type=float, default=5.0)
     parser.add_argument("--encoding", default="borsh", choices=["borsh", "json"])
+    parser.add_argument("--subscriptions", action="store_true", help="Collect short-lived SDK subscription metrics.")
+    parser.add_argument("--duration", type=float, default=5.0, help="Subscription collection duration in seconds.")
+    parser.add_argument("--address", action="append", default=[], help="Kaspa address to watch for UTXO changes.")
     args = parser.parse_args()
+    if args.subscriptions:
+        result = collect_subscription_metrics(
+            args.endpoint,
+            args.network_id,
+            args.timeout,
+            args.encoding,
+            args.duration,
+            args.address,
+        )
+    else:
+        result = fetch_sdk_metrics(args.endpoint, args.network_id, args.timeout, args.encoding)
     print(
         json.dumps(
-            fetch_sdk_metrics(args.endpoint, args.network_id, args.timeout, args.encoding),
+            result,
             indent=2,
             sort_keys=True,
         )

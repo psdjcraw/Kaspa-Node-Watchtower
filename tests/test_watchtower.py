@@ -81,6 +81,46 @@ class WatchtowerUnitTests(unittest.TestCase):
         self.assertEqual(status["python_bin"], "/tmp/sdk-python")
         self.assertEqual(run.call_args.args[0][0], "/tmp/sdk-python")
 
+    def test_fetch_optional_sdk_metrics_can_collect_subscriptions(self):
+        config = copy.deepcopy(watchtower.DEFAULT_CONFIG)
+        config["sdk_probe"]["enabled"] = True
+        config["sdk_probe"]["endpoint"] = "127.0.0.1:17110"
+        config["sdk_probe"]["python_bin"] = "/tmp/sdk-python"
+        config["sdk_probe"]["subscription_enabled"] = True
+        config["sdk_probe"]["subscription_duration_seconds"] = 2
+        config["sdk_probe"]["subscription_watch_addresses"] = [{"label": "ops", "address": "kaspa:qtest"}]
+        responses = [
+            subprocess.CompletedProcess(
+                args=[],
+                returncode=0,
+                stdout=json.dumps({"ok": True, "sdk_installed": True}),
+                stderr="",
+            ),
+            subprocess.CompletedProcess(
+                args=[],
+                returncode=0,
+                stdout=json.dumps(
+                    {
+                        "subscription_ok": True,
+                        "subscription_events_total": 12,
+                        "subscription_watch_addresses": 1,
+                    }
+                ),
+                stderr="",
+            ),
+        ]
+
+        with mock.patch("watchtower.subprocess.run", side_effect=responses) as run:
+            status = watchtower.fetch_optional_sdk_metrics(config, "")
+
+        self.assertTrue(status["ok"])
+        self.assertTrue(status["subscription_ok"])
+        self.assertEqual(status["subscription_events_total"], 12)
+        self.assertEqual(status["subscription_watch_addresses"], 1)
+        second_command = run.call_args_list[1].args[0]
+        self.assertIn("--subscriptions", second_command)
+        self.assertIn("--address", second_command)
+
     def test_fetch_optional_indexer_status_reads_health_and_metrics(self):
         config = copy.deepcopy(watchtower.DEFAULT_CONFIG)
         config["indexer"]["enabled"] = True
@@ -854,6 +894,15 @@ class WatchtowerUnitTests(unittest.TestCase):
                 "rpc_latency_ms": 12.5,
                 "peer_count": 8,
                 "virtual_daa_score": 123456,
+                "subscription_enabled": True,
+                "subscription_ok": True,
+                "subscription_events_total": 9,
+                "subscription_last_event_age_seconds": 0.5,
+                "subscription_block_added_total": 3,
+                "subscription_virtual_chain_changed_total": 3,
+                "subscription_virtual_daa_score_changed_total": 3,
+                "subscription_watch_addresses": 1,
+                "subscription_utxos_added": 1,
             },
             "progress": {},
             "monitoring": {},
@@ -869,6 +918,14 @@ class WatchtowerUnitTests(unittest.TestCase):
         )
         self.assertIn(
             'kaspa_watchtower_sdk_peer_count{encoding="borsh",endpoint="127.0.0.1:17110",network="mainnet",node="test-node"} 8',
+            metrics,
+        )
+        self.assertIn(
+            'kaspa_watchtower_sdk_subscription_events_total{encoding="borsh",endpoint="127.0.0.1:17110",network="mainnet",node="test-node"} 9',
+            metrics,
+        )
+        self.assertIn(
+            'kaspa_watchtower_sdk_subscription_utxos_added{encoding="borsh",endpoint="127.0.0.1:17110",network="mainnet",node="test-node"} 1',
             metrics,
         )
 
@@ -977,11 +1034,21 @@ class WatchtowerUnitTests(unittest.TestCase):
         self.assertIn("SDK RPC Up", panels)
         self.assertIn("SDK RPC Latency", panels)
         self.assertIn("SDK DAA / Peers", panels)
+        self.assertIn("SDK Subscription Events", panels)
+        self.assertIn("SDK Subscription Freshness", panels)
+        self.assertIn("SDK UTXO Watch Fallback", panels)
         targets = panels["SDK DAA / Peers"].get("targets") or []
         self.assertTrue(
             any(
                 target.get("expr") == 'kaspa_watchtower_sdk_virtual_daa_score{node="$node"}'
                 for target in targets
+            )
+        )
+        subscription_targets = panels["SDK Subscription Events"].get("targets") or []
+        self.assertTrue(
+            any(
+                target.get("expr") == 'kaspa_watchtower_sdk_subscription_events_total{node="$node"}'
+                for target in subscription_targets
             )
         )
 

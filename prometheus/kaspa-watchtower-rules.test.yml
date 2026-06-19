@@ -389,3 +389,43 @@ tests:
             exp_annotations:
               summary: "Kaspa multi-node comparison found DAA or block lag"
               description: "History node mainnet-b on mainnet is lagging by flag daa_lag."
+
+  - interval: 1m
+    input_series:
+      - series: 'kaspa_watchtower_sdk_subscription_enabled{job="kaspa-watchtower",node="test"}'
+        values: '1+0x5'
+      - series: 'kaspa_watchtower_sdk_subscription_ok{job="kaspa-watchtower",node="test"}'
+        values: '0+0x5'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: KaspaSdkSubscriptionUnavailable
+        exp_alerts:
+          - exp_labels:
+              alertname: KaspaSdkSubscriptionUnavailable
+              job: kaspa-watchtower
+              node: test
+              service: kaspa-watchtower
+              severity: warning
+            exp_annotations:
+              summary: "Kaspa SDK subscription collector is unavailable"
+              description: "Watchtower could not collect SDK subscription events for node test."
+
+  - interval: 1m
+    input_series:
+      - series: 'kaspa_watchtower_sdk_subscription_enabled{job="kaspa-watchtower",node="test"}'
+        values: '1+0x10'
+      - series: 'kaspa_watchtower_sdk_subscription_events_total{job="kaspa-watchtower",node="test"}'
+        values: '0+0x10'
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: KaspaSdkSubscriptionNoEvents
+        exp_alerts:
+          - exp_labels:
+              alertname: KaspaSdkSubscriptionNoEvents
+              job: kaspa-watchtower
+              node: test
+              service: kaspa-watchtower
+              severity: warning
+            exp_annotations:
+              summary: "Kaspa SDK subscription collector saw no events"
+              description: "SDK subscription collector saw no live block, virtual-chain, DAA, or UTXO events for node test."

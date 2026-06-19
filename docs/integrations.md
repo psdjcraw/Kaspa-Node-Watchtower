@@ -82,7 +82,9 @@ Optional SDK probe metrics are emitted as `kaspa_watchtower_sdk_*` when
 `sdk_probe.enabled=true`. Install the `kaspa` package in a Python version with
 a compatible wheel before enabling the probe in production. Use
 `sdk_probe.python_bin` when the main Watchtower runtime should stay on a
-different Python version.
+different Python version. Enable `sdk_probe.subscription_enabled` for short
+subscription samples covering block, virtual-chain, DAA, and optional UTXO
+watchlist fallback events.
 
 For the current local stack, copy it to:
 

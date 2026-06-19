@@ -117,6 +117,9 @@ DEFAULT_CONFIG = {
         "encoding": "borsh",
         "timeout_seconds": 5,
         "python_bin": "",
+        "subscription_enabled": False,
+        "subscription_duration_seconds": 5,
+        "subscription_watch_addresses": [],
         "require_ok": False,
     },
     "thresholds": {
@@ -375,6 +378,51 @@ def sdk_probe_config(config: dict) -> dict[str, Any]:
     return {**DEFAULT_CONFIG["sdk_probe"], **(config.get("sdk_probe") or {})}
 
 
+def run_sdk_probe_subprocess(
+    python_bin: str,
+    endpoint: str,
+    network_id: str,
+    encoding: str,
+    timeout_seconds: float,
+    *,
+    subscriptions: bool = False,
+    duration_seconds: float | None = None,
+    watch_addresses: list[str] | None = None,
+) -> dict[str, Any]:
+    probe_path = Path(__file__).resolve().parent / "kaspa_sdk_probe.py"
+    command = [
+        python_bin,
+        str(probe_path),
+        "--endpoint",
+        endpoint,
+        "--network-id",
+        network_id,
+        "--timeout",
+        str(timeout_seconds),
+        "--encoding",
+        encoding,
+    ]
+    command_timeout = timeout_seconds + 2
+    if subscriptions:
+        command.append("--subscriptions")
+        if duration_seconds is not None:
+            command.extend(["--duration", str(duration_seconds)])
+            command_timeout += duration_seconds
+        for address in watch_addresses or []:
+            command.extend(["--address", address])
+    completed = subprocess.run(
+        command,
+        capture_output=True,
+        text=True,
+        timeout=command_timeout,
+        check=False,
+    )
+    if completed.returncode != 0:
+        detail = (completed.stderr or completed.stdout or "").strip()
+        raise RuntimeError(f"SDK probe subprocess exited {completed.returncode}: {detail}")
+    return json.loads(completed.stdout)
+
+
 def fetch_optional_sdk_metrics(config: dict, fallback_endpoint: str) -> dict[str, Any]:
     sdk_config = sdk_probe_config(config)
     if not sdk_config.get("enabled"):
@@ -396,41 +444,14 @@ def fetch_optional_sdk_metrics(config: dict, fallback_endpoint: str) -> dict[str
     encoding = str(sdk_config.get("encoding") or "borsh")
     python_bin = str(sdk_config.get("python_bin") or "")
     if python_bin:
-        probe_path = Path(__file__).resolve().parent / "kaspa_sdk_probe.py"
         try:
-            completed = subprocess.run(
-                [
-                    python_bin,
-                    str(probe_path),
-                    "--endpoint",
-                    endpoint,
-                    "--network-id",
-                    network_id,
-                    "--timeout",
-                    str(timeout_seconds),
-                    "--encoding",
-                    encoding,
-                ],
-                capture_output=True,
-                text=True,
-                timeout=timeout_seconds + 2,
-                check=False,
-            )
+            result = run_sdk_probe_subprocess(python_bin, endpoint, network_id, encoding, timeout_seconds)
         except Exception as exc:
             metrics["detail"] = f"SDK probe subprocess failed: {exc}"
             return metrics
-        if completed.returncode != 0:
-            detail = (completed.stderr or completed.stdout or "").strip()
-            metrics["detail"] = f"SDK probe subprocess exited {completed.returncode}: {detail}"
-            return metrics
-        try:
-            result = json.loads(completed.stdout)
-        except json.JSONDecodeError as exc:
-            metrics["detail"] = f"SDK probe subprocess returned invalid JSON: {exc}"
-            return metrics
     else:
         try:
-            from kaspa_sdk_probe import fetch_sdk_metrics
+            from kaspa_sdk_probe import collect_subscription_metrics, fetch_sdk_metrics
         except Exception as exc:
             metrics["detail"] = f"SDK probe unavailable: {exc}"
             return metrics
@@ -440,6 +461,43 @@ def fetch_optional_sdk_metrics(config: dict, fallback_endpoint: str) -> dict[str
             timeout=timeout_seconds,
             encoding=encoding,
         )
+    if sdk_config.get("subscription_enabled"):
+        duration_seconds = float(sdk_config.get("subscription_duration_seconds") or 5)
+        watch_addresses = [
+            str(item.get("address") if isinstance(item, dict) else item)
+            for item in (sdk_config.get("subscription_watch_addresses") or [])
+            if (item.get("address") if isinstance(item, dict) else item)
+        ]
+        try:
+            if python_bin:
+                subscription_result = run_sdk_probe_subprocess(
+                    python_bin,
+                    endpoint,
+                    network_id,
+                    encoding,
+                    timeout_seconds,
+                    subscriptions=True,
+                    duration_seconds=duration_seconds,
+                    watch_addresses=watch_addresses,
+                )
+            else:
+                subscription_result = collect_subscription_metrics(
+                    endpoint,
+                    network_id=network_id,
+                    timeout=timeout_seconds,
+                    encoding=encoding,
+                    duration=duration_seconds,
+                    watch_addresses=watch_addresses,
+                )
+            result.update(subscription_result)
+        except Exception as exc:
+            result.update(
+                {
+                    "subscription_enabled": True,
+                    "subscription_ok": False,
+                    "subscription_detail": f"SDK subscription probe failed: {exc}",
+                }
+            )
     result.update(
         {
             "enabled": True,
@@ -10231,6 +10289,91 @@ def format_prometheus_metrics(
     add_prometheus_metric(lines, "kaspa_watchtower_sdk_block_count", sdk_metrics.get("block_count"), sdk_labels)
     add_prometheus_metric(lines, "kaspa_watchtower_sdk_header_count", sdk_metrics.get("header_count"), sdk_labels)
     add_prometheus_metric(lines, "kaspa_watchtower_sdk_tip_count", sdk_metrics.get("tip_count"), sdk_labels)
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_sdk_subscription_enabled",
+        bool(sdk_metrics.get("subscription_enabled")),
+        sdk_labels,
+    )
+    add_prometheus_metric(lines, "kaspa_watchtower_sdk_subscription_ok", bool(sdk_metrics.get("subscription_ok")), sdk_labels)
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_sdk_subscription_duration_seconds",
+        sdk_metrics.get("subscription_duration_seconds"),
+        sdk_labels,
+    )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_sdk_subscription_events_total",
+        sdk_metrics.get("subscription_events_total"),
+        sdk_labels,
+    )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_sdk_subscription_last_event_age_seconds",
+        sdk_metrics.get("subscription_last_event_age_seconds"),
+        sdk_labels,
+    )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_sdk_subscription_block_added_total",
+        sdk_metrics.get("subscription_block_added_total"),
+        sdk_labels,
+    )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_sdk_subscription_virtual_chain_changed_total",
+        sdk_metrics.get("subscription_virtual_chain_changed_total"),
+        sdk_labels,
+    )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_sdk_subscription_virtual_daa_score_changed_total",
+        sdk_metrics.get("subscription_virtual_daa_score_changed_total"),
+        sdk_labels,
+    )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_sdk_subscription_last_virtual_daa_score",
+        sdk_metrics.get("subscription_last_virtual_daa_score"),
+        sdk_labels,
+    )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_sdk_subscription_watch_addresses",
+        sdk_metrics.get("subscription_watch_addresses"),
+        sdk_labels,
+    )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_sdk_subscription_utxos_changed_total",
+        sdk_metrics.get("subscription_utxos_changed_total"),
+        sdk_labels,
+    )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_sdk_subscription_utxos_added",
+        sdk_metrics.get("subscription_utxos_added"),
+        sdk_labels,
+    )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_sdk_subscription_utxos_removed",
+        sdk_metrics.get("subscription_utxos_removed"),
+        sdk_labels,
+    )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_sdk_subscription_utxo_added_sompi",
+        sdk_metrics.get("subscription_utxo_added_sompi"),
+        sdk_labels,
+    )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_sdk_subscription_utxo_removed_sompi",
+        sdk_metrics.get("subscription_utxo_removed_sompi"),
+        sdk_labels,
+    )
     add_prometheus_metric(
         lines,
         "kaspa_watchtower_latest_processed_blocks",
