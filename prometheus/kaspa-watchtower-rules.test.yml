@@ -392,6 +392,26 @@ tests:
 
   - interval: 1m
     input_series:
+      - series: 'kaspa_watchtower_indexer_watch_enabled{job="kaspa-watchtower",node="test"}'
+        values: '1+0x5'
+      - series: 'kaspa_watchtower_watch_readiness_ok{job="kaspa-watchtower",node="test"}'
+        values: '0+0x5'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: KaspaWatchReadinessNotReady
+        exp_alerts:
+          - exp_labels:
+              alertname: KaspaWatchReadinessNotReady
+              job: kaspa-watchtower
+              node: test
+              service: kaspa-watchtower
+              severity: warning
+            exp_annotations:
+              summary: "Kaspa watch readiness is not ready"
+              description: "Watch readiness is not ready for node test; run make discord-watch-check."
+
+  - interval: 1m
+    input_series:
       - series: 'kaspa_watchtower_sdk_subscription_enabled{job="kaspa-watchtower",node="test"}'
         values: '1+0x5'
       - series: 'kaspa_watchtower_sdk_subscription_ok{job="kaspa-watchtower",node="test"}'

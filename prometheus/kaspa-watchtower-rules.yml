@@ -235,6 +235,16 @@ groups:
           summary: "Kaspa indexer watchlist is unavailable"
           description: "Watchtower could not poll one or more configured indexer watch addresses for node {{ $labels.node }}."
 
+      - alert: KaspaWatchReadinessNotReady
+        expr: (kaspa_watchtower_indexer_watch_enabled{job="kaspa-watchtower"} == 1) and on(job,node) (kaspa_watchtower_watch_readiness_ok{job="kaspa-watchtower"} == 0)
+        for: 2m
+        labels:
+          severity: warning
+          service: kaspa-watchtower
+        annotations:
+          summary: "Kaspa watch readiness is not ready"
+          description: "Watch readiness is not ready for node {{ $labels.node }}; run make discord-watch-check."
+
       - alert: KaspaSdkSubscriptionUnavailable
         expr: (kaspa_watchtower_sdk_subscription_enabled{job="kaspa-watchtower"} == 1) and on(job,node) (kaspa_watchtower_sdk_subscription_ok{job="kaspa-watchtower"} == 0)
         for: 2m

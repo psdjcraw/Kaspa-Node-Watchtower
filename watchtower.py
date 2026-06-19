@@ -10437,6 +10437,7 @@ def format_prometheus_metrics(
     )
     add_prometheus_metric(lines, "kaspa_watchtower_indexer_health_latency_ms", indexer.get("health_latency_ms"), node_labels)
     add_prometheus_metric(lines, "kaspa_watchtower_indexer_metrics_latency_ms", indexer.get("metrics_latency_ms"), node_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_watch_readiness_ok", watch_readiness_ok(report), node_labels)
     add_prometheus_metric(lines, "kaspa_watchtower_indexer_watch_enabled", bool(indexer_watch.get("enabled")), node_labels)
     add_prometheus_metric(lines, "kaspa_watchtower_indexer_watch_ok", bool(indexer_watch.get("ok")), node_labels)
     add_prometheus_metric(lines, "kaspa_watchtower_indexer_watch_addresses", len(indexer_watch.get("watch_addresses") or []), node_labels)

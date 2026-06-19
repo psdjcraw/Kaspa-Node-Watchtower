@@ -987,6 +987,7 @@ class WatchtowerUnitTests(unittest.TestCase):
         self.assertIn('kaspa_watchtower_indexer_syncing{node="test-node"} 0', metrics)
         self.assertIn('kaspa_watchtower_indexer_lag_seconds{node="test-node"} 12', metrics)
         self.assertIn('kaspa_watchtower_indexer_checkpoint_age_seconds{node="test-node"} 45', metrics)
+        self.assertIn('kaspa_watchtower_watch_readiness_ok{node="test-node"} 1', metrics)
         self.assertIn('kaspa_watchtower_indexer_watch_enabled{node="test-node"} 1', metrics)
         self.assertIn('kaspa_watchtower_indexer_watch_events_total{node="test-node"} 1', metrics)
         self.assertIn('kaspa_watchtower_indexer_watch_new_events{node="test-node"} 1', metrics)
@@ -1241,6 +1242,12 @@ class WatchtowerUnitTests(unittest.TestCase):
             )
         )
         ready_targets = panels["Watchlist Ready State"].get("targets") or []
+        self.assertTrue(
+            any(
+                target.get("expr") == 'kaspa_watchtower_watch_readiness_ok{node="$node"}'
+                for target in ready_targets
+            )
+        )
         self.assertTrue(
             any(
                 target.get("expr") == 'kaspa_watchtower_sdk_subscription_watch_addresses{node="$node"}'

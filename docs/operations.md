@@ -479,6 +479,8 @@ This prints the live indexer watch state, SDK subscription health, watched
 address coverage, latest balance/UTXO/transaction baseline, and any newly
 detected watch events. It exits non-zero when the watch path is not ready, which
 makes it suitable for an operator check while waiting for a real address event.
+Prometheus exports the same readiness as `kaspa_watchtower_watch_readiness_ok`;
+`KaspaWatchReadinessNotReady` fires when the configured watch path is not ready.
 
 The cron wrapper prefers `.venv/bin/python` so the gRPC dependencies can stay
 local to this repository.

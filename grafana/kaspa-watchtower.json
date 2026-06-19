@@ -3041,6 +3041,17 @@
             "uid": "Prometheus"
           },
           "editorMode": "code",
+          "expr": "kaspa_watchtower_watch_readiness_ok{node=\"$node\"}",
+          "legendFormat": "watch ready",
+          "range": true,
+          "refId": "watch ready"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          },
+          "editorMode": "code",
           "expr": "kaspa_watchtower_indexer_watch_enabled{node=\"$node\"}",
           "legendFormat": "indexer enabled",
           "range": true,
