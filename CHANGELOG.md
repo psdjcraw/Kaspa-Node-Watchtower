@@ -2,11 +2,30 @@
 
 All notable changes to Kaspa Node Watchtower are tracked here.
 
-## Unreleased
+## 0.8.1 - 2026-06-19
+
+### Added
+
+- Indexer watchlist polling now records per-address readiness, balance, UTXO
+  count, transaction count, and last check timestamp.
+- Prometheus metrics now expose per-address watchlist balance, UTXO count,
+  transaction count, readiness, and last-check timestamp.
+- Bundled Grafana dashboard now includes watchlist balance and UTXO/transaction
+  count panels.
+- Generated `status.html` now shows watchlist balance, UTXO count, transaction
+  count, and status in the Indexer tab.
 
 ### Changed
 
 - Homebrew formula now points to the v0.8.0 GitHub Release asset and checksum.
+- `watch-list` Discord/CLI output now includes live watchlist address state,
+  recent events, balance, UTXO count, transaction count, readiness, and last
+  check time.
+- Watchlist event alerts now use a clearer one-line format with label, source,
+  direction/type, amount, transaction ID, address, and observed time.
+- `scripts/check_integrations.sh` no longer false-fails under `pipefail` when
+  `grep -q` exits early after finding expected `curl` output.
+- Version now reports `0.8.1` for the v0.8.1 release.
 
 ## 0.8.0 - 2026-06-19
 
