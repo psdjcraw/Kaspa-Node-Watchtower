@@ -2702,6 +2702,33 @@ def indexer_payload_count(payload: Any, keys: tuple[str, ...]) -> int:
     return 0
 
 
+def indexer_balance_sompi(payload: Any) -> Any:
+    if not isinstance(payload, dict):
+        return None
+    value = first_present_value(
+        payload,
+        (
+            "balance_sompi",
+            "balanceSompi",
+            "balance",
+            "amount_sompi",
+            "amountSompi",
+            "total_sompi",
+            "totalSompi",
+        ),
+    )
+    if numeric(value) is not None:
+        return value
+    nested = payload.get("data")
+    if isinstance(nested, dict):
+        return indexer_balance_sompi(nested)
+    return None
+
+
+def indexer_utxo_count(payload: Any) -> int:
+    return indexer_payload_count(payload, ("utxos", "items", "entries", "results", "data"))
+
+
 def indexer_watch_test(config: dict[str, Any], address: str, label: str = "") -> int:
     address = str(address or "").strip()
     label = str(label or "").strip()
@@ -2897,6 +2924,7 @@ def apply_indexer_watchlist(report: dict[str, Any], state: dict[str, Any], confi
         "enabled": bool(watch_config.get("enabled", False)),
         "alert_enabled": bool(watch_config.get("alert_enabled", True)),
         "watch_addresses": targets,
+        "address_states": [],
         "events": list(state.get("indexer_watch_events") or []),
         "new_events": [],
         "ok": True,
@@ -2923,16 +2951,70 @@ def apply_indexer_watchlist(report: dict[str, Any], state: dict[str, Any], confi
     errors = []
     cfg = indexer_config(config)
     for target in targets:
+        address_state: dict[str, Any] = {
+            "label": target.get("label") or "",
+            "address": target["address"],
+            "last_checked_at": checked_at,
+            "tx_count": None,
+            "balance_sompi": None,
+            "balance_kas": None,
+            "utxo_count": None,
+            "ok": True,
+            "detail": "ok",
+        }
         try:
             payload = fetch_indexer_api(
                 config,
                 cfg.get("address_transactions_path"),
                 address=target["address"],
             )
+            address_state["tx_count"] = indexer_payload_count(payload, ("transactions", "items", "entries", "results", "data"))
+            candidates.extend(indexer_watch_events_from_payload(payload, target, checked_at))
         except (OSError, urllib.error.URLError, json.JSONDecodeError, ValueError) as exc:
+            address_state["ok"] = False
+            address_state["detail"] = f"transactions unavailable: {exc}"
             errors.append(f"{target.get('label') or target['address']}: {exc}")
-            continue
-        candidates.extend(indexer_watch_events_from_payload(payload, target, checked_at))
+
+        try:
+            balance_payload = fetch_indexer_api(
+                config,
+                cfg.get("address_balance_path"),
+                address=target["address"],
+            )
+            balance_sompi = indexer_balance_sompi(balance_payload)
+            address_state["balance_sompi"] = balance_sompi
+            address_state["balance_kas"] = kas_from_sompi(balance_sompi) if numeric(balance_sompi) is not None else None
+            if address_state.get("utxo_count") is None and isinstance(balance_payload, dict):
+                utxo_count = first_present_value(balance_payload, ("utxo_count", "utxoCount", "utxos_count", "utxosCount"))
+                if numeric(utxo_count) is not None:
+                    address_state["utxo_count"] = int(float(utxo_count))
+        except (OSError, urllib.error.URLError, json.JSONDecodeError, ValueError) as exc:
+            address_state["balance_error"] = str(exc)
+
+        try:
+            utxo_payload = fetch_indexer_api(
+                config,
+                cfg.get("address_utxos_path"),
+                address=target["address"],
+            )
+            address_state["utxo_count"] = indexer_utxo_count(utxo_payload)
+        except (OSError, urllib.error.URLError, json.JSONDecodeError, ValueError) as exc:
+            address_state["utxo_error"] = str(exc)
+
+        detail_parts = []
+        if address_state.get("tx_count") is not None:
+            detail_parts.append(f"tx={address_state['tx_count']}")
+        if address_state.get("balance_sompi") is not None:
+            detail_parts.append(f"balance={format_kas(address_state.get('balance_sompi'))}")
+        if address_state.get("utxo_count") is not None:
+            detail_parts.append(f"utxos={address_state['utxo_count']}")
+        if address_state.get("balance_error"):
+            detail_parts.append("balance=warn")
+        if address_state.get("utxo_error"):
+            detail_parts.append("utxos=warn")
+        if address_state.get("ok"):
+            address_state["detail"] = " ".join(detail_parts) if detail_parts else "ok"
+        watch["address_states"].append(address_state)
 
     limit = positive_int(watch_config.get("event_history_entries"), DEFAULT_CONFIG["indexer_watch"]["event_history_entries"])
     events = list(state.get("indexer_watch_events") or [])
@@ -4926,16 +5008,24 @@ def indexer_watch_panel(report: dict[str, Any], state: dict[str, Any]) -> str:
     indexer = report.get("indexer") or {}
     watch = report.get("indexer_watch") or {}
     targets = normalize_watch_addresses(watch.get("watch_addresses"))
+    address_states = list(watch.get("address_states") or [])
+    state_by_address = {str(item.get("address") or ""): item for item in address_states}
     events = list(watch.get("events") or state.get("indexer_watch_events") or [])
     target_rows = "\n".join(
-        html_row(
-            [
-                item.get("label") or "unlabeled",
-                item.get("address") or "",
-            ]
-        )
+        html_row([
+            item.get("label") or "unlabeled",
+            item.get("address") or "",
+            format_kas((state_by_address.get(str(item.get("address") or "")) or {}).get("balance_sompi")),
+            (state_by_address.get(str(item.get("address") or "")) or {}).get("utxo_count", "unknown"),
+            (state_by_address.get(str(item.get("address") or "")) or {}).get("tx_count", "unknown"),
+            (
+                "ok"
+                if (state_by_address.get(str(item.get("address") or "")) or {}).get("ok")
+                else (state_by_address.get(str(item.get("address") or "")) or {}).get("detail", "pending")
+            ),
+        ])
         for item in targets
-    ) or html_row(["none", "no watched addresses configured"])
+    ) or html_row(["none", "no watched addresses configured", "", "", "", ""])
     event_rows = "\n".join(
         html_row(
             [
@@ -4996,7 +5086,7 @@ def indexer_watch_panel(report: dict[str, Any], state: dict[str, Any]) -> str:
       <section class="panel">
         <h2>Indexer Watchlist</h2>
         <table>
-          <thead>{html_row(["Label", "Address"], "th")}</thead>
+          <thead>{html_row(["Label", "Address", "Balance", "UTXOs", "Txs", "Status"], "th")}</thead>
           <tbody>{target_rows}</tbody>
         </table>
       </section>
@@ -10226,6 +10316,48 @@ def format_prometheus_metrics(
     add_prometheus_metric(lines, "kaspa_watchtower_indexer_watch_addresses", len(indexer_watch.get("watch_addresses") or []), node_labels)
     add_prometheus_metric(lines, "kaspa_watchtower_indexer_watch_events_total", len(indexer_watch.get("events") or []), node_labels)
     add_prometheus_metric(lines, "kaspa_watchtower_indexer_watch_new_events", len(indexer_watch.get("new_events") or []), node_labels)
+    for address_state in indexer_watch.get("address_states") or []:
+        address_labels = {
+            **node_labels,
+            "address": address_state.get("address", "unknown"),
+            "label": address_state.get("label") or "unlabeled",
+        }
+        add_prometheus_metric(
+            lines,
+            "kaspa_watchtower_indexer_watch_address_ready",
+            bool(address_state.get("ok")),
+            address_labels,
+        )
+        add_prometheus_metric(
+            lines,
+            "kaspa_watchtower_indexer_watch_address_balance_sompi",
+            address_state.get("balance_sompi"),
+            address_labels,
+        )
+        add_prometheus_metric(
+            lines,
+            "kaspa_watchtower_indexer_watch_address_balance_kas",
+            address_state.get("balance_kas"),
+            address_labels,
+        )
+        add_prometheus_metric(
+            lines,
+            "kaspa_watchtower_indexer_watch_address_utxos",
+            address_state.get("utxo_count"),
+            address_labels,
+        )
+        add_prometheus_metric(
+            lines,
+            "kaspa_watchtower_indexer_watch_address_transactions",
+            address_state.get("tx_count"),
+            address_labels,
+        )
+        add_prometheus_metric(
+            lines,
+            "kaspa_watchtower_indexer_watch_address_last_check_timestamp_seconds",
+            iso_timestamp_seconds(address_state.get("last_checked_at")),
+            address_labels,
+        )
     add_prometheus_metric(lines, "kaspa_watchtower_wallet_enabled", bool(wallet.get("enabled")), node_labels)
     add_prometheus_metric(lines, "kaspa_watchtower_wallet_ok", bool(wallet.get("ok")), node_labels)
     add_prometheus_metric(lines, "kaspa_watchtower_wallet_watch_addresses", len(wallet.get("entries") or []), node_labels)

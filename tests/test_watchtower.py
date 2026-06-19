@@ -382,12 +382,24 @@ class WatchtowerUnitTests(unittest.TestCase):
 
         with mock.patch(
             "watchtower.fetch_indexer_api",
-            return_value={
-                "transactions": [
-                    {"transaction_id": "tx1", "amount_sompi": 123456789},
-                    {"tx_id": "tx2", "value_sompi": 200000000},
-                ]
-            },
+            side_effect=[
+                {
+                    "transactions": [
+                        {"transaction_id": "tx1", "amount_sompi": 123456789},
+                        {"tx_id": "tx2", "value_sompi": 200000000},
+                    ]
+                },
+                {"balanceSompi": 300000000, "utxoCount": 4},
+                {"utxos": [{"outpoint": "a"}, {"outpoint": "b"}]},
+                {
+                    "transactions": [
+                        {"transaction_id": "tx1", "amount_sompi": 123456789},
+                        {"tx_id": "tx2", "value_sompi": 200000000},
+                    ]
+                },
+                {"balanceSompi": 300000000, "utxoCount": 4},
+                {"utxos": [{"outpoint": "a"}, {"outpoint": "b"}]},
+            ],
         ):
             event = watchtower.apply_indexer_watchlist(report, state, config)
             second_event = watchtower.apply_indexer_watchlist(report, state, config)
@@ -396,6 +408,10 @@ class WatchtowerUnitTests(unittest.TestCase):
         self.assertIsNone(second_event)
         self.assertEqual(len(state["indexer_watch_events"]), 2)
         self.assertEqual(len(report["indexer_watch"]["new_events"]), 0)
+        self.assertEqual(report["indexer_watch"]["address_states"][0]["balance_sompi"], 300000000)
+        self.assertEqual(report["indexer_watch"]["address_states"][0]["balance_kas"], 3.0)
+        self.assertEqual(report["indexer_watch"]["address_states"][0]["utxo_count"], 2)
+        self.assertEqual(report["indexer_watch"]["address_states"][0]["tx_count"], 2)
         checks = {check["name"]: check for check in report["checks"]}
         self.assertTrue(checks["indexer_watchlist"]["ok"])
 
@@ -728,6 +744,18 @@ class WatchtowerUnitTests(unittest.TestCase):
                 "enabled": True,
                 "ok": True,
                 "watch_addresses": [{"label": "mining", "address": "kaspa:qabc"}],
+                "address_states": [
+                    {
+                        "label": "mining",
+                        "address": "kaspa:qabc",
+                        "ok": True,
+                        "balance_sompi": 300000000,
+                        "balance_kas": 3.0,
+                        "utxo_count": 2,
+                        "tx_count": 5,
+                        "last_checked_at": "2026-06-05T10:03:00+09:00",
+                    }
+                ],
                 "events": [{"tx_id": "tx1"}],
                 "new_events": [{"tx_id": "tx2"}],
             },
@@ -862,6 +890,10 @@ class WatchtowerUnitTests(unittest.TestCase):
         self.assertIn('kaspa_watchtower_indexer_watch_enabled{node="test-node"} 1', metrics)
         self.assertIn('kaspa_watchtower_indexer_watch_events_total{node="test-node"} 1', metrics)
         self.assertIn('kaspa_watchtower_indexer_watch_new_events{node="test-node"} 1', metrics)
+        self.assertIn('kaspa_watchtower_indexer_watch_address_ready{address="kaspa:qabc",label="mining",node="test-node"} 1', metrics)
+        self.assertIn('kaspa_watchtower_indexer_watch_address_balance_kas{address="kaspa:qabc",label="mining",node="test-node"} 3', metrics)
+        self.assertIn('kaspa_watchtower_indexer_watch_address_utxos{address="kaspa:qabc",label="mining",node="test-node"} 2', metrics)
+        self.assertIn('kaspa_watchtower_indexer_watch_address_transactions{address="kaspa:qabc",label="mining",node="test-node"} 5', metrics)
         self.assertIn("2.3e+08", metrics)
         self.assertIn('kaspa_watchtower_multi_node_available{node="test-node"} 1', metrics)
         self.assertIn('kaspa_watchtower_multi_node_verdict_value{node="test-node"} 1', metrics)
@@ -1085,6 +1117,8 @@ class WatchtowerUnitTests(unittest.TestCase):
         self.assertIn("Watch Source Coverage", panels)
         self.assertIn("Indexer Watch Events", panels)
         self.assertIn("Watchlist Ready State", panels)
+        self.assertIn("Watchlist Balance", panels)
+        self.assertIn("Watchlist UTXO / Tx Count", panels)
         targets = panels["SDK DAA / Peers"].get("targets") or []
         self.assertTrue(
             any(
@@ -1111,6 +1145,20 @@ class WatchtowerUnitTests(unittest.TestCase):
             any(
                 target.get("expr") == 'kaspa_watchtower_sdk_subscription_watch_addresses{node="$node"}'
                 for target in ready_targets
+            )
+        )
+        balance_targets = panels["Watchlist Balance"].get("targets") or []
+        self.assertTrue(
+            any(
+                target.get("expr") == 'kaspa_watchtower_indexer_watch_address_balance_kas{node="$node"}'
+                for target in balance_targets
+            )
+        )
+        count_targets = panels["Watchlist UTXO / Tx Count"].get("targets") or []
+        self.assertTrue(
+            any(
+                target.get("expr") == 'kaspa_watchtower_indexer_watch_address_utxos{node="$node"}'
+                for target in count_targets
             )
         )
 
