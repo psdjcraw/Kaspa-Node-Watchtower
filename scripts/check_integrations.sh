@@ -17,7 +17,8 @@ check_exporter() {
     printf 'FAIL exporter health endpoint unavailable: %s/-/healthy\n' "$EXPORTER_URL" >&2
     return 1
   fi
-  if ! curl -fsS "$EXPORTER_URL/metrics" | grep -q 'kaspa_watchtower_status_ok'; then
+  metrics="$(curl -fsS "$EXPORTER_URL/metrics")"
+  if ! grep -q 'kaspa_watchtower_status_ok' <<<"$metrics"; then
     printf 'FAIL exporter metrics missing kaspa_watchtower_status_ok: %s/metrics\n' "$EXPORTER_URL" >&2
     return 1
   fi
@@ -25,27 +26,24 @@ check_exporter() {
 }
 
 check_prometheus_query() {
-  curl -fsG "$PROMETHEUS_URL/api/v1/query" \
-    --data-urlencode 'query=kaspa_watchtower_status_ok' |
-    grep -q '"node":"kaspa-mainnet-local"'
+  response="$(curl -fsG "$PROMETHEUS_URL/api/v1/query" \
+    --data-urlencode 'query=kaspa_watchtower_status_ok')"
+  grep -q '"node":"kaspa-mainnet-local"' <<<"$response"
   ok "Prometheus watchtower status query"
 }
 
 check_prometheus_target() {
-  curl -fsS "$PROMETHEUS_URL/api/v1/targets" |
-    grep -q '"scrapePool":"kaspa-watchtower"'
-  curl -fsS "$PROMETHEUS_URL/api/v1/targets" |
-    grep -q '"health":"up"'
+  response="$(curl -fsS "$PROMETHEUS_URL/api/v1/targets")"
+  grep -q '"scrapePool":"kaspa-watchtower"' <<<"$response"
+  grep -q '"health":"up"' <<<"$response"
   ok "Prometheus kaspa-watchtower target"
 }
 
 check_prometheus_rules() {
-  curl -fsS "$PROMETHEUS_URL/api/v1/rules" |
-    grep -q '"name":"kaspa-watchtower"'
-  curl -fsS "$PROMETHEUS_URL/api/v1/rules" |
-    grep -q '"name":"KaspaWatchtowerCritical"'
-  curl -fsS "$PROMETHEUS_URL/api/v1/rules" |
-    grep -q '"name":"KaspaWatchtowerRecoveryCommandFailed"'
+  response="$(curl -fsS "$PROMETHEUS_URL/api/v1/rules")"
+  grep -q '"name":"kaspa-watchtower"' <<<"$response"
+  grep -q '"name":"KaspaWatchtowerCritical"' <<<"$response"
+  grep -q '"name":"KaspaWatchtowerRecoveryCommandFailed"' <<<"$response"
   ok "Prometheus watchtower alert rules"
 }
 
