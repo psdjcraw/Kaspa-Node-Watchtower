@@ -12,6 +12,9 @@ All notable changes to Kaspa Node Watchtower are tracked here.
 - Unified operator timeline output now merges node, incident, recovery, market,
   wallet, indexer watch, SDK watch, whale, and mining events for CLI, Discord,
   and the generated status page.
+- Market risk history now computes a 24-hour trend verdict, max/average score,
+  event counts, active risk duration, and top reasons for Discord, Prometheus,
+  SQLite history summaries, and the generated status page.
 - `watchtower.py --alert` now emits a market-risk-high alert body when a new
   critical market positioning snapshot is detected.
 

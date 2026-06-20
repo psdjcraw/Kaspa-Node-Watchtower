@@ -90,8 +90,8 @@ Last verified manually on `2026-06-08`:
   10-second bar chart
 - Market tab: live KAS/USDT market watch, selectable timeframe candles, daily
   cross chart, and exchange-volume chart
-- Futures tab: futures positioning, futures trend, market source health, and
-  selectable estimated liquidation maps
+- Futures tab: persisted 24-hour market risk history, futures positioning,
+  futures trend, market source health, and selectable estimated liquidation maps
 - Ops and History tabs: triage queue, check details, command center, benchmark
   trend, recovery history, and recent status history
 - Market watch source: Bybit public spot ticker and 15-minute kline endpoints,
@@ -108,6 +108,9 @@ Last verified manually on `2026-06-08`:
 - Futures positioning panel: Bybit KAS/USDT linear perp mark/index price,
   basis, funding, annualized funding, next funding time, open interest, OI
   value, 24-hour futures volume, OI/volume crowding, and funding z-score
+- Market risk history panel: 24-hour verdict, max/average risk score, event
+  counts, active risk duration, top reasons, latest direction, and latest
+  persisted snapshot time from `state/market-snapshots.jsonl`
 - Futures trend panel: 7-day Bybit KAS/USDT open interest line with
   funding-rate bars from public linear perp endpoints
 - Market-data browser fetches: short-window panels refresh more often, while

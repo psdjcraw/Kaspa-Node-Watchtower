@@ -111,6 +111,12 @@ MARKET_COLUMNS = [
     "futures_open_interest_value",
     "futures_volume_24h",
     "futures_oi_volume_ratio",
+    "market_risk_score",
+    "market_risk_level",
+    "market_risk_level_value",
+    "market_risk_direction",
+    "market_risk_reasons",
+    "market_risk_reason_count",
     "data_json",
 ]
 
@@ -237,6 +243,12 @@ def create_schema(connection: sqlite3.Connection) -> None:
           futures_open_interest_value real,
           futures_volume_24h real,
           futures_oi_volume_ratio real,
+          market_risk_score real,
+          market_risk_level text,
+          market_risk_level_value integer,
+          market_risk_direction text,
+          market_risk_reasons text,
+          market_risk_reason_count integer,
           data_json text not null
         );
         """
@@ -264,6 +276,12 @@ def create_schema(connection: sqlite3.Connection) -> None:
             "spot_price_source_errors": "integer",
             "futures_funding_z_score": "real",
             "futures_oi_volume_ratio": "real",
+            "market_risk_score": "real",
+            "market_risk_level": "text",
+            "market_risk_level_value": "integer",
+            "market_risk_direction": "text",
+            "market_risk_reasons": "text",
+            "market_risk_reason_count": "integer",
         },
     )
 
@@ -479,7 +497,9 @@ def history_summary(connection: sqlite3.Connection, days: int) -> dict[str, Any]
                    spot_price_source_errors, futures_basis_pct, futures_funding_rate,
                    futures_funding_apr_pct, futures_funding_z_score,
                    futures_open_interest, futures_open_interest_value,
-                   futures_volume_24h, futures_oi_volume_ratio
+                   futures_volume_24h, futures_oi_volume_ratio,
+                   market_risk_score, market_risk_level, market_risk_level_value,
+                   market_risk_direction, market_risk_reasons, market_risk_reason_count
             from market_snapshots
             order by checked_at
             """
@@ -498,6 +518,22 @@ def history_summary(connection: sqlite3.Connection, days: int) -> dict[str, Any]
         for row in successful_market
         if (value := numeric(row["futures_funding_rate"])) is not None
     ]
+    market_risk_scores = [
+        value
+        for row in successful_market
+        if (value := numeric(row["market_risk_score"])) is not None
+    ]
+    market_risk_events = [row for row in successful_market if (numeric(row["market_risk_score"]) or 0) >= 2]
+    market_risk_critical = [row for row in successful_market if (numeric(row["market_risk_score"]) or 0) >= 4]
+    market_risk_reasons: dict[str, int] = {}
+    for row in market_risk_events:
+        for reason in str(row["market_risk_reasons"] or "").split(","):
+            reason = reason.strip()
+            if reason and reason != "none":
+                market_risk_reasons[reason] = market_risk_reasons.get(reason, 0) + 1
+    market_top_risk_reasons = ",".join(
+        reason for reason, _count in sorted(market_risk_reasons.items(), key=lambda entry: (-entry[1], entry[0]))[:3]
+    ) or "none"
 
     recovery_rows = list(
         connection.execute(
@@ -604,6 +640,19 @@ def history_summary(connection: sqlite3.Connection, days: int) -> dict[str, Any]
         "latest_futures_oi_volume_ratio": None
         if latest_market is None
         else numeric(latest_market["futures_oi_volume_ratio"]),
+        "latest_market_risk_score": None if latest_market is None else numeric(latest_market["market_risk_score"]),
+        "latest_market_risk_level": "unknown" if latest_market is None else latest_market["market_risk_level"],
+        "latest_market_risk_direction": "unknown"
+        if latest_market is None
+        else latest_market["market_risk_direction"],
+        "latest_market_risk_reasons": "none" if latest_market is None else latest_market["market_risk_reasons"],
+        "max_market_risk_score": max(market_risk_scores) if market_risk_scores else None,
+        "avg_market_risk_score": None
+        if not market_risk_scores
+        else sum(market_risk_scores) / len(market_risk_scores),
+        "market_risk_events": len(market_risk_events),
+        "market_risk_critical_events": len(market_risk_critical),
+        "market_top_risk_reasons": market_top_risk_reasons,
         "recovery_attempts": len(recovery_window),
         "recovery_executed": sum(1 for row in recovery_window if not row["dry_run"]),
         "recovery_dry_runs": sum(1 for row in recovery_window if row["dry_run"]),
@@ -849,6 +898,18 @@ def print_history_summary(summary: dict[str, Any]) -> None:
         f"oi_value={format_market_usdt(summary['latest_futures_open_interest_value'])} "
         f"volume_24h={format_market_volume(summary['latest_futures_volume_24h'])} "
         f"oi_volume={format_market_multiple(summary['latest_futures_oi_volume_ratio'])}"
+    )
+    print(
+        "market_risk="
+        f"level={summary['latest_market_risk_level']} "
+        f"score={format_optional_number(summary['latest_market_risk_score'])} "
+        f"direction={summary['latest_market_risk_direction']} "
+        f"reasons={summary['latest_market_risk_reasons']} "
+        f"max={format_optional_number(summary['max_market_risk_score'])} "
+        f"avg={format_optional_number(summary['avg_market_risk_score'])} "
+        f"events={summary['market_risk_events']} "
+        f"critical={summary['market_risk_critical_events']} "
+        f"top={summary['market_top_risk_reasons']}"
     )
     print(
         "recovery_attempts="

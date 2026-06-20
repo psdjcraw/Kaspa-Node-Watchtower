@@ -2151,6 +2151,24 @@ def format_optional_number(value: Any) -> str:
     return str(int(parsed)) if parsed.is_integer() else f"{parsed:.2f}"
 
 
+def format_signed_number(value: Any) -> str:
+    parsed = numeric(value)
+    if parsed is None:
+        return "unknown"
+    return f"{int(parsed):+d}" if parsed.is_integer() else f"{parsed:+.2f}"
+
+
+def format_duration_minutes(value: Any) -> str:
+    parsed = numeric(value)
+    if parsed is None:
+        return "unknown"
+    if parsed < 1:
+        return "0m"
+    if parsed < 120:
+        return f"{parsed:.0f}m"
+    return f"{parsed / 60:.1f}h"
+
+
 def format_ratio(value: Any) -> str:
     parsed = numeric(value)
     if parsed is None:
@@ -3524,6 +3542,111 @@ def format_market_zscore(value: Any) -> str:
     if parsed is None:
         return "unknown"
     return f"{parsed:+.2f}sd"
+
+
+def market_risk_score_value(item: dict[str, Any]) -> float | None:
+    if not item.get("ok"):
+        return None
+    return numeric(item.get("market_risk_score"))
+
+
+def market_risk_trend(records: list[dict[str, Any]], *, hours: float = 24.0) -> dict[str, Any]:
+    successful = [item for item in records if item.get("ok") and market_risk_score_value(item) is not None]
+    latest = successful[-1] if successful else {}
+    if not latest:
+        return {
+            "verdict": "unknown",
+            "verdict_value": -1,
+            "window_hours": hours,
+            "window_snapshots": 0,
+            "risk_events": 0,
+            "critical_events": 0,
+            "max_score": None,
+            "avg_score": None,
+            "score_delta": None,
+            "risk_duration_minutes": 0,
+            "top_reasons": "none",
+        }
+
+    latest_at = parse_iso_datetime(latest.get("checked_at")) or dt.datetime.now().astimezone()
+    cutoff = latest_at - dt.timedelta(hours=hours)
+    window = [
+        item
+        for item in successful
+        if (parsed := parse_iso_datetime(item.get("checked_at"))) is not None and parsed >= cutoff
+    ] or [latest]
+    scores = [score for item in window if (score := market_risk_score_value(item)) is not None]
+    current_score = market_risk_score_value(latest) or 0
+    first_score = scores[0] if scores else current_score
+    max_score = max(scores) if scores else current_score
+    avg_score = sum(scores) / len(scores) if scores else current_score
+    risk_items = [item for item in window if (market_risk_score_value(item) or 0) >= 2]
+    critical_items = [item for item in window if (market_risk_score_value(item) or 0) >= 4]
+    score_delta = current_score - first_score
+
+    active_risk_streak = []
+    for item in reversed(window):
+        if (market_risk_score_value(item) or 0) >= 2:
+            active_risk_streak.append(item)
+        else:
+            break
+    risk_duration_minutes = 0.0
+    if active_risk_streak:
+        oldest = active_risk_streak[-1]
+        oldest_at = parse_iso_datetime(oldest.get("checked_at"))
+        if oldest_at:
+            risk_duration_minutes = max(0.0, (latest_at - oldest_at).total_seconds() / 60)
+
+    reason_counts: dict[str, int] = {}
+    for item in risk_items:
+        for reason in str(item.get("market_risk_reasons") or "").split(","):
+            reason = reason.strip()
+            if reason and reason != "none":
+                reason_counts[reason] = reason_counts.get(reason, 0) + 1
+    top_reasons = ",".join(
+        reason for reason, _count in sorted(reason_counts.items(), key=lambda entry: (-entry[1], entry[0]))[:3]
+    ) or "none"
+
+    if current_score >= 4:
+        verdict = "elevated" if score_delta <= 0 else "warming"
+    elif current_score >= 2:
+        verdict = "cooling" if max_score >= 4 or score_delta < 0 else "warming" if score_delta > 0 else "stable"
+    elif max_score >= 2:
+        verdict = "recovered"
+    else:
+        verdict = "stable"
+
+    return {
+        "verdict": verdict,
+        "verdict_value": {"stable": 0, "recovered": 0, "cooling": 1, "warming": 2, "elevated": 3}.get(verdict, -1),
+        "window_hours": hours,
+        "window_snapshots": len(window),
+        "risk_events": len(risk_items),
+        "critical_events": len(critical_items),
+        "current_score": current_score,
+        "max_score": max_score,
+        "avg_score": avg_score,
+        "score_delta": score_delta,
+        "risk_duration_minutes": risk_duration_minutes,
+        "first_risk_at": risk_items[0].get("checked_at") if risk_items else None,
+        "latest_risk_at": risk_items[-1].get("checked_at") if risk_items else None,
+        "top_reasons": top_reasons,
+    }
+
+
+def market_risk_next_action(level: Any, score: Any, verdict: str = "unknown") -> str:
+    parsed = numeric(score)
+    if level == "critical" or (parsed is not None and parsed >= 4):
+        if verdict == "warming":
+            return "check funding/OI crowding now and pause aggressive automation"
+        return "check funding/OI crowding and reduce automation assumptions"
+    if level == "warning" or (parsed is not None and parsed >= 2):
+        if verdict == "cooling":
+            return "watch next snapshot for recovery confirmation"
+        return "watch next snapshot and confirm with futures dashboard"
+    if verdict == "recovered":
+        return "market risk recovered; keep normal monitoring"
+    return "monitor"
 
 
 def fetch_market_snapshot(timeout: float = 6.0) -> dict[str, Any]:
@@ -5451,6 +5574,40 @@ def operator_timeline_panel(events: list[dict[str, Any]]) -> str:
     """
 
 
+def market_risk_history_panel(market_metrics: dict[str, Any]) -> str:
+    latest = market_metrics.get("latest_successful") or {}
+    trend = market_metrics.get("risk_trend") or {}
+    rows = "\n".join(
+        html_row([label, value])
+        for label, value in [
+            ("Trend verdict", trend.get("verdict", "unknown")),
+            ("Current score", latest.get("market_risk_score", "unknown")),
+            ("Current level", latest.get("market_risk_level", "unknown")),
+            ("24h max score", format_optional_number(trend.get("max_score"))),
+            ("24h avg score", format_optional_number(trend.get("avg_score"))),
+            ("Score delta", format_signed_number(trend.get("score_delta"))),
+            ("Risk events 24h", trend.get("risk_events", 0)),
+            ("Critical events 24h", trend.get("critical_events", 0)),
+            ("Active risk duration", format_duration_minutes(trend.get("risk_duration_minutes"))),
+            ("Top reasons", trend.get("top_reasons", "none")),
+            ("Direction", latest.get("market_risk_direction", "unknown")),
+            ("Latest snapshot", latest.get("checked_at", market_metrics.get("last_checked_at", "unknown"))),
+        ]
+    )
+    return f"""
+    <section class="panel market-risk-history-panel">
+      <div class="market-chart-head">
+        <h2>Market Risk History 24H</h2>
+        <div class="market-status">Persisted KAS/USDT positioning snapshots</div>
+      </div>
+      <table>
+        <thead>{html_row(["Signal", "Value"], "th")}</thead>
+        <tbody>{rows}</tbody>
+      </table>
+    </section>
+    """
+
+
 def write_status_page(
     path: Path,
     report: dict[str, Any],
@@ -5495,6 +5652,7 @@ def write_status_page(
     latest_recovery = (recovery_records or [])[-1] if recovery_records else {}
     status_market_path = market_snapshot_path or Path(DEFAULT_CONFIG["market_snapshot_path"])
     status_market_metrics = build_market_metrics(status_market_path)
+    market_risk_panel = market_risk_history_panel(status_market_metrics)
     timeline_events = build_operator_timeline(
         report,
         state,
@@ -6660,6 +6818,7 @@ def write_status_page(
     </section>
     </section>
     <section id="tab-futures" class="tab-panel">
+    {market_risk_panel}
     <section class="panel futures-panel">
       <div class="market-chart-head">
         <div class="market-title-row">
@@ -9988,6 +10147,7 @@ def market_metrics_from_config(config: dict[str, Any]) -> dict[str, Any]:
 def format_discord_market(config: dict[str, Any], market_metrics: dict[str, Any] | None = None) -> str:
     metrics = market_metrics or market_metrics_from_config(config)
     latest = metrics.get("latest_successful") or {}
+    trend = metrics.get("risk_trend") or {}
     if not latest:
         return "\n".join(
             [
@@ -10025,6 +10185,13 @@ def format_discord_market(config: dict[str, Any], market_metrics: dict[str, Any]
                 f"direction={latest.get('market_risk_direction', 'unknown')} "
                 f"reasons={latest.get('market_risk_reasons', 'none')}"
             ),
+            (
+                "trend="
+                f"verdict={trend.get('verdict', 'unknown')} "
+                f"24h_max={trend.get('max_score', 'unknown')} "
+                f"24h_events={trend.get('risk_events', 0)} "
+                f"duration={format_duration_minutes(trend.get('risk_duration_minutes'))}"
+            ),
         ]
     )
 
@@ -10032,6 +10199,7 @@ def format_discord_market(config: dict[str, Any], market_metrics: dict[str, Any]
 def format_discord_market_risk(config: dict[str, Any], market_metrics: dict[str, Any] | None = None) -> str:
     metrics = market_metrics or market_metrics_from_config(config)
     latest = metrics.get("latest_successful") or {}
+    trend = metrics.get("risk_trend") or {}
     if not latest:
         return "\n".join(
             [
@@ -10043,11 +10211,8 @@ def format_discord_market_risk(config: dict[str, Any], market_metrics: dict[str,
     score = latest.get("market_risk_score", "unknown")
     level = latest.get("market_risk_level", "unknown")
     reasons = latest.get("market_risk_reasons", "none")
-    next_action = "monitor"
-    if level == "critical" or (numeric(score) is not None and numeric(score) >= 4):
-        next_action = "check funding/OI crowding and reduce automation assumptions"
-    elif level == "warning" or (numeric(score) is not None and numeric(score) >= 2):
-        next_action = "watch next snapshot and confirm with futures dashboard"
+    verdict = str(trend.get("verdict") or "unknown")
+    next_action = market_risk_next_action(level, score, verdict)
     return "\n".join(
         [
             f"Kaspa market risk: {config.get('node_name', 'unknown')}",
@@ -10062,6 +10227,17 @@ def format_discord_market_risk(config: dict[str, Any], market_metrics: dict[str,
                 f"oi_volume={format_market_ratio(latest.get('futures_oi_volume_ratio'))} "
                 f"basis={format_market_percent_points(latest.get('futures_basis_pct'))} "
                 f"spot_dispersion={format_market_percent_points(latest.get('spot_price_dispersion_pct'))}"
+            ),
+            (
+                "trend="
+                f"verdict={verdict} "
+                f"24h_max={trend.get('max_score', 'unknown')} "
+                f"24h_avg={format_optional_number(trend.get('avg_score'))} "
+                f"delta={format_signed_number(trend.get('score_delta'))} "
+                f"events={trend.get('risk_events', 0)} "
+                f"critical={trend.get('critical_events', 0)} "
+                f"duration={format_duration_minutes(trend.get('risk_duration_minutes'))} "
+                f"top={trend.get('top_reasons', 'none')}"
             ),
             f"checked_at={latest.get('checked_at', 'unknown')} source={metrics.get('source', latest.get('source', 'unknown'))}",
             f"next={next_action}",
@@ -11081,6 +11257,7 @@ def build_market_metrics(path: Path) -> dict[str, Any]:
     successful = [item for item in records if item.get("ok")]
     latest = records[-1] if records else {}
     latest_successful = successful[-1] if successful else {}
+    risk_trend = market_risk_trend(records, hours=24)
     return {
         "snapshots": len(records),
         "successful_snapshots": len(successful),
@@ -11088,6 +11265,7 @@ def build_market_metrics(path: Path) -> dict[str, Any]:
         "last_checked_at": latest.get("checked_at"),
         "source": latest_successful.get("source") or latest.get("source") or "unknown",
         "latest_successful": latest_successful,
+        "risk_trend": risk_trend,
     }
 
 
@@ -11122,6 +11300,7 @@ def format_prometheus_metrics(
     market_metrics = market_metrics or {}
     multi_node_metrics = multi_node_metrics or {}
     latest_market = market_metrics.get("latest_successful") or {}
+    market_trend = market_metrics.get("risk_trend") or {}
     market_labels = {**node_labels, "source": market_metrics.get("source", "unknown")}
     severity_values = {"ok": 0, "warn": 1, "critical": 2}
     lines = [
@@ -11897,6 +12076,42 @@ def format_prometheus_metrics(
             "direction": latest_market.get("market_risk_direction", "unknown"),
             "reasons": latest_market.get("market_risk_reasons", "none"),
         },
+    )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_market_positioning_risk_trend_value",
+        market_trend.get("verdict_value"),
+        {**market_labels, "verdict": market_trend.get("verdict", "unknown")},
+    )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_market_positioning_risk_24h_max_score",
+        market_trend.get("max_score"),
+        market_labels,
+    )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_market_positioning_risk_24h_avg_score",
+        market_trend.get("avg_score"),
+        market_labels,
+    )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_market_positioning_risk_24h_events",
+        market_trend.get("risk_events"),
+        {**market_labels, "top_reasons": market_trend.get("top_reasons", "none")},
+    )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_market_positioning_risk_24h_critical_events",
+        market_trend.get("critical_events"),
+        market_labels,
+    )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_market_positioning_risk_active_duration_minutes",
+        market_trend.get("risk_duration_minutes"),
+        market_labels,
     )
     verdict_values = {"ok": 0, "warn": 1, "critical": 2, "unknown": -1}
     multi_node_nodes = multi_node_metrics.get("nodes") or []

@@ -3210,6 +3210,18 @@ class WatchtowerUnitTests(unittest.TestCase):
             watchtower.append_jsonl(
                 market_path,
                 {
+                    "checked_at": "2026-06-20T09:00:00+09:00",
+                    "source": "Bybit KAS/USDT",
+                    "ok": True,
+                    "market_risk_score": 1,
+                    "market_risk_level": "ok",
+                    "market_risk_direction": "neutral",
+                    "market_risk_reasons": "none",
+                },
+            )
+            watchtower.append_jsonl(
+                market_path,
+                {
                     "checked_at": "2026-06-20T10:00:00+09:00",
                     "source": "Bybit KAS/USDT",
                     "ok": True,
@@ -3240,9 +3252,43 @@ class WatchtowerUnitTests(unittest.TestCase):
         risk_text = printed.call_args_list[1].args[0]
         self.assertIn("Kaspa market: test-node", market_text)
         self.assertIn("risk=level=critical score=4", market_text)
+        self.assertIn("trend=verdict=warming 24h_max=4.0", market_text)
         self.assertIn("Kaspa market risk: test-node", risk_text)
         self.assertIn("level=critical score=4 direction=long_crowded", risk_text)
-        self.assertIn("next=check funding/OI crowding", risk_text)
+        self.assertIn("trend=verdict=warming", risk_text)
+        self.assertIn("events=1 critical=1", risk_text)
+        self.assertIn("next=check funding/OI crowding now", risk_text)
+
+    def test_market_risk_trend_detects_recovered_window(self):
+        records = [
+            {
+                "checked_at": "2026-06-20T08:00:00+09:00",
+                "ok": True,
+                "market_risk_score": 4,
+                "market_risk_reasons": "funding_z_extreme",
+            },
+            {
+                "checked_at": "2026-06-20T09:00:00+09:00",
+                "ok": True,
+                "market_risk_score": 2,
+                "market_risk_reasons": "basis_elevated",
+            },
+            {
+                "checked_at": "2026-06-20T10:00:00+09:00",
+                "ok": True,
+                "market_risk_score": 0,
+                "market_risk_reasons": "none",
+            },
+        ]
+
+        trend = watchtower.market_risk_trend(records)
+
+        self.assertEqual(trend["verdict"], "recovered")
+        self.assertEqual(trend["max_score"], 4)
+        self.assertEqual(trend["risk_events"], 2)
+        self.assertEqual(trend["critical_events"], 1)
+        self.assertEqual(trend["top_reasons"], "basis_elevated,funding_z_extreme")
+        self.assertEqual(trend["risk_duration_minutes"], 0)
 
     def test_market_risk_alert_key_and_body_for_critical_snapshot(self):
         market_metrics = {
@@ -3457,6 +3503,7 @@ class WatchtowerUnitTests(unittest.TestCase):
             self.assertEqual(items[-1]["market_risk_reasons"], "funding_z_extreme")
             metrics = Path(config["prometheus_metrics_path"]).read_text(encoding="utf-8")
             self.assertIn("kaspa_watchtower_market_positioning_risk_score", metrics)
+            self.assertIn("kaspa_watchtower_market_positioning_risk_24h_max_score", metrics)
             self.assertIn('level="critical"', metrics)
 
     def test_fetch_market_snapshot_returns_unavailable_on_api_failure(self):
@@ -3511,6 +3558,12 @@ class WatchtowerUnitTests(unittest.TestCase):
                         "futures_open_interest_value": 7010000,
                         "futures_volume_24h": 78000000,
                         "futures_oi_volume_ratio": 2.9487,
+                        "market_risk_score": 2,
+                        "market_risk_level": "warning",
+                        "market_risk_level_value": 1,
+                        "market_risk_direction": "short_crowded",
+                        "market_risk_reasons": "basis_elevated",
+                        "market_risk_reason_count": 1,
                     }
                 ],
             )
@@ -3548,6 +3601,8 @@ class WatchtowerUnitTests(unittest.TestCase):
         self.assertIn("market_futures=basis=-0.13%", completed.stdout)
         self.assertIn("funding_z=+1.50sd", completed.stdout)
         self.assertIn("oi_volume=2.95x", completed.stdout)
+        self.assertIn("market_risk=level=warning score=2", completed.stdout)
+        self.assertIn("events=1 critical=0 top=basis_elevated", completed.stdout)
 
     def test_status_page_uses_incident_first_dashboard_layout(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -3744,6 +3799,8 @@ class WatchtowerUnitTests(unittest.TestCase):
             self.assertLess(html.index("KAS/USDT vs BTC/USDT 1W"), html.index("KAS/USDT vs BTC/USDT 1M"))
             self.assertIn("KAS Exchange Volume 1D", html)
             self.assertIn("KAS/USDT Futures Positioning", html)
+            self.assertIn("Market Risk History 24H", html)
+            self.assertIn("Persisted KAS/USDT positioning snapshots", html)
             self.assertIn("KAS/USDT Futures Trend 7D", html)
             self.assertIn("Market Data Sources", html)
             self.assertIn("Bybit linear perp", html)
