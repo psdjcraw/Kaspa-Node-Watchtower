@@ -88,8 +88,9 @@ Last verified manually on `2026-06-08`:
 - Network tab: trend panels, severity timeline, relay intake chart, block
   processing rate chart, transaction throughput freshness state, and mempool
   10-second bar chart
-- Market tab: live KAS/USDT market watch, selectable timeframe candles, daily
-  cross chart, and exchange-volume chart
+- Market tab: live KAS/USDT market watch, selectable timeframe candles, broad
+  technical-indicator cards, BTC-relative cross charts, and exchange-volume
+  chart
 - Futures tab: persisted 24-hour market risk history, futures positioning,
   futures trend, market source health, and selectable estimated liquidation maps
 - Ops and History tabs: triage queue, check details, command center, benchmark
@@ -111,6 +112,9 @@ Last verified manually on `2026-06-08`:
 - Market risk history panel: 24-hour verdict, max/average risk score, event
   counts, active risk duration, top reasons, latest direction, and latest
   persisted snapshot time from `state/market-snapshots.jsonl`
+- Market indicator cards: RSI, EMA/SMA, MACD, Bollinger, Donchian, ATR, ADX,
+  stochastic, CCI, Williams %R, ROC, momentum, OBV, MFI, VWAP, volume spike,
+  and BTC-relative strength for the visible KAS/USDT timeframes
 - Futures trend panel: 7-day Bybit KAS/USDT open interest line with
   funding-rate bars from public linear perp endpoints
 - Market-data browser fetches: short-window panels refresh more often, while

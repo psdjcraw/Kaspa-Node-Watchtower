@@ -15,6 +15,10 @@ All notable changes to Kaspa Node Watchtower are tracked here.
 - Market risk history now computes a 24-hour trend verdict, max/average score,
   event counts, active risk duration, and top reasons for Discord, Prometheus,
   SQLite history summaries, and the generated status page.
+- Market indicator cards now include a wider technical-analysis set across
+  visible KAS/USDT timeframes: EMA/SMA, MACD, Bollinger, Donchian, ATR, ADX,
+  stochastic, CCI, Williams %R, ROC, momentum, OBV, MFI, VWAP, volume spike,
+  RSI, and BTC-relative strength.
 - `watchtower.py --alert` now emits a market-risk-high alert body when a new
   critical market positioning snapshot is detected.
 

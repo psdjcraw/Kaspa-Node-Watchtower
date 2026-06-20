@@ -6631,7 +6631,7 @@ def write_status_page(
     <section class="panel market-indicator-panel">
       <div class="market-chart-head">
         <h2>Market Indicators</h2>
-        <div class="market-status">RSI, MACD, Bollinger, volume, and BTC-relative by timeframe</div>
+        <div class="market-status">Trend, momentum, volatility, volume, flow, and BTC-relative by timeframe</div>
       </div>
       <div class="market-indicator-card-grid">
         <div id="market-rsi-card-15m" class="market-indicator-card" data-indicator-card="15m">
@@ -6640,7 +6640,20 @@ def write_status_page(
           <div class="state" data-indicator-state="rsi">Waiting for candles</div>
           <div class="market-indicator-rows">
             <div class="market-indicator-row" data-indicator-row="macd"><span>MACD</span><strong>pending</strong></div>
+            <div class="market-indicator-row" data-indicator-row="ema"><span>EMA</span><strong>pending</strong></div>
+            <div class="market-indicator-row" data-indicator-row="sma"><span>SMA</span><strong>pending</strong></div>
             <div class="market-indicator-row" data-indicator-row="bb"><span>BB</span><strong>pending</strong></div>
+            <div class="market-indicator-row" data-indicator-row="donchian"><span>Donch</span><strong>pending</strong></div>
+            <div class="market-indicator-row" data-indicator-row="atr"><span>ATR</span><strong>pending</strong></div>
+            <div class="market-indicator-row" data-indicator-row="adx"><span>ADX</span><strong>pending</strong></div>
+            <div class="market-indicator-row" data-indicator-row="stoch"><span>Stoch</span><strong>pending</strong></div>
+            <div class="market-indicator-row" data-indicator-row="cci"><span>CCI</span><strong>pending</strong></div>
+            <div class="market-indicator-row" data-indicator-row="williams"><span>W%R</span><strong>pending</strong></div>
+            <div class="market-indicator-row" data-indicator-row="roc"><span>ROC</span><strong>pending</strong></div>
+            <div class="market-indicator-row" data-indicator-row="momentum"><span>Mom</span><strong>pending</strong></div>
+            <div class="market-indicator-row" data-indicator-row="obv"><span>OBV</span><strong>pending</strong></div>
+            <div class="market-indicator-row" data-indicator-row="mfi"><span>MFI</span><strong>pending</strong></div>
+            <div class="market-indicator-row" data-indicator-row="vwap"><span>VWAP</span><strong>pending</strong></div>
             <div class="market-indicator-row" data-indicator-row="volume"><span>Vol</span><strong>pending</strong></div>
             <div class="market-indicator-row" data-indicator-row="relative"><span>BTC</span><strong>pending</strong></div>
           </div>
@@ -6651,7 +6664,20 @@ def write_status_page(
           <div class="state" data-indicator-state="rsi">Waiting for candles</div>
           <div class="market-indicator-rows">
             <div class="market-indicator-row" data-indicator-row="macd"><span>MACD</span><strong>pending</strong></div>
+            <div class="market-indicator-row" data-indicator-row="ema"><span>EMA</span><strong>pending</strong></div>
+            <div class="market-indicator-row" data-indicator-row="sma"><span>SMA</span><strong>pending</strong></div>
             <div class="market-indicator-row" data-indicator-row="bb"><span>BB</span><strong>pending</strong></div>
+            <div class="market-indicator-row" data-indicator-row="donchian"><span>Donch</span><strong>pending</strong></div>
+            <div class="market-indicator-row" data-indicator-row="atr"><span>ATR</span><strong>pending</strong></div>
+            <div class="market-indicator-row" data-indicator-row="adx"><span>ADX</span><strong>pending</strong></div>
+            <div class="market-indicator-row" data-indicator-row="stoch"><span>Stoch</span><strong>pending</strong></div>
+            <div class="market-indicator-row" data-indicator-row="cci"><span>CCI</span><strong>pending</strong></div>
+            <div class="market-indicator-row" data-indicator-row="williams"><span>W%R</span><strong>pending</strong></div>
+            <div class="market-indicator-row" data-indicator-row="roc"><span>ROC</span><strong>pending</strong></div>
+            <div class="market-indicator-row" data-indicator-row="momentum"><span>Mom</span><strong>pending</strong></div>
+            <div class="market-indicator-row" data-indicator-row="obv"><span>OBV</span><strong>pending</strong></div>
+            <div class="market-indicator-row" data-indicator-row="mfi"><span>MFI</span><strong>pending</strong></div>
+            <div class="market-indicator-row" data-indicator-row="vwap"><span>VWAP</span><strong>pending</strong></div>
             <div class="market-indicator-row" data-indicator-row="volume"><span>Vol</span><strong>pending</strong></div>
             <div class="market-indicator-row" data-indicator-row="relative"><span>BTC</span><strong>pending</strong></div>
           </div>
@@ -6662,7 +6688,20 @@ def write_status_page(
           <div class="state" data-indicator-state="rsi">Waiting for candles</div>
           <div class="market-indicator-rows">
             <div class="market-indicator-row" data-indicator-row="macd"><span>MACD</span><strong>pending</strong></div>
+            <div class="market-indicator-row" data-indicator-row="ema"><span>EMA</span><strong>pending</strong></div>
+            <div class="market-indicator-row" data-indicator-row="sma"><span>SMA</span><strong>pending</strong></div>
             <div class="market-indicator-row" data-indicator-row="bb"><span>BB</span><strong>pending</strong></div>
+            <div class="market-indicator-row" data-indicator-row="donchian"><span>Donch</span><strong>pending</strong></div>
+            <div class="market-indicator-row" data-indicator-row="atr"><span>ATR</span><strong>pending</strong></div>
+            <div class="market-indicator-row" data-indicator-row="adx"><span>ADX</span><strong>pending</strong></div>
+            <div class="market-indicator-row" data-indicator-row="stoch"><span>Stoch</span><strong>pending</strong></div>
+            <div class="market-indicator-row" data-indicator-row="cci"><span>CCI</span><strong>pending</strong></div>
+            <div class="market-indicator-row" data-indicator-row="williams"><span>W%R</span><strong>pending</strong></div>
+            <div class="market-indicator-row" data-indicator-row="roc"><span>ROC</span><strong>pending</strong></div>
+            <div class="market-indicator-row" data-indicator-row="momentum"><span>Mom</span><strong>pending</strong></div>
+            <div class="market-indicator-row" data-indicator-row="obv"><span>OBV</span><strong>pending</strong></div>
+            <div class="market-indicator-row" data-indicator-row="mfi"><span>MFI</span><strong>pending</strong></div>
+            <div class="market-indicator-row" data-indicator-row="vwap"><span>VWAP</span><strong>pending</strong></div>
             <div class="market-indicator-row" data-indicator-row="volume"><span>Vol</span><strong>pending</strong></div>
             <div class="market-indicator-row" data-indicator-row="relative"><span>BTC</span><strong>pending</strong></div>
           </div>
@@ -6673,7 +6712,20 @@ def write_status_page(
           <div class="state" data-indicator-state="rsi">Waiting for candles</div>
           <div class="market-indicator-rows">
             <div class="market-indicator-row" data-indicator-row="macd"><span>MACD</span><strong>pending</strong></div>
+            <div class="market-indicator-row" data-indicator-row="ema"><span>EMA</span><strong>pending</strong></div>
+            <div class="market-indicator-row" data-indicator-row="sma"><span>SMA</span><strong>pending</strong></div>
             <div class="market-indicator-row" data-indicator-row="bb"><span>BB</span><strong>pending</strong></div>
+            <div class="market-indicator-row" data-indicator-row="donchian"><span>Donch</span><strong>pending</strong></div>
+            <div class="market-indicator-row" data-indicator-row="atr"><span>ATR</span><strong>pending</strong></div>
+            <div class="market-indicator-row" data-indicator-row="adx"><span>ADX</span><strong>pending</strong></div>
+            <div class="market-indicator-row" data-indicator-row="stoch"><span>Stoch</span><strong>pending</strong></div>
+            <div class="market-indicator-row" data-indicator-row="cci"><span>CCI</span><strong>pending</strong></div>
+            <div class="market-indicator-row" data-indicator-row="williams"><span>W%R</span><strong>pending</strong></div>
+            <div class="market-indicator-row" data-indicator-row="roc"><span>ROC</span><strong>pending</strong></div>
+            <div class="market-indicator-row" data-indicator-row="momentum"><span>Mom</span><strong>pending</strong></div>
+            <div class="market-indicator-row" data-indicator-row="obv"><span>OBV</span><strong>pending</strong></div>
+            <div class="market-indicator-row" data-indicator-row="mfi"><span>MFI</span><strong>pending</strong></div>
+            <div class="market-indicator-row" data-indicator-row="vwap"><span>VWAP</span><strong>pending</strong></div>
             <div class="market-indicator-row" data-indicator-row="volume"><span>Vol</span><strong>pending</strong></div>
             <div class="market-indicator-row" data-indicator-row="relative"><span>BTC</span><strong>pending</strong></div>
           </div>
@@ -6684,7 +6736,20 @@ def write_status_page(
           <div class="state" data-indicator-state="rsi">Waiting for candles</div>
           <div class="market-indicator-rows">
             <div class="market-indicator-row" data-indicator-row="macd"><span>MACD</span><strong>pending</strong></div>
+            <div class="market-indicator-row" data-indicator-row="ema"><span>EMA</span><strong>pending</strong></div>
+            <div class="market-indicator-row" data-indicator-row="sma"><span>SMA</span><strong>pending</strong></div>
             <div class="market-indicator-row" data-indicator-row="bb"><span>BB</span><strong>pending</strong></div>
+            <div class="market-indicator-row" data-indicator-row="donchian"><span>Donch</span><strong>pending</strong></div>
+            <div class="market-indicator-row" data-indicator-row="atr"><span>ATR</span><strong>pending</strong></div>
+            <div class="market-indicator-row" data-indicator-row="adx"><span>ADX</span><strong>pending</strong></div>
+            <div class="market-indicator-row" data-indicator-row="stoch"><span>Stoch</span><strong>pending</strong></div>
+            <div class="market-indicator-row" data-indicator-row="cci"><span>CCI</span><strong>pending</strong></div>
+            <div class="market-indicator-row" data-indicator-row="williams"><span>W%R</span><strong>pending</strong></div>
+            <div class="market-indicator-row" data-indicator-row="roc"><span>ROC</span><strong>pending</strong></div>
+            <div class="market-indicator-row" data-indicator-row="momentum"><span>Mom</span><strong>pending</strong></div>
+            <div class="market-indicator-row" data-indicator-row="obv"><span>OBV</span><strong>pending</strong></div>
+            <div class="market-indicator-row" data-indicator-row="mfi"><span>MFI</span><strong>pending</strong></div>
+            <div class="market-indicator-row" data-indicator-row="vwap"><span>VWAP</span><strong>pending</strong></div>
             <div class="market-indicator-row" data-indicator-row="volume"><span>Vol</span><strong>pending</strong></div>
             <div class="market-indicator-row" data-indicator-row="relative"><span>BTC</span><strong>pending</strong></div>
           </div>
@@ -7552,6 +7617,7 @@ def write_status_page(
     const marketSignals = new Map();
     const marketRefreshTimes = new Map();
     const marketSourceStates = new Map();
+    const marketIndicatorKeys = ["macd", "ema", "sma", "bb", "donchian", "atr", "adx", "stoch", "cci", "williams", "roc", "momentum", "obv", "mfi", "vwap", "volume"];
     const marketSourceOrder = [
       ["spot-ticker", "Spot ticker"],
       ["spot-15m", "Spot 15m"],
@@ -8001,6 +8067,229 @@ def write_status_page(
       return {{ tone: "down", text: "below basis", detail: "Price below Bollinger basis; width " + widthPct.toFixed(1) + "%" }};
     }}
 
+    function marketSmaValue(candles, period, key) {{
+      const parsedPeriod = Number(period);
+      if (!Number.isFinite(parsedPeriod) || candles.length < parsedPeriod) {{
+        return null;
+      }}
+      const rows = candles.slice(candles.length - parsedPeriod);
+      return rows.reduce((total, candle) => total + Number(candle[key || "close"] || 0), 0) / parsedPeriod;
+    }}
+
+    function marketMovingAverageState(candles, period, type) {{
+      if (candles.length < period) {{
+        return {{ tone: "", text: "pending", detail: "Not enough " + type.toUpperCase() + " data" }};
+      }}
+      const latest = candles[candles.length - 1];
+      const value = type === "ema" ? marketEmaPoints(candles, period).slice(-1)[0].value : marketSmaValue(candles, period, "close");
+      const distance = value ? ((latest.close - value) / value) * 100 : 0;
+      const text = (latest.close >= value ? "above " : "below ") + type.toUpperCase() + period;
+      return {{
+        tone: latest.close >= value ? "up" : "down",
+        text,
+        detail: "Close " + formatMarketSignedPercent(distance) + " vs " + type.toUpperCase() + period,
+      }};
+    }}
+
+    function marketDonchianState(candles, period) {{
+      if (candles.length < period) {{
+        return {{ tone: "", text: "pending", detail: "Not enough Donchian data" }};
+      }}
+      const rows = candles.slice(candles.length - period);
+      const high = Math.max(...rows.map((candle) => candle.high));
+      const low = Math.min(...rows.map((candle) => candle.low));
+      const latest = candles[candles.length - 1];
+      const position = high === low ? 50 : ((latest.close - low) / (high - low)) * 100;
+      if (latest.close >= high) {{
+        return {{ tone: "up", text: "breakout", detail: "Close at Donchian " + period + " high" }};
+      }}
+      if (latest.close <= low) {{
+        return {{ tone: "down", text: "breakdown", detail: "Close at Donchian " + period + " low" }};
+      }}
+      return {{ tone: "neutral", text: position.toFixed(0) + "% range", detail: "Donchian " + period + " channel position" }};
+    }}
+
+    function marketTrueRanges(candles) {{
+      return candles.map((candle, index) => {{
+        if (index === 0) {{
+          return candle.high - candle.low;
+        }}
+        const previousClose = candles[index - 1].close;
+        return Math.max(candle.high - candle.low, Math.abs(candle.high - previousClose), Math.abs(candle.low - previousClose));
+      }});
+    }}
+
+    function marketAtrState(candles, period) {{
+      if (candles.length <= period) {{
+        return {{ tone: "", text: "pending", detail: "Not enough ATR data" }};
+      }}
+      const ranges = marketTrueRanges(candles);
+      const latestAtr = ranges.slice(-period).reduce((total, value) => total + value, 0) / period;
+      const priorAtr = ranges.slice(-period * 2, -period).reduce((total, value) => total + value, 0) / period;
+      const latest = candles[candles.length - 1];
+      const atrPct = latest.close ? (latestAtr / latest.close) * 100 : 0;
+      const tone = priorAtr && latestAtr > priorAtr * 1.25 ? "warn" : priorAtr && latestAtr < priorAtr * 0.75 ? "cool" : "neutral";
+      return {{ tone, text: atrPct.toFixed(1) + "% ATR", detail: "ATR" + period + " as percent of close" }};
+    }}
+
+    function marketAdxState(candles, period) {{
+      if (candles.length <= period + 1) {{
+        return {{ tone: "", text: "pending", detail: "Not enough ADX data" }};
+      }}
+      const rows = candles.slice(-(period + 1));
+      let plusDm = 0;
+      let minusDm = 0;
+      let trueRange = 0;
+      for (let index = 1; index < rows.length; index += 1) {{
+        const upMove = rows[index].high - rows[index - 1].high;
+        const downMove = rows[index - 1].low - rows[index].low;
+        plusDm += upMove > downMove && upMove > 0 ? upMove : 0;
+        minusDm += downMove > upMove && downMove > 0 ? downMove : 0;
+        trueRange += Math.max(rows[index].high - rows[index].low, Math.abs(rows[index].high - rows[index - 1].close), Math.abs(rows[index].low - rows[index - 1].close));
+      }}
+      const plusDi = trueRange ? (plusDm / trueRange) * 100 : 0;
+      const minusDi = trueRange ? (minusDm / trueRange) * 100 : 0;
+      const dx = plusDi + minusDi ? (Math.abs(plusDi - minusDi) / (plusDi + minusDi)) * 100 : 0;
+      const tone = dx >= 25 ? (plusDi >= minusDi ? "up" : "down") : "neutral";
+      return {{ tone, text: "ADX " + dx.toFixed(0), detail: "+DI " + plusDi.toFixed(0) + " / -DI " + minusDi.toFixed(0) }};
+    }}
+
+    function marketStochasticState(candles, period) {{
+      if (candles.length < period) {{
+        return {{ tone: "", text: "pending", detail: "Not enough stochastic data" }};
+      }}
+      const rows = candles.slice(candles.length - period);
+      const high = Math.max(...rows.map((candle) => candle.high));
+      const low = Math.min(...rows.map((candle) => candle.low));
+      const latest = candles[candles.length - 1];
+      const value = high === low ? 50 : ((latest.close - low) / (high - low)) * 100;
+      if (value >= 80) {{
+        return {{ tone: "warn", text: "%K " + value.toFixed(0), detail: "Stochastic overbought" }};
+      }}
+      if (value <= 20) {{
+        return {{ tone: "cool", text: "%K " + value.toFixed(0), detail: "Stochastic oversold" }};
+      }}
+      return {{ tone: "neutral", text: "%K " + value.toFixed(0), detail: "Stochastic neutral" }};
+    }}
+
+    function marketCciState(candles, period) {{
+      if (candles.length < period) {{
+        return {{ tone: "", text: "pending", detail: "Not enough CCI data" }};
+      }}
+      const rows = candles.slice(candles.length - period);
+      const typical = rows.map((candle) => (candle.high + candle.low + candle.close) / 3);
+      const average = typical.reduce((total, value) => total + value, 0) / period;
+      const meanDeviation = typical.reduce((total, value) => total + Math.abs(value - average), 0) / period;
+      const latest = typical[typical.length - 1];
+      const cci = meanDeviation ? (latest - average) / (0.015 * meanDeviation) : 0;
+      if (cci >= 100) {{
+        return {{ tone: "warn", text: "CCI +" + cci.toFixed(0), detail: "CCI extended positive" }};
+      }}
+      if (cci <= -100) {{
+        return {{ tone: "cool", text: "CCI " + cci.toFixed(0), detail: "CCI extended negative" }};
+      }}
+      return {{ tone: "neutral", text: "CCI " + cci.toFixed(0), detail: "CCI neutral" }};
+    }}
+
+    function marketWilliamsState(candles, period) {{
+      if (candles.length < period) {{
+        return {{ tone: "", text: "pending", detail: "Not enough Williams data" }};
+      }}
+      const rows = candles.slice(candles.length - period);
+      const high = Math.max(...rows.map((candle) => candle.high));
+      const low = Math.min(...rows.map((candle) => candle.low));
+      const latest = candles[candles.length - 1];
+      const value = high === low ? -50 : ((high - latest.close) / (high - low)) * -100;
+      if (value >= -20) {{
+        return {{ tone: "warn", text: value.toFixed(0), detail: "Williams %R overbought" }};
+      }}
+      if (value <= -80) {{
+        return {{ tone: "cool", text: value.toFixed(0), detail: "Williams %R oversold" }};
+      }}
+      return {{ tone: "neutral", text: value.toFixed(0), detail: "Williams %R neutral" }};
+    }}
+
+    function marketRocState(candles, period) {{
+      if (candles.length <= period) {{
+        return {{ tone: "", text: "pending", detail: "Not enough ROC data" }};
+      }}
+      const latest = candles[candles.length - 1].close;
+      const previous = candles[candles.length - 1 - period].close;
+      const value = previous ? ((latest - previous) / previous) * 100 : 0;
+      return {{ tone: value >= 0 ? "up" : "down", text: formatMarketSignedPercent(value), detail: "Rate of change over " + period + " candles" }};
+    }}
+
+    function marketMomentumState(candles, period) {{
+      if (candles.length <= period) {{
+        return {{ tone: "", text: "pending", detail: "Not enough momentum data" }};
+      }}
+      const latest = candles[candles.length - 1].close;
+      const previous = candles[candles.length - 1 - period].close;
+      const value = latest - previous;
+      const pct = previous ? (value / previous) * 100 : 0;
+      return {{ tone: value >= 0 ? "up" : "down", text: formatMarketSignedPercent(pct), detail: "Momentum over " + period + " candles" }};
+    }}
+
+    function marketObvState(candles) {{
+      if (candles.length < 2) {{
+        return {{ tone: "", text: "pending", detail: "Not enough OBV data" }};
+      }}
+      let obv = 0;
+      const values = [0];
+      for (let index = 1; index < candles.length; index += 1) {{
+        if (candles[index].close > candles[index - 1].close) {{
+          obv += candles[index].volume || 0;
+        }} else if (candles[index].close < candles[index - 1].close) {{
+          obv -= candles[index].volume || 0;
+        }}
+        values.push(obv);
+      }}
+      const latest = values[values.length - 1];
+      const previous = values[Math.max(0, values.length - 6)];
+      return {{ tone: latest >= previous ? "up" : "down", text: latest >= previous ? "rising" : "falling", detail: "OBV 5-candle slope" }};
+    }}
+
+    function marketMfiState(candles, period) {{
+      if (candles.length <= period) {{
+        return {{ tone: "", text: "pending", detail: "Not enough MFI data" }};
+      }}
+      let positive = 0;
+      let negative = 0;
+      for (let index = candles.length - period; index < candles.length; index += 1) {{
+        const typical = (candles[index].high + candles[index].low + candles[index].close) / 3;
+        const previousTypical = (candles[index - 1].high + candles[index - 1].low + candles[index - 1].close) / 3;
+        const flow = typical * (candles[index].volume || 0);
+        if (typical >= previousTypical) {{
+          positive += flow;
+        }} else {{
+          negative += flow;
+        }}
+      }}
+      const value = negative ? 100 - 100 / (1 + positive / negative) : 100;
+      if (value >= 80) {{
+        return {{ tone: "warn", text: "MFI " + value.toFixed(0), detail: "Money Flow Index overbought" }};
+      }}
+      if (value <= 20) {{
+        return {{ tone: "cool", text: "MFI " + value.toFixed(0), detail: "Money Flow Index oversold" }};
+      }}
+      return {{ tone: "neutral", text: "MFI " + value.toFixed(0), detail: "Money Flow Index neutral" }};
+    }}
+
+    function marketVwapState(candles, period) {{
+      if (candles.length < period) {{
+        return {{ tone: "", text: "pending", detail: "Not enough VWAP data" }};
+      }}
+      const rows = candles.slice(candles.length - period);
+      const volume = rows.reduce((total, candle) => total + (candle.volume || 0), 0);
+      if (!volume) {{
+        return {{ tone: "", text: "no volume", detail: "VWAP volume unavailable" }};
+      }}
+      const vwap = rows.reduce((total, candle) => total + ((candle.high + candle.low + candle.close) / 3) * (candle.volume || 0), 0) / volume;
+      const latest = candles[candles.length - 1];
+      const distance = vwap ? ((latest.close - vwap) / vwap) * 100 : 0;
+      return {{ tone: latest.close >= vwap ? "up" : "down", text: latest.close >= vwap ? "above" : "below", detail: "Close " + formatMarketSignedPercent(distance) + " vs rolling VWAP" }};
+    }}
+
     function marketVolumeSpikeState(candles, period) {{
       const parsedPeriod = Number(period || 20);
       if (candles.length <= parsedPeriod) {{
@@ -8164,7 +8453,20 @@ def write_status_page(
 
     function marketUpdateIndicatorRows(cardId, candles) {{
       marketIndicatorRow(cardId, "macd", marketMacdState(candles));
+      marketIndicatorRow(cardId, "ema", marketMovingAverageState(candles, 20, "ema"));
+      marketIndicatorRow(cardId, "sma", marketMovingAverageState(candles, 20, "sma"));
       marketIndicatorRow(cardId, "bb", marketBollingerPositionState(candles, 20, 2));
+      marketIndicatorRow(cardId, "donchian", marketDonchianState(candles, 20));
+      marketIndicatorRow(cardId, "atr", marketAtrState(candles, 14));
+      marketIndicatorRow(cardId, "adx", marketAdxState(candles, 14));
+      marketIndicatorRow(cardId, "stoch", marketStochasticState(candles, 14));
+      marketIndicatorRow(cardId, "cci", marketCciState(candles, 20));
+      marketIndicatorRow(cardId, "williams", marketWilliamsState(candles, 14));
+      marketIndicatorRow(cardId, "roc", marketRocState(candles, 12));
+      marketIndicatorRow(cardId, "momentum", marketMomentumState(candles, 10));
+      marketIndicatorRow(cardId, "obv", marketObvState(candles));
+      marketIndicatorRow(cardId, "mfi", marketMfiState(candles, 14));
+      marketIndicatorRow(cardId, "vwap", marketVwapState(candles, 20));
       marketIndicatorRow(cardId, "volume", marketVolumeSpikeState(candles, 20));
     }}
 
@@ -8273,7 +8575,7 @@ def write_status_page(
         marketTrendBadge(trendId, {{ tone: "", text: "Trend pending", detail: "Not enough candle data" }});
         marketRsiBadge(rsiId, {{ tone: "", text: "RSI pending", detail: "Not enough candle data" }});
         marketRsiCard(rsiCardId, null, {{ tone: "", text: "RSI pending", detail: "Not enough candle data" }}, null);
-        ["macd", "bb", "volume"].forEach((key) => marketIndicatorRow(rsiCardId, key, {{ tone: "", text: "pending", detail: "Not enough candle data" }}));
+        marketIndicatorKeys.forEach((key) => marketIndicatorRow(rsiCardId, key, {{ tone: "", text: "pending", detail: "Not enough candle data" }}));
         marketSignalWatch(labelText, {{ tone: "", text: "Not enough data" }});
         return;
       }}
@@ -9160,7 +9462,7 @@ def write_status_page(
         marketTrendBadge(config.trendId, {{ tone: "", text: "Trend pending", detail: "Market candles unavailable" }});
         marketRsiBadge(config.rsiId, {{ tone: "", text: "RSI pending", detail: "Market candles unavailable" }});
         marketRsiCard(config.rsiCardId, null, {{ tone: "", text: "Unavailable", detail: "Market candles unavailable" }}, null);
-        ["macd", "bb", "volume"].forEach((key) => marketIndicatorRow(config.rsiCardId, key, {{ tone: "", text: "unavailable", detail: "Market candles unavailable" }}));
+        marketIndicatorKeys.forEach((key) => marketIndicatorRow(config.rsiCardId, key, {{ tone: "", text: "unavailable", detail: "Market candles unavailable" }}));
         marketSignalWatch(config.label, {{ tone: "", text: "Unavailable" }});
         marketSourceStatus("spot-" + config.label, "Spot " + config.label, "fail", marketErrorDetail(error));
       }}
