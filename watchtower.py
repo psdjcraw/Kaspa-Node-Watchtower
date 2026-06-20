@@ -6924,6 +6924,22 @@ def write_status_page(
       <div id="market-volume-legend" class="market-legend"></div>
       <svg id="market-volume-chart" class="market-chart" viewBox="0 0 720 244" role="img" aria-label="Daily KAS trading volume by exchange and total"></svg>
     </section>
+    <section class="panel market-microstructure-panel">
+      <div class="market-chart-head">
+        <h2>KAS/USDT Microstructure</h2>
+        <div id="market-microstructure-status" class="market-status">Loading order book and trades</div>
+      </div>
+      <div class="market-meta">
+        <div class="context-item"><div class="context-label">Spread</div><div id="micro-spread" class="context-value">unknown</div></div>
+        <div class="context-item"><div class="context-label">Depth 0.5%</div><div id="micro-depth" class="context-value">unknown</div></div>
+        <div class="context-item"><div class="context-label">Depth imbalance</div><div id="micro-depth-imbalance" class="context-value">unknown</div></div>
+        <div class="context-item"><div class="context-label">Wall ratio</div><div id="micro-wall-ratio" class="context-value">unknown</div></div>
+        <div class="context-item"><div class="context-label">Slippage $10k</div><div id="micro-slippage" class="context-value">unknown</div></div>
+        <div class="context-item"><div class="context-label">Taker buy ratio</div><div id="micro-taker-buy" class="context-value">unknown</div></div>
+        <div class="context-item"><div class="context-label">Trade CVD</div><div id="micro-cvd" class="context-value">unknown</div></div>
+        <div class="context-item"><div class="context-label">Trade imbalance</div><div id="micro-trade-imbalance" class="context-value">unknown</div></div>
+      </div>
+    </section>
     </section>
     <section id="tab-futures" class="tab-panel">
     {market_risk_panel}
@@ -7615,6 +7631,13 @@ def write_status_page(
           }},
         ],
       }},
+      microstructure: {{
+        statusId: "market-microstructure-status",
+        refreshMs: 30 * 1000,
+        notionalUsdt: 10000,
+        orderbookUrl: "https://api.bybit.com/v5/market/orderbook?category=spot&symbol=KASUSDT&limit=50",
+        tradesUrl: "https://api.bybit.com/v5/market/recent-trade?category=spot&symbol=KASUSDT&limit=100",
+      }},
       liquidations: [
         {{
           label: "12H",
@@ -7676,6 +7699,8 @@ def write_status_page(
       ["cross-1W", "KAS/BTC cross 1W"],
       ["cross-1M", "KAS/BTC cross 1M"],
       ["volume", "Exchange volume"],
+      ["orderbook", "Order book"],
+      ["recent-trades", "Recent trades"],
       ["futures-positioning", "Futures positioning"],
       ["futures-trend", "Futures trend"],
       ["liquidation-12H", "Liquidation 12H"],
@@ -7833,6 +7858,101 @@ def write_status_page(
         return "$" + (parsed / 1000).toLocaleString(undefined, {{ maximumFractionDigits: 1 }}) + "K";
       }}
       return "$" + parsed.toLocaleString(undefined, {{ maximumFractionDigits: 2 }});
+    }}
+
+    function formatMarketBps(value) {{
+      const parsed = marketNumber(value);
+      if (parsed === null) {{
+        return "unknown";
+      }}
+      return parsed.toLocaleString(undefined, {{ maximumFractionDigits: 1, minimumFractionDigits: 1 }}) + " bps";
+    }}
+
+    function formatMicroRatio(value) {{
+      const parsed = marketNumber(value);
+      if (parsed === null) {{
+        return "unknown";
+      }}
+      return parsed.toLocaleString(undefined, {{ maximumFractionDigits: 2, minimumFractionDigits: 2 }}) + "x";
+    }}
+
+    function marketOrderbookRows(rows) {{
+      return (Array.isArray(rows) ? rows : [])
+        .map((row) => ({{
+          price: marketNumber(row[0]),
+          size: marketNumber(row[1]),
+        }}))
+        .filter((row) => row.price !== null && row.size !== null && row.price > 0 && row.size >= 0);
+    }}
+
+    function marketDepthQuote(rows, mid, pct, side) {{
+      const limit = side === "bid" ? mid * (1 - pct / 100) : mid * (1 + pct / 100);
+      return rows.reduce((total, row) => {{
+        if (side === "bid" && row.price >= limit) {{
+          return total + row.price * row.size;
+        }}
+        if (side === "ask" && row.price <= limit) {{
+          return total + row.price * row.size;
+        }}
+        return total;
+      }}, 0);
+    }}
+
+    function marketMaxWall(rows) {{
+      return rows.reduce((max, row) => Math.max(max, row.price * row.size), 0);
+    }}
+
+    function marketSlippageBps(asks, notionalUsdt) {{
+      if (!asks.length || !notionalUsdt) {{
+        return null;
+      }}
+      const bestAsk = asks[0].price;
+      let remaining = notionalUsdt;
+      let baseFilled = 0;
+      let quoteSpent = 0;
+      for (const row of asks) {{
+        if (remaining <= 0) {{
+          break;
+        }}
+        const quoteAvailable = row.price * row.size;
+        const quoteUsed = Math.min(remaining, quoteAvailable);
+        baseFilled += quoteUsed / row.price;
+        quoteSpent += quoteUsed;
+        remaining -= quoteUsed;
+      }}
+      if (!baseFilled || quoteSpent < notionalUsdt * 0.5) {{
+        return null;
+      }}
+      const averagePrice = quoteSpent / baseFilled;
+      return bestAsk ? ((averagePrice - bestAsk) / bestAsk) * 10000 : null;
+    }}
+
+    function marketRecentTradeRows(payload) {{
+      return ((((payload || {{}}).result || {{}}).list || []))
+        .map((row) => ({{
+          side: String(row.side || "").toLowerCase(),
+          price: marketNumber(row.price),
+          size: marketNumber(row.size),
+        }}))
+        .filter((row) => row.price !== null && row.size !== null && row.size >= 0);
+    }}
+
+    function marketMicroAnomaly(key, severity, text, detail) {{
+      marketRecordIndicatorAnomaly("micro", key, severity ? {{ tone: severity, text, detail }} : {{ tone: "", text: "normal", detail }});
+    }}
+
+    function marketMicroSeverity(value, warning, critical) {{
+      const parsed = Math.abs(Number(value));
+      if (!Number.isFinite(parsed)) {{
+        return "";
+      }}
+      if (parsed >= critical) {{
+        return "critical";
+      }}
+      if (parsed >= warning) {{
+        return "warning";
+      }}
+      return "";
     }}
 
     function marketPositioningRisk(fundingZ, oiVolumeRatio, basisPct, dispersionPct) {{
@@ -8483,6 +8603,9 @@ def write_status_page(
       const tone = String((state || {{}}).tone || "").toLowerCase();
       if (!text || text.includes("pending") || text.includes("unavailable") || text.includes("neutral") || text.includes("normal") || text.includes("flat")) {{
         return "";
+      }}
+      if (tone === "critical" || tone === "warning" || tone === "watch") {{
+        return tone;
       }}
       if (key === "rsi" || key === "stoch" || key === "cci" || key === "williams" || key === "mfi") {{
         return tone === "warn" || tone === "hot" || tone === "cool" ? "warning" : "";
@@ -9669,6 +9792,78 @@ def write_status_page(
       marketSourceStatus("volume", "Exchange volume", availableSources > 0 ? (cachedSources > 0 ? "cached" : "ok") : "fail", availableSources + "/" + marketConfig.volume.sources.length + " venues" + failedDetail);
     }}
 
+    async function refreshMarketMicrostructure() {{
+      const config = marketConfig.microstructure;
+      if (!marketShouldRefresh("microstructure", config.refreshMs)) {{
+        return;
+      }}
+      try {{
+        const payloads = await Promise.all([
+          fetchMarketJson(config.orderbookUrl),
+          fetchMarketJson(config.tradesUrl),
+        ]);
+        const book = (payloads[0] || {{}}).result || {{}};
+        const bids = marketOrderbookRows(book.b);
+        const asks = marketOrderbookRows(book.a);
+        if (!bids.length || !asks.length) {{
+          throw new Error("empty order book");
+        }}
+        const bestBid = bids[0].price;
+        const bestAsk = asks[0].price;
+        const mid = (bestBid + bestAsk) / 2;
+        const spreadBps = mid ? ((bestAsk - bestBid) / mid) * 10000 : null;
+        const bidDepth = marketDepthQuote(bids, mid, 0.5, "bid");
+        const askDepth = marketDepthQuote(asks, mid, 0.5, "ask");
+        const totalDepth = bidDepth + askDepth;
+        const depthImbalance = totalDepth ? ((bidDepth - askDepth) / totalDepth) * 100 : 0;
+        const bidWall = marketMaxWall(bids);
+        const askWall = marketMaxWall(asks);
+        const wallRatio = askWall ? bidWall / askWall : null;
+        const slippageBps = marketSlippageBps(asks, config.notionalUsdt);
+
+        const trades = marketRecentTradeRows(payloads[1]);
+        const buyQuote = trades.filter((row) => row.side === "buy").reduce((total, row) => total + row.price * row.size, 0);
+        const sellQuote = trades.filter((row) => row.side === "sell").reduce((total, row) => total + row.price * row.size, 0);
+        const tradeTotal = buyQuote + sellQuote;
+        const takerBuyRatio = tradeTotal ? (buyQuote / tradeTotal) * 100 : null;
+        const tradeImbalance = tradeTotal ? ((buyQuote - sellQuote) / tradeTotal) * 100 : null;
+        const cvd = buyQuote - sellQuote;
+
+        marketText("micro-spread", formatMarketBps(spreadBps));
+        marketText("micro-depth", formatMarketUsdt(totalDepth));
+        marketText("micro-depth-imbalance", formatMarketSignedPercent(depthImbalance));
+        marketText("micro-wall-ratio", formatMicroRatio(wallRatio));
+        marketText("micro-slippage", formatMarketBps(slippageBps));
+        marketText("micro-taker-buy", takerBuyRatio === null ? "unknown" : takerBuyRatio.toFixed(1) + "%");
+        marketText("micro-cvd", formatMarketUsdt(cvd));
+        marketText("micro-trade-imbalance", formatMarketSignedPercent(tradeImbalance));
+
+        const spreadSeverity = marketMicroSeverity(spreadBps, 20, 50);
+        marketMicroAnomaly("spread", spreadSeverity, "spread " + formatMarketBps(spreadBps), "Bid/ask spread widened");
+        const depthSeverity = marketMicroSeverity(depthImbalance, 35, 60);
+        marketMicroAnomaly("depth", depthSeverity, "depth " + formatMarketSignedPercent(depthImbalance), "0.5% book depth imbalance");
+        const wallSkew = wallRatio === null ? null : Math.max(wallRatio, 1 / Math.max(wallRatio, 0.0001));
+        const wallSeverity = marketMicroSeverity(wallSkew, 3, 6);
+        marketMicroAnomaly("wall", wallSeverity, "wall " + formatMicroRatio(wallRatio), "Largest bid/ask wall ratio");
+        const slippageSeverity = marketMicroSeverity(slippageBps, 30, 80);
+        marketMicroAnomaly("slippage", slippageSeverity, "slip " + formatMarketBps(slippageBps), "Estimated market-buy slippage for $" + config.notionalUsdt);
+        const takerSkew = takerBuyRatio === null ? null : takerBuyRatio - 50;
+        const takerSeverity = marketMicroSeverity(takerSkew, 20, 35);
+        marketMicroAnomaly("taker", takerSeverity, "taker " + (takerBuyRatio === null ? "unknown" : takerBuyRatio.toFixed(1) + "%"), "Recent public-trade taker buy ratio");
+        const flowSeverity = marketMicroSeverity(tradeImbalance, 40, 70);
+        marketMicroAnomaly("flow", flowSeverity, "flow " + formatMarketSignedPercent(tradeImbalance), "Recent public-trade quote-volume imbalance");
+
+        marketText(config.statusId, "spread " + formatMarketBps(spreadBps) + " / taker buy " + (takerBuyRatio === null ? "unknown" : takerBuyRatio.toFixed(1) + "%"));
+        marketSourceStatus("orderbook", "Order book", payloads[0].fromCache ? "cached" : "ok", marketSourceDetail(payloads[0]));
+        marketSourceStatus("recent-trades", "Recent trades", payloads[1].fromCache ? "cached" : "ok", marketSourceDetail(payloads[1]));
+      }} catch (error) {{
+        marketText(marketConfig.microstructure.statusId, "Microstructure unavailable");
+        ["spread", "depth", "wall", "slippage", "taker", "flow"].forEach((key) => marketMicroAnomaly(key, "", "normal", "Microstructure unavailable"));
+        marketSourceStatus("orderbook", "Order book", "fail", marketErrorDetail(error));
+        marketSourceStatus("recent-trades", "Recent trades", "fail", marketErrorDetail(error));
+      }}
+    }}
+
     async function refreshLiquidationMap(config) {{
       if (!marketShouldRefresh("liquidation:" + config.label, config.refreshMs)) {{
         return;
@@ -9767,6 +9962,7 @@ def write_status_page(
         ...marketConfig.klines.map(refreshMarketChart),
         ...marketConfig.cross.map(refreshMarketCrossChart),
         refreshMarketVolumeChart(),
+        refreshMarketMicrostructure(),
         refreshFuturesPositioning(),
         refreshFuturesTrend(),
         ...marketConfig.liquidations.map(refreshLiquidationMap),

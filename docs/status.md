@@ -117,6 +117,9 @@ Last verified manually on `2026-06-08`:
   and BTC-relative strength for the visible KAS/USDT timeframes
 - Indicator anomaly summary: browser-side indicator states are normalized into
   watch, warning, and critical anomaly rows by timeframe and indicator
+- Market microstructure panel: Bybit orderbook and recent public trades provide
+  spread, 0.5% depth, book imbalance, wall ratio, estimated $10k slippage,
+  taker buy ratio, CVD, and trade-flow imbalance
 - Futures trend panel: 7-day Bybit KAS/USDT open interest line with
   funding-rate bars from public linear perp endpoints
 - Market-data browser fetches: short-window panels refresh more often, while

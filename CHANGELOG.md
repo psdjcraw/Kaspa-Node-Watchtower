@@ -21,6 +21,9 @@ All notable changes to Kaspa Node Watchtower are tracked here.
   RSI, and BTC-relative strength.
 - Generated market dashboards now summarize active indicator anomalies by
   timeframe and indicator with watch, warning, and critical severity.
+- Market dashboards now include KAS/USDT microstructure signals from Bybit
+  orderbook and recent trades: spread, 0.5% depth, book imbalance, wall ratio,
+  estimated $10k slippage, taker buy ratio, CVD, and trade-flow imbalance.
 - `watchtower.py --alert` now emits a market-risk-high alert body when a new
   critical market positioning snapshot is detected.
 
