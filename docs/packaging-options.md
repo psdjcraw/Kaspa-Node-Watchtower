@@ -108,7 +108,7 @@ Current formula:
 packaging/homebrew/kaspa-node-watchtower.rb
 ```
 
-The formula installs the v0.8.1 release archive, exposes
+The formula installs the v0.8.2 release archive, exposes
 `kaspa-watchtower`, and prints post-install checks for `--version` and
 `--validate-config`. A source checkout remains the recommended path for full
 operator smoke, launchd service management, Prometheus/Grafana files, and
