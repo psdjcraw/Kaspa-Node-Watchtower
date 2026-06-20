@@ -1,13 +1,14 @@
 import json
 import copy
 import datetime as dt
+import io
 import os
 import sqlite3
 import subprocess
 import sys
 import tempfile
 import unittest
-from contextlib import closing
+from contextlib import closing, redirect_stdout
 from pathlib import Path
 from unittest import mock
 
@@ -3200,6 +3201,77 @@ class WatchtowerUnitTests(unittest.TestCase):
         self.assertEqual(risk["direction"], "long_crowded")
         self.assertIn("funding_z_extreme", risk["reasons"])
 
+    def test_market_risk_drill_appends_snapshot_and_rewrites_metrics(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            config = {
+                "node_name": "test-node",
+                "state_path": str(tmp_path / "state.json"),
+                "benchmark_path": str(tmp_path / "benchmarks.jsonl"),
+                "market_snapshot_path": str(tmp_path / "market-snapshots.jsonl"),
+                "prometheus_metrics_path": str(tmp_path / "watchtower.prom"),
+                "status_page_path": str(tmp_path / "status.html"),
+                "stream_page_path": str(tmp_path / "stream.html"),
+                "sqlite_history_path": str(tmp_path / "history.sqlite"),
+                "canvas_status_page_path": "",
+                "canvas_stream_page_path": "",
+            }
+            watchtower.append_jsonl(
+                Path(config["market_snapshot_path"]),
+                {
+                    "checked_at": "2026-06-20T10:00:00+09:00",
+                    "source": "Bybit KAS/USDT",
+                    "ok": True,
+                    "spot_last_price": 0.03,
+                    "futures_mark_price": 0.031,
+                    "futures_index_price": 0.03,
+                    "futures_basis_pct": 3.333,
+                    "futures_funding_rate": 0.0002,
+                    "futures_funding_apr_pct": 21.9,
+                    "futures_funding_z_score": 3.0,
+                    "futures_open_interest": 2000000,
+                    "futures_volume_24h": 400000,
+                    "futures_oi_volume_ratio": 5.0,
+                    "market_risk_score": 5,
+                    "market_risk_level": "critical",
+                    "market_risk_level_value": 2,
+                    "market_risk_direction": "long_crowded",
+                    "market_risk_reasons": "funding_z_extreme,oi_volume_extreme",
+                    "market_risk_reason_count": 2,
+                },
+            )
+            report = {
+                "node_name": "test-node",
+                "checked_at": "2026-06-20T10:00:00+09:00",
+                "status": "ok",
+                "severity": "ok",
+                "checks": [],
+                "grpc_metrics": {},
+                "progress": {},
+                "disk": {},
+                "recovery": {},
+            }
+
+            with mock.patch("watchtower.build_stateful_report", return_value=(report, {})):
+                with mock.patch("watchtower.write_status_page"), mock.patch("watchtower.write_stream_page"):
+                    with redirect_stdout(io.StringIO()):
+                        result = watchtower.market_risk_drill(
+                            config,
+                            score=4,
+                            reason="funding_z_extreme",
+                            direction="long_crowded",
+                        )
+
+            self.assertEqual(result, 0)
+            items = watchtower.load_jsonl(Path(config["market_snapshot_path"]))
+            self.assertEqual(items[-1]["market_risk_score"], 4)
+            self.assertEqual(items[-1]["market_risk_level"], "critical")
+            self.assertEqual(items[-1]["market_risk_direction"], "long_crowded")
+            self.assertEqual(items[-1]["market_risk_reasons"], "funding_z_extreme")
+            metrics = Path(config["prometheus_metrics_path"]).read_text(encoding="utf-8")
+            self.assertIn("kaspa_watchtower_market_positioning_risk_score", metrics)
+            self.assertIn('level="critical"', metrics)
+
     def test_fetch_market_snapshot_returns_unavailable_on_api_failure(self):
         with mock.patch("watchtower.fetch_json_url", side_effect=ValueError("rate limited")):
             snapshot = watchtower.fetch_market_snapshot(timeout=1)
@@ -3525,6 +3597,8 @@ class WatchtowerUnitTests(unittest.TestCase):
             self.assertIn('id="futures-open-interest"', html)
             self.assertIn('id="futures-open-interest-value"', html)
             self.assertIn('id="futures-volume"', html)
+            self.assertIn('id="futures-risk"', html)
+            self.assertIn('id="futures-risk-reasons"', html)
             self.assertIn('id="futures-trend-chart"', html)
             self.assertIn('id="futures-trend-status"', html)
             self.assertIn('id="market-source-list"', html)
@@ -3596,6 +3670,7 @@ class WatchtowerUnitTests(unittest.TestCase):
             self.assertIn("marketOpenInterestRows", html)
             self.assertIn("refreshLiquidationMap", html)
             self.assertIn("refreshFuturesPositioning", html)
+            self.assertIn("marketPositioningRisk", html)
             self.assertIn("drawFuturesTrend", html)
             self.assertIn("marketFundingRows", html)
             self.assertIn("refreshFuturesTrend", html)

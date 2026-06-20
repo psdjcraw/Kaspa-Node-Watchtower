@@ -20,8 +20,11 @@ DOCKER_IMAGE ?= psdjc/kaspa-node-watchtower
 DOCKER_TAG ?= latest
 SNS_QUERY ?= Kaspa KAS
 AMOUNT_KAS ?= 0
+MARKET_RISK_SCORE ?= 4
+MARKET_RISK_REASON ?= market_risk_drill
+MARKET_RISK_DIRECTION ?= mixed
 
-.PHONY: help onboard bootstrap proto-check version status stream summary sync-report diagnostics-summary incident-report json alert discord-status discord-incidents discord-wallet discord-wallet-txs discord-mining discord-whales discord-tx discord-address discord-balance discord-utxos discord-search discord-watch-list discord-watch-check discord-watch-drill discord-watch-add discord-watch-remove discord-watch-test indexer-up indexer-down indexer-logs indexer-smoke mining-set-address mining-clear-address discord-maintenance discord-mute discord-mute-all discord-unmute maintenance-status mute mute-all unmute smoke ci integrations simulate-exporter-failure ensure-exporter launchd-status launchd-install launchd-restart launchd-uninstall diagnostics diagnostics-archive daily-report weekly-report weekly-archive benchmark benchmark-report prometheus export-history history-report history-multi-node history-archive upload-archive sns-refresh package docker-build docker-smoke docker-push prune validate recover-dry-run recover force-recover-dry-run
+.PHONY: help onboard bootstrap proto-check version status stream summary sync-report diagnostics-summary incident-report json alert discord-status discord-incidents discord-wallet discord-wallet-txs discord-mining discord-whales discord-tx discord-address discord-balance discord-utxos discord-search discord-watch-list discord-watch-check discord-watch-drill discord-watch-add discord-watch-remove discord-watch-test market-risk-drill indexer-up indexer-down indexer-logs indexer-smoke mining-set-address mining-clear-address discord-maintenance discord-mute discord-mute-all discord-unmute maintenance-status mute mute-all unmute smoke ci integrations simulate-exporter-failure ensure-exporter launchd-status launchd-install launchd-restart launchd-uninstall diagnostics diagnostics-archive daily-report weekly-report weekly-archive benchmark benchmark-report prometheus export-history history-report history-multi-node history-archive upload-archive sns-refresh package docker-build docker-smoke docker-push prune validate recover-dry-run recover force-recover-dry-run
 
 help:
 	@printf 'Kaspa Node Watchtower operator commands\n'
@@ -54,6 +57,7 @@ help:
 	@printf '  make discord-watch-add   Add watch address; set ADDRESS=kaspa:... LABEL=...\n'
 	@printf '  make discord-watch-remove Remove watch address; set ADDRESS=kaspa:...\n'
 	@printf '  make discord-watch-test  Test watch address reads; set ADDRESS=kaspa:...\n'
+	@printf '  make market-risk-drill   Inject synthetic market positioning risk metrics\n'
 	@printf '  make indexer-up          Start local kaspad/postgres/indexer compose stack\n'
 	@printf '  make indexer-down        Stop local indexer compose stack\n'
 	@printf '  make indexer-logs        Tail local indexer compose logs\n'
@@ -191,6 +195,9 @@ discord-watch-remove:
 discord-watch-test:
 	@test -n "$(ADDRESS)" || (printf 'ADDRESS is required\n' >&2; exit 2)
 	@$(PYTHON) scripts/discord_command_handler.py -c $(CONFIG) watch-test --query "$(ADDRESS)" --reason "$(LABEL)"
+
+market-risk-drill:
+	@$(PYTHON) watchtower.py -c $(CONFIG) --market-risk-drill --market-risk-score "$(MARKET_RISK_SCORE)" --market-risk-reason "$(MARKET_RISK_REASON)" --market-risk-direction "$(MARKET_RISK_DIRECTION)"
 
 indexer-up:
 	@$(COMPOSE) -f $(INDEXER_COMPOSE) up -d --build

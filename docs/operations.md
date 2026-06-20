@@ -457,6 +457,7 @@ make discord-mute MUTE_MINUTES=30 MUTE_REASON="kaspad upgrade"
 make discord-unmute
 make discord-watch-check
 make discord-watch-drill
+make market-risk-drill
 ```
 
 Suggested Discord mapping:
@@ -495,6 +496,18 @@ status and stream pages, rewrites Prometheus textfile metrics, and prints the
 same Discord alert body used for real watched-address transactions. Reusing the
 same `TX_ID` is deduped, so repeated drills do not inflate event history.
 
+Market risk drill:
+
+```bash
+make market-risk-drill MARKET_RISK_SCORE=4 MARKET_RISK_REASON=funding_z_extreme MARKET_RISK_DIRECTION=long_crowded
+```
+
+This injects a synthetic KAS/USDT positioning-risk snapshot into local market
+history, refreshes the generated status/stream pages, rewrites Prometheus
+textfile metrics, and prints the same market summary format used by live
+snapshots. Use it to verify `KaspaMarketPositioningRiskHigh`, Grafana panels,
+and alert routing without waiting for real funding/OI crowding.
+
 The cron wrapper prefers `.venv/bin/python` so the gRPC dependencies can stay
 local to this repository.
 
@@ -521,7 +534,10 @@ integration status, GitHub Actions status, recovery attempts, and dashboard
 locations.
 Market snapshots include a positioning risk score from funding z-score,
 OI/volume crowding, futures basis, and cross-exchange spot dispersion.
-`KaspaMarketPositioningRiskHigh` fires when the score stays high.
+The generated Futures dashboard also shows the current partial live risk score
+from Bybit linear OI/volume and basis while persisted snapshots retain the full
+funding z-score and spot-dispersion context. `KaspaMarketPositioningRiskHigh`
+fires when the score stays high.
 Integration and GitHub status failures are reported inline instead of stopping
 the rest of the report. Unlike alert and smoke wrappers, it intentionally emits
 output while healthy.

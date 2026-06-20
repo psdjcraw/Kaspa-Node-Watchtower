@@ -4,6 +4,26 @@ All notable changes to Kaspa Node Watchtower are tracked here.
 
 ## Unreleased
 
+### Added
+
+- `make discord-watch-check` and the Discord watch bridge now provide a live
+  readiness check for indexer/SDK watched-address coverage before waiting for a
+  real transaction.
+- Prometheus now exposes watch readiness metrics and includes
+  `KaspaWatchReadinessNotReady` for not-ready watch paths.
+- `make discord-watch-drill` can inject a deduped synthetic watched-address
+  event to verify local state, generated pages, Prometheus metrics, and Discord
+  alert formatting.
+- Market snapshots now persist a KAS/USDT positioning-risk score using funding
+  z-score, OI/volume crowding, futures basis, and cross-exchange spot
+  dispersion.
+- Prometheus, Grafana, generated status pages, and daily/weekly reports now
+  surface market positioning risk, including `KaspaMarketPositioningRiskHigh`.
+- `make market-risk-drill` can inject a synthetic market risk snapshot for
+  alert and dashboard validation.
+- `docs/release-notes-v0.8.2.md` documents the v0.8.2 operator verification
+  plan.
+
 ### Changed
 
 - Homebrew formula now points to the v0.8.1 GitHub Release asset and checksum.

@@ -6641,6 +6641,8 @@ def write_status_page(
         <div class="context-item"><div class="context-label">Open interest</div><div id="futures-open-interest" class="context-value">unknown</div></div>
         <div class="context-item"><div class="context-label">OI value</div><div id="futures-open-interest-value" class="context-value">unknown</div></div>
         <div class="context-item"><div class="context-label">24h vol</div><div id="futures-volume" class="context-value">unknown</div></div>
+        <div class="context-item"><div class="context-label">Risk score</div><div id="futures-risk" class="context-value">unknown</div></div>
+        <div class="context-item"><div class="context-label">Risk reasons</div><div id="futures-risk-reasons" class="context-value">unknown</div></div>
       </div>
     </section>
     <section class="panel futures-trend-panel">
@@ -7524,6 +7526,51 @@ def write_status_page(
         return "$" + (parsed / 1000).toLocaleString(undefined, {{ maximumFractionDigits: 1 }}) + "K";
       }}
       return "$" + parsed.toLocaleString(undefined, {{ maximumFractionDigits: 2 }});
+    }}
+
+    function marketPositioningRisk(fundingZ, oiVolumeRatio, basisPct, dispersionPct) {{
+      const reasons = [];
+      let score = 0;
+      const funding = marketNumber(fundingZ);
+      const oiVolume = marketNumber(oiVolumeRatio);
+      const basis = marketNumber(basisPct);
+      const dispersion = marketNumber(dispersionPct);
+      if (funding !== null && Math.abs(funding) >= 3) {{
+        score += 2;
+        reasons.push("funding_z_extreme");
+      }} else if (funding !== null && Math.abs(funding) >= 2) {{
+        score += 1;
+        reasons.push("funding_z_elevated");
+      }}
+      if (oiVolume !== null && oiVolume >= 5) {{
+        score += 2;
+        reasons.push("oi_volume_extreme");
+      }} else if (oiVolume !== null && oiVolume >= 3) {{
+        score += 1;
+        reasons.push("oi_volume_elevated");
+      }}
+      if (basis !== null && Math.abs(basis) >= 1.5) {{
+        score += 1;
+        reasons.push("basis_wide");
+      }}
+      if (dispersion !== null && dispersion >= 2) {{
+        score += 1;
+        reasons.push("spot_dispersion_wide");
+      }}
+      let level = "ok";
+      if (score >= 4) {{
+        level = "critical";
+      }} else if (score >= 2) {{
+        level = "warning";
+      }}
+      let direction = "neutral";
+      if ((funding !== null && funding > 0) || (basis !== null && basis > 0)) {{
+        direction = "long_crowded";
+      }}
+      if ((funding !== null && funding < 0) || (basis !== null && basis < 0)) {{
+        direction = direction === "neutral" ? "short_crowded" : "mixed";
+      }}
+      return {{ score, level, direction, reasons }};
     }}
 
     function formatMarketTime(value) {{
@@ -9002,8 +9049,12 @@ def write_status_page(
         const indexPrice = marketNumber(ticker.indexPrice);
         const fundingRate = marketNumber(ticker.fundingRate);
         const fundingInterval = marketNumber(ticker.fundingIntervalHour) || 4;
+        const openInterest = marketNumber(ticker.openInterest);
+        const volume24h = marketNumber(ticker.volume24h);
         const basisPct = markPrice !== null && indexPrice ? ((markPrice - indexPrice) / indexPrice) * 100 : null;
         const fundingApr = fundingRate !== null ? fundingRate * (24 / fundingInterval) * 365 * 100 : null;
+        const oiVolumeRatio = openInterest !== null && volume24h ? openInterest / volume24h : null;
+        const risk = marketPositioningRisk(null, oiVolumeRatio, basisPct, null);
         marketText("futures-mark", formatMarketPrice(markPrice));
         marketText("futures-index", formatMarketPrice(indexPrice));
         marketText("futures-basis", basisPct === null ? "unknown" : formatMarketSignedPercent(basisPct));
@@ -9013,6 +9064,8 @@ def write_status_page(
         marketText("futures-open-interest", formatMarketVolume(ticker.openInterest));
         marketText("futures-open-interest-value", formatMarketUsdt(ticker.openInterestValue));
         marketText("futures-volume", formatMarketVolume(ticker.volume24h));
+        marketText("futures-risk", risk.level + " / " + risk.score);
+        marketText("futures-risk-reasons", risk.reasons.length ? risk.reasons.join(", ") : "none");
         const updatedPrefix = payload.fromCache ? "cached " : "";
         marketText("futures-status", updatedPrefix + "linear perp updated at " + new Date(Number(payload.cachedAt || payload.time || Date.now())).toLocaleTimeString());
         marketSourceStatus("futures-positioning", "Futures positioning", payload.fromCache ? "cached" : "ok", marketSourceDetail(payload));
@@ -10465,6 +10518,79 @@ def market_snapshot(config: dict, timeout: float = 6.0) -> int:
     item = market_snapshot_item(snapshot, history=history)
     append_jsonl(path, item)
     print(f"Market snapshot saved: {path}")
+    print(format_market_snapshot(snapshot_from_market_item(item)))
+    return 0
+
+
+def market_risk_level(score: int) -> str:
+    if score >= 4:
+        return "critical"
+    if score >= 2:
+        return "warning"
+    return "ok"
+
+
+def market_risk_drill(config: dict, *, score: int = 4, reason: str = "market_risk_drill", direction: str = "mixed") -> int:
+    path = Path(config.get("market_snapshot_path") or DEFAULT_CONFIG["market_snapshot_path"])
+    try:
+        history = load_jsonl(path)
+    except (OSError, json.JSONDecodeError):
+        history = []
+    base = next((item for item in reversed(history) if item.get("ok")), {})
+    item = dict(base)
+    risk_reasons = [part.strip() for part in reason.split(",") if part.strip()] or ["market_risk_drill"]
+    level = market_risk_level(int(score))
+    item.update(
+        {
+            "checked_at": dt.datetime.now().astimezone().isoformat(),
+            "source": item.get("source") or "Bybit KAS/USDT",
+            "ok": True,
+            "error": None,
+            "market_risk_score": int(score),
+            "market_risk_level": level,
+            "market_risk_level_value": {"ok": 0, "warning": 1, "critical": 2}.get(level, -1),
+            "market_risk_direction": direction or "mixed",
+            "market_risk_reasons": ",".join(risk_reasons),
+            "market_risk_reason_count": len(risk_reasons),
+        }
+    )
+    append_jsonl(path, item)
+
+    report, state = build_stateful_report(config)
+    benchmark_path = Path(config.get("benchmark_path") or DEFAULT_CONFIG["benchmark_path"])
+    history_db_path = sqlite_history_path(config)
+    status_page_path = Path(config.get("status_page_path") or DEFAULT_CONFIG["status_page_path"])
+    stream_page_path = Path(config.get("stream_page_path") or DEFAULT_CONFIG["stream_page_path"])
+    recovery_records = recent_recovery_records(config)
+    write_status_page(status_page_path, report, state, benchmark_path, recovery_records, history_db_path, path)
+    if config.get("canvas_status_page_path") or DEFAULT_CONFIG["canvas_status_page_path"]:
+        write_status_page(
+            Path(config.get("canvas_status_page_path") or DEFAULT_CONFIG["canvas_status_page_path"]),
+            report,
+            state,
+            benchmark_path,
+            recovery_records,
+            history_db_path,
+            path,
+        )
+    write_stream_page(stream_page_path, report, state, benchmark_path, path)
+    if config.get("canvas_stream_page_path") or DEFAULT_CONFIG["canvas_stream_page_path"]:
+        write_stream_page(
+            Path(config.get("canvas_stream_page_path") or DEFAULT_CONFIG["canvas_stream_page_path"]),
+            report,
+            state,
+            benchmark_path,
+            path,
+        )
+    write_prometheus_metrics(
+        Path(config.get("prometheus_metrics_path") or DEFAULT_CONFIG["prometheus_metrics_path"]),
+        report,
+        build_benchmark_summary(benchmark_path, limit=48),
+        build_recovery_summary(recovery_history_path(config)),
+        build_market_metrics(path),
+        build_multi_node_metrics(sqlite_history_path(config)),
+    )
+    print(f"Market risk drill saved: {path}")
     print(format_market_snapshot(snapshot_from_market_item(item)))
     return 0
 
@@ -12188,6 +12314,10 @@ def main() -> int:
     parser.add_argument("--benchmark-limit", type=int, default=100, help="Number of recent benchmark snapshots to include.")
     parser.add_argument("--market-summary", action="store_true", help="Print an optional public KAS/USDT market snapshot.")
     parser.add_argument("--market-snapshot", action="store_true", help="Append a public KAS/USDT market snapshot to JSONL history.")
+    parser.add_argument("--market-risk-drill", action="store_true", help="Inject a synthetic market positioning risk snapshot.")
+    parser.add_argument("--market-risk-score", type=int, default=4, help="Synthetic score for --market-risk-drill.")
+    parser.add_argument("--market-risk-reason", default="market_risk_drill", help="Comma-separated reasons for --market-risk-drill.")
+    parser.add_argument("--market-risk-direction", default="mixed", help="Synthetic crowding direction for --market-risk-drill.")
     parser.add_argument("--market-timeout", type=float, default=6.0, help="Public market API timeout in seconds.")
     parser.add_argument("--indexer-tx", help="Query a transaction from the configured local indexer API.")
     parser.add_argument("--indexer-address", help="Query address transactions from the configured local indexer API.")
@@ -12363,6 +12493,13 @@ def main() -> int:
         return market_summary(timeout=args.market_timeout)
     if args.market_snapshot:
         return market_snapshot(config, timeout=args.market_timeout)
+    if args.market_risk_drill:
+        return market_risk_drill(
+            config,
+            score=args.market_risk_score,
+            reason=args.market_risk_reason,
+            direction=args.market_risk_direction,
+        )
     if args.indexer_tx:
         return indexer_lookup(config, "tx", args.indexer_tx)
     if args.indexer_address:
