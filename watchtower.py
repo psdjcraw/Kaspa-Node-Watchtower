@@ -9181,6 +9181,7 @@ def alert(config: dict) -> int:
     thresholds = config.get("thresholds", {})
     repeat_minutes = float(thresholds.get("alert_repeat_minutes", 60))
     state = load_state(state_path)
+    market_metrics = build_market_metrics(market_snapshot_path)
     report = build_report(config)
     apply_stateful_checks(report, state, config)
     wallet_event = apply_wallet_change_detection(report, state, config)
@@ -9210,7 +9211,13 @@ def alert(config: dict) -> int:
         and previous_indexer.get("state") == "syncing"
         and current_indexer.get("state") == "up"
     )
-    event = sdk_watch_event or indexer_watch_event or whale_event or wallet_event or (
+    market_risk_key = market_risk_alert_key(market_metrics)
+    market_risk_event = (
+        "market_risk_high"
+        if market_risk_key and market_risk_key != state.get("last_market_risk_alert_key")
+        else None
+    )
+    event = sdk_watch_event or indexer_watch_event or whale_event or wallet_event or market_risk_event or (
         "indexer_ready" if indexer_ready else ("sync_completed" if sync_completed else incident_event)
     )
     should_emit = (
@@ -9221,6 +9228,7 @@ def alert(config: dict) -> int:
         or bool(whale_event)
         or bool(indexer_watch_event)
         or bool(sdk_watch_event)
+        or bool(market_risk_event)
     )
     if alert_muted_by_maintenance(report):
         should_emit = False
@@ -9240,6 +9248,8 @@ def alert(config: dict) -> int:
     )
     if should_emit:
         state["last_alert_at"] = report["checked_at"]
+        if market_risk_event and market_risk_key:
+            state["last_market_risk_alert_key"] = market_risk_key
     save_state(state_path, state)
     recovery_records = recent_recovery_records(config)
     write_status_page(status_page_path, report, state, benchmark_path, recovery_records, history_db_path, market_snapshot_path)
@@ -9249,11 +9259,10 @@ def alert(config: dict) -> int:
     if canvas_stream_page:
         write_stream_page(Path(canvas_stream_page), report, state, benchmark_path, market_snapshot_path)
     recovery_summary = build_recovery_summary(recovery_history_path(config))
-    market_metrics = build_market_metrics(market_snapshot_path)
     write_prometheus_metrics(metrics_path, report, benchmark_summary, recovery_summary, market_metrics)
 
     if should_emit:
-        print(format_alert(report, previous_status, previous_severity, event=event))
+        print(format_alert(report, previous_status, previous_severity, event=event, market_metrics=market_metrics))
     return 0 if report["status"] == "ok" else 1
 
 
@@ -9277,6 +9286,7 @@ def format_alert(
     previous_status: str | None = None,
     previous_severity: str | None = None,
     event: str | None = None,
+    market_metrics: dict[str, Any] | None = None,
 ) -> str:
     failed_checks = [check for check in report["checks"] if not check["ok"]]
     incident = report.get("incident") or {}
@@ -9295,6 +9305,8 @@ def format_alert(
         title = f"Kaspa watchtower: {report['node_name']} large wallet outgoing"
     elif event == "wallet_changed":
         title = f"Kaspa watchtower: {report['node_name']} wallet changed"
+    elif event == "market_risk_high":
+        title = f"Kaspa watchtower: {report['node_name']} market risk high"
     elif event == "incident_resolved":
         title = f"Kaspa watchtower: {report['node_name']} recovered"
     elif report["severity"] == "ok" and previous_status and previous_status != "ok":
@@ -9316,7 +9328,14 @@ def format_alert(
     if previous_severity:
         lines.append(f"previous_severity={previous_severity}")
 
-    if failed_checks:
+    if event == "market_risk_high":
+        lines.append(format_discord_market_risk({"node_name": report.get("node_name", "unknown")}, market_metrics))
+        if failed_checks:
+            causes = report.get("failure_causes") or check_failure_causes(report)
+            lines.append(f"node_checks={len(failed_checks)} failed cause_guess={', '.join(causes) if causes else 'unknown'}")
+            for check in failed_checks:
+                lines.append(f"- {check['name']}: {check['detail']}")
+    elif failed_checks:
         causes = report.get("failure_causes") or check_failure_causes(report)
         lines.append(f"cause_guess={', '.join(causes) if causes else 'unknown'}")
         duration = numeric(incident.get("duration_seconds"))
@@ -9910,6 +9929,110 @@ def format_discord_whales(report: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def market_metrics_from_config(config: dict[str, Any]) -> dict[str, Any]:
+    return build_market_metrics(Path(config.get("market_snapshot_path") or DEFAULT_CONFIG["market_snapshot_path"]))
+
+
+def format_discord_market(config: dict[str, Any], market_metrics: dict[str, Any] | None = None) -> str:
+    metrics = market_metrics or market_metrics_from_config(config)
+    latest = metrics.get("latest_successful") or {}
+    if not latest:
+        return "\n".join(
+            [
+                f"Kaspa market: {config.get('node_name', 'unknown')}",
+                "market_snapshot=unavailable",
+                f"snapshots={metrics.get('snapshots', 0)} successful={metrics.get('successful_snapshots', 0)}",
+                "next=run make market-risk-drill or watchtower.py --market-snapshot",
+            ]
+        )
+    return "\n".join(
+        [
+            f"Kaspa market: {config.get('node_name', 'unknown')}",
+            (
+                f"source={metrics.get('source', latest.get('source', 'unknown'))} "
+                f"checked_at={latest.get('checked_at', 'unknown')} "
+                f"snapshots={metrics.get('successful_snapshots', 0)}/{metrics.get('snapshots', 0)}"
+            ),
+            (
+                "spot="
+                f"price={format_market_price(latest.get('spot_last_price'))} "
+                f"24h={format_market_percent(latest.get('spot_change_24h'))} "
+                f"volume={format_market_volume(latest.get('spot_volume_24h'))}"
+            ),
+            (
+                "futures="
+                f"basis={format_market_percent_points(latest.get('futures_basis_pct'))} "
+                f"funding={format_market_percent(latest.get('futures_funding_rate'))} "
+                f"funding_z={format_market_zscore(latest.get('futures_funding_z_score'))} "
+                f"oi_volume={format_market_ratio(latest.get('futures_oi_volume_ratio'))}"
+            ),
+            (
+                "risk="
+                f"level={latest.get('market_risk_level', 'unknown')} "
+                f"score={latest.get('market_risk_score', 'unknown')} "
+                f"direction={latest.get('market_risk_direction', 'unknown')} "
+                f"reasons={latest.get('market_risk_reasons', 'none')}"
+            ),
+        ]
+    )
+
+
+def format_discord_market_risk(config: dict[str, Any], market_metrics: dict[str, Any] | None = None) -> str:
+    metrics = market_metrics or market_metrics_from_config(config)
+    latest = metrics.get("latest_successful") or {}
+    if not latest:
+        return "\n".join(
+            [
+                f"Kaspa market risk: {config.get('node_name', 'unknown')}",
+                "risk=unknown reason=no_successful_market_snapshot",
+                "next=run make market-risk-drill or watchtower.py --market-snapshot",
+            ]
+        )
+    score = latest.get("market_risk_score", "unknown")
+    level = latest.get("market_risk_level", "unknown")
+    reasons = latest.get("market_risk_reasons", "none")
+    next_action = "monitor"
+    if level == "critical" or (numeric(score) is not None and numeric(score) >= 4):
+        next_action = "check funding/OI crowding and reduce automation assumptions"
+    elif level == "warning" or (numeric(score) is not None and numeric(score) >= 2):
+        next_action = "watch next snapshot and confirm with futures dashboard"
+    return "\n".join(
+        [
+            f"Kaspa market risk: {config.get('node_name', 'unknown')}",
+            (
+                f"level={level} score={score} "
+                f"direction={latest.get('market_risk_direction', 'unknown')} "
+                f"reasons={reasons}"
+            ),
+            (
+                "context="
+                f"funding_z={format_market_zscore(latest.get('futures_funding_z_score'))} "
+                f"oi_volume={format_market_ratio(latest.get('futures_oi_volume_ratio'))} "
+                f"basis={format_market_percent_points(latest.get('futures_basis_pct'))} "
+                f"spot_dispersion={format_market_percent_points(latest.get('spot_price_dispersion_pct'))}"
+            ),
+            f"checked_at={latest.get('checked_at', 'unknown')} source={metrics.get('source', latest.get('source', 'unknown'))}",
+            f"next={next_action}",
+        ]
+    )
+
+
+def market_risk_alert_key(market_metrics: dict[str, Any]) -> str | None:
+    latest = market_metrics.get("latest_successful") or {}
+    score = numeric(latest.get("market_risk_score"))
+    if score is None or score < 4:
+        return None
+    return "|".join(
+        [
+            str(latest.get("checked_at") or "unknown"),
+            str(latest.get("market_risk_level") or "unknown"),
+            str(latest.get("market_risk_score") or "unknown"),
+            str(latest.get("market_risk_direction") or "unknown"),
+            str(latest.get("market_risk_reasons") or "none"),
+        ]
+    )
+
+
 def format_whale_daily_report(report: dict[str, Any]) -> str:
     whale = report.get("whale_watch") or {}
     events = list(whale.get("events") or [])
@@ -10033,6 +10156,8 @@ def discord_command(
     query_value: str = "",
     tx_id: str = "",
     amount_kas: Any = 0,
+    market_risk_score: int = 4,
+    market_risk_direction: str = "mixed",
 ) -> int:
     if command in {"mute", "mute-all", "unmute"}:
         if config_path is None:
@@ -10102,6 +10227,20 @@ def discord_command(
         return indexer_lookup(config, "balance", query_value)
     if command == "utxos":
         return indexer_lookup(config, "utxos", query_value)
+
+    if command == "market":
+        print(format_discord_market(config))
+        return 0
+    if command == "market-risk":
+        print(format_discord_market_risk(config))
+        return 0
+    if command == "market-drill":
+        return market_risk_drill(
+            config,
+            score=market_risk_score,
+            reason=reason or "market_risk_drill",
+            direction=market_risk_direction,
+        )
 
     report, state = build_stateful_report(config)
     if command == "status":
@@ -12352,6 +12491,9 @@ def main() -> int:
             "search",
             "balance",
             "utxos",
+            "market",
+            "market-risk",
+            "market-drill",
             "watch-list",
             "watch-check",
             "watch-drill",
@@ -12368,6 +12510,8 @@ def main() -> int:
     parser.add_argument("--discord-query", default="", help="Lookup value for --discord-command tx/address/search/balance/utxos.")
     parser.add_argument("--discord-tx-id", default="", help="Synthetic tx id for --discord-command watch-drill.")
     parser.add_argument("--discord-amount-kas", type=float, default=0.0, help="Synthetic amount for --discord-command watch-drill.")
+    parser.add_argument("--discord-market-risk-score", type=int, default=4, help="Synthetic score for --discord-command market-drill.")
+    parser.add_argument("--discord-market-risk-direction", default="mixed", help="Synthetic crowding direction for --discord-command market-drill.")
     parser.add_argument(
         "--mute-all",
         action="store_true",
@@ -12459,6 +12603,8 @@ def main() -> int:
             query_value=args.discord_query,
             tx_id=args.discord_tx_id,
             amount_kas=args.discord_amount_kas,
+            market_risk_score=args.discord_market_risk_score,
+            market_risk_direction=args.discord_market_risk_direction,
         )
     if args.maintenance_status:
         print(format_maintenance_status(config))

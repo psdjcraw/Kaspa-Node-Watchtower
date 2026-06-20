@@ -29,6 +29,9 @@ COMMANDS = {
     "search",
     "balance",
     "utxos",
+    "market",
+    "market-risk",
+    "market-drill",
     "watch-list",
     "watch-check",
     "watch-drill",
@@ -64,6 +67,8 @@ def parse_discord_payload(payload: dict[str, Any]) -> tuple[str, float, str, str
         options = subcommand.get("options") or []
         if parent_command == "watch":
             command = f"watch-{command}"
+        if parent_command == "market":
+            command = f"market-{command}"
 
     minutes_value = payload.get("minutes", option_value(options, "minutes"))
     reason_value = payload.get("reason", option_value(options, "reason"))
@@ -101,6 +106,10 @@ def parse_discord_payload(payload: dict[str, Any]) -> tuple[str, float, str, str
         command = "watch-remove"
     if command in {"watch_test", "watchtest"}:
         command = "watch-test"
+    if command in {"market_risk", "marketrisk"}:
+        command = "market-risk"
+    if command in {"market_drill", "marketdrill"}:
+        command = "market-drill"
     if command not in COMMANDS:
         raise ValueError(f"unsupported Discord command: {command}")
     return command, minutes, reason, query
@@ -122,6 +131,8 @@ def main() -> int:
     parser.add_argument("--query", default="", help="Lookup value for tx/address/search commands.")
     parser.add_argument("--tx-id", default="", help="Synthetic tx id for watch drill commands.")
     parser.add_argument("--amount-kas", type=float, default=0.0, help="Synthetic KAS amount for watch drill commands.")
+    parser.add_argument("--risk-score", type=int, default=4, help="Synthetic score for market drill commands.")
+    parser.add_argument("--direction", default="mixed", help="Synthetic crowding direction for market drill commands.")
     parser.add_argument(
         "--payload",
         help="Read a Discord/OpenClaw interaction JSON payload from this path, or '-' for stdin.",
@@ -149,6 +160,8 @@ def main() -> int:
         query_value=query,
         tx_id=args.tx_id,
         amount_kas=args.amount_kas,
+        market_risk_score=args.risk_score,
+        market_risk_direction=args.direction,
     )
 
 

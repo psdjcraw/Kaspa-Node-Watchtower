@@ -455,6 +455,9 @@ make discord-incidents
 make discord-maintenance
 make discord-mute MUTE_MINUTES=30 MUTE_REASON="kaspad upgrade"
 make discord-unmute
+make discord-market
+make discord-market-risk
+make discord-market-drill
 make discord-watch-check
 make discord-watch-drill
 make market-risk-drill
@@ -467,10 +470,28 @@ Suggested Discord mapping:
 - `/kaspa maintenance` -> `make discord-maintenance`
 - `/kaspa mute minutes:30 reason:kaspad upgrade` -> `make discord-mute`
 - `/kaspa unmute` -> `make discord-unmute`
+- `/kaspa market` -> `make discord-market`
+- `/kaspa market risk` -> `make discord-market-risk`
+- `/kaspa market drill` -> `make discord-market-drill MARKET_RISK_SCORE=4 MARKET_RISK_REASON=funding_z_extreme`
 - `/kaspa watch check` -> `make discord-watch-check`
 - `/kaspa watch list` -> `make discord-watch-list`
 - `/kaspa watch test address:kaspa:...` -> `make discord-watch-test ADDRESS=kaspa:...`
 - `/kaspa watch drill address:kaspa:...` -> `make discord-watch-drill ADDRESS=kaspa:... LABEL=drill AMOUNT_KAS=1.23`
+
+Market commands:
+
+```bash
+make discord-market
+make discord-market-risk
+make discord-market-drill MARKET_RISK_SCORE=4 MARKET_RISK_REASON=funding_z_extreme MARKET_RISK_DIRECTION=long_crowded
+```
+
+`make discord-market` prints the latest persisted KAS/USDT spot, futures, and
+risk context in a Discord-friendly format. `make discord-market-risk` focuses
+on the positioning-risk verdict and next operator action. `make
+discord-market-drill` injects the same synthetic risk snapshot as
+`make market-risk-drill`, but routes through the Discord command adapter so
+slash-command payload handling is covered too.
 
 Watch readiness:
 

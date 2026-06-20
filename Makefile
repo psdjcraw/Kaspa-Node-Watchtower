@@ -24,7 +24,7 @@ MARKET_RISK_SCORE ?= 4
 MARKET_RISK_REASON ?= market_risk_drill
 MARKET_RISK_DIRECTION ?= mixed
 
-.PHONY: help onboard bootstrap proto-check version status stream summary sync-report diagnostics-summary incident-report json alert discord-status discord-incidents discord-wallet discord-wallet-txs discord-mining discord-whales discord-tx discord-address discord-balance discord-utxos discord-search discord-watch-list discord-watch-check discord-watch-drill discord-watch-add discord-watch-remove discord-watch-test market-risk-drill indexer-up indexer-down indexer-logs indexer-smoke mining-set-address mining-clear-address discord-maintenance discord-mute discord-mute-all discord-unmute maintenance-status mute mute-all unmute smoke ci integrations simulate-exporter-failure ensure-exporter launchd-status launchd-install launchd-restart launchd-uninstall diagnostics diagnostics-archive daily-report weekly-report weekly-archive benchmark benchmark-report prometheus export-history history-report history-multi-node history-archive upload-archive sns-refresh package docker-build docker-smoke docker-push prune validate recover-dry-run recover force-recover-dry-run
+.PHONY: help onboard bootstrap proto-check version status stream summary sync-report diagnostics-summary incident-report json alert discord-status discord-incidents discord-wallet discord-wallet-txs discord-mining discord-whales discord-tx discord-address discord-balance discord-utxos discord-search discord-market discord-market-risk discord-market-drill discord-watch-list discord-watch-check discord-watch-drill discord-watch-add discord-watch-remove discord-watch-test market-risk-drill indexer-up indexer-down indexer-logs indexer-smoke mining-set-address mining-clear-address discord-maintenance discord-mute discord-mute-all discord-unmute maintenance-status mute mute-all unmute smoke ci integrations simulate-exporter-failure ensure-exporter launchd-status launchd-install launchd-restart launchd-uninstall diagnostics diagnostics-archive daily-report weekly-report weekly-archive benchmark benchmark-report prometheus export-history history-report history-multi-node history-archive upload-archive sns-refresh package docker-build docker-smoke docker-push prune validate recover-dry-run recover force-recover-dry-run
 
 help:
 	@printf 'Kaspa Node Watchtower operator commands\n'
@@ -51,6 +51,9 @@ help:
 	@printf '  make discord-balance     Query indexer address balance; set ADDRESS=kaspa:...\n'
 	@printf '  make discord-utxos       Query indexer address UTXOs; set ADDRESS=kaspa:...\n'
 	@printf '  make discord-search      Search indexer; set QUERY=...\n'
+	@printf '  make discord-market      Print Discord-friendly market snapshot\n'
+	@printf '  make discord-market-risk Print Discord-friendly market risk state\n'
+	@printf '  make discord-market-drill Inject synthetic Discord market risk drill\n'
 	@printf '  make discord-watch-list  Print indexer watchlist\n'
 	@printf '  make discord-watch-check Check live watch readiness\n'
 	@printf '  make discord-watch-drill Inject synthetic watch event; optional ADDRESS/LABEL/TX_ID/AMOUNT_KAS\n'
@@ -174,6 +177,15 @@ discord-utxos:
 discord-search:
 	@test -n "$(QUERY)" || (printf 'QUERY is required\n' >&2; exit 2)
 	@$(PYTHON) scripts/discord_command_handler.py -c $(CONFIG) search --query "$(QUERY)"
+
+discord-market:
+	@$(PYTHON) scripts/discord_command_handler.py -c $(CONFIG) market
+
+discord-market-risk:
+	@$(PYTHON) scripts/discord_command_handler.py -c $(CONFIG) market-risk
+
+discord-market-drill:
+	@$(PYTHON) scripts/discord_command_handler.py -c $(CONFIG) market-drill --reason "$(MARKET_RISK_REASON)" --risk-score "$(MARKET_RISK_SCORE)" --direction "$(MARKET_RISK_DIRECTION)"
 
 discord-watch-list:
 	@$(PYTHON) scripts/discord_command_handler.py -c $(CONFIG) watch-list

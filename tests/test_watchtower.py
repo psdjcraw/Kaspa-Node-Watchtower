@@ -3201,6 +3201,89 @@ class WatchtowerUnitTests(unittest.TestCase):
         self.assertEqual(risk["direction"], "long_crowded")
         self.assertIn("funding_z_extreme", risk["reasons"])
 
+    def test_discord_market_commands_print_snapshot_and_risk(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            market_path = Path(tmp) / "market-snapshots.jsonl"
+            config = copy.deepcopy(watchtower.DEFAULT_CONFIG)
+            config["node_name"] = "test-node"
+            config["market_snapshot_path"] = str(market_path)
+            watchtower.append_jsonl(
+                market_path,
+                {
+                    "checked_at": "2026-06-20T10:00:00+09:00",
+                    "source": "Bybit KAS/USDT",
+                    "ok": True,
+                    "spot_last_price": 0.0305,
+                    "spot_change_24h": 0.012,
+                    "spot_volume_24h": 1000000,
+                    "spot_price_dispersion_pct": 0.4,
+                    "futures_basis_pct": 1.2,
+                    "futures_funding_rate": 0.0001,
+                    "futures_funding_z_score": 3.1,
+                    "futures_oi_volume_ratio": 5.2,
+                    "market_risk_score": 4,
+                    "market_risk_level": "critical",
+                    "market_risk_level_value": 2,
+                    "market_risk_direction": "long_crowded",
+                    "market_risk_reasons": "funding_z_extreme,oi_volume_extreme",
+                    "market_risk_reason_count": 2,
+                },
+            )
+
+            with mock.patch("builtins.print") as printed:
+                market_code = watchtower.discord_command(config, "market")
+                risk_code = watchtower.discord_command(config, "market-risk")
+
+        self.assertEqual(market_code, 0)
+        self.assertEqual(risk_code, 0)
+        market_text = printed.call_args_list[0].args[0]
+        risk_text = printed.call_args_list[1].args[0]
+        self.assertIn("Kaspa market: test-node", market_text)
+        self.assertIn("risk=level=critical score=4", market_text)
+        self.assertIn("Kaspa market risk: test-node", risk_text)
+        self.assertIn("level=critical score=4 direction=long_crowded", risk_text)
+        self.assertIn("next=check funding/OI crowding", risk_text)
+
+    def test_market_risk_alert_key_and_body_for_critical_snapshot(self):
+        market_metrics = {
+            "source": "Bybit KAS/USDT",
+            "latest_successful": {
+                "checked_at": "2026-06-20T10:00:00+09:00",
+                "source": "Bybit KAS/USDT",
+                "spot_price_dispersion_pct": 0.4,
+                "futures_basis_pct": 1.2,
+                "futures_funding_z_score": 3.1,
+                "futures_oi_volume_ratio": 5.2,
+                "market_risk_score": 4,
+                "market_risk_level": "critical",
+                "market_risk_direction": "long_crowded",
+                "market_risk_reasons": "funding_z_extreme,oi_volume_extreme",
+            },
+        }
+        report = {
+            "node_name": "test-node",
+            "checked_at": "2026-06-20T10:01:00+09:00",
+            "severity": "ok",
+            "status": "ok",
+            "checks": [],
+            "health_score": 100,
+            "latest_throughput": None,
+            "grpc_metrics": {},
+            "progress": {
+                "relay_blocks_in_window": 0,
+                "relay_events_in_window": 0,
+                "window_minutes": 10,
+            },
+        }
+
+        key = watchtower.market_risk_alert_key(market_metrics)
+        text = watchtower.format_alert(report, event="market_risk_high", market_metrics=market_metrics)
+
+        self.assertIsNotNone(key)
+        self.assertIn("market risk high", text)
+        self.assertIn("Kaspa market risk: test-node", text)
+        self.assertIn("level=critical score=4", text)
+
     def test_market_risk_drill_appends_snapshot_and_rewrites_metrics(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)

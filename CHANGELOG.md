@@ -4,6 +4,14 @@ All notable changes to Kaspa Node Watchtower are tracked here.
 
 ## Unreleased
 
+### Added
+
+- Discord command bridge now exposes `market`, `market-risk`, and
+  `market-drill` outputs for KAS/USDT market snapshots and positioning-risk
+  drills.
+- `watchtower.py --alert` now emits a market-risk-high alert body when a new
+  critical market positioning snapshot is detected.
+
 ### Changed
 
 - Homebrew formula now points to the v0.8.2 GitHub Release asset and checksum.

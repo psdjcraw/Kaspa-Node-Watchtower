@@ -33,6 +33,7 @@ config["state_path"] = state_path
 config["status_page_path"] = f"{tmp_dir}/{name}-status.html"
 config["canvas_status_page_path"] = ""
 config["benchmark_path"] = f"{tmp_dir}/{name}-benchmarks.jsonl"
+config["market_snapshot_path"] = f"{tmp_dir}/{name}-market-snapshots.jsonl"
 config["prometheus_metrics_path"] = f"{tmp_dir}/{name}.prom"
 config["recovery_history_path"] = f"{tmp_dir}/{name}-recovery-history.jsonl"
 config.setdefault("thresholds", {})
