@@ -5425,6 +5425,32 @@ def indexer_watch_panel(report: dict[str, Any], state: dict[str, Any]) -> str:
     """
 
 
+def operator_timeline_panel(events: list[dict[str, Any]]) -> str:
+    rows = "\n".join(
+        html_row(
+            [
+                item.get("observed_at", "unknown"),
+                item.get("severity", "info"),
+                item.get("source", "unknown"),
+                item.get("summary", "event"),
+                item.get("detail", ""),
+            ]
+        )
+        for item in events
+    )
+    if not rows:
+        rows = html_row(["No timeline events in the last 24h", "", "", "", ""])
+    return f"""
+    <section class="panel operator-timeline-panel">
+      <h2>Operator Timeline 24H</h2>
+      <table>
+        <thead>{html_row(["Observed", "Severity", "Source", "Summary", "Detail"], "th")}</thead>
+        <tbody>{rows}</tbody>
+      </table>
+    </section>
+    """
+
+
 def write_status_page(
     path: Path,
     report: dict[str, Any],
@@ -5467,6 +5493,17 @@ def write_status_page(
     whale_panel = whale_watch_panel(report, state)
     indexer_panel = indexer_watch_panel(report, state)
     latest_recovery = (recovery_records or [])[-1] if recovery_records else {}
+    status_market_path = market_snapshot_path or Path(DEFAULT_CONFIG["market_snapshot_path"])
+    status_market_metrics = build_market_metrics(status_market_path)
+    timeline_events = build_operator_timeline(
+        report,
+        state,
+        market_metrics=status_market_metrics,
+        recovery_records=recovery_records or [],
+        limit=12,
+        hours=24,
+    )
+    timeline_panel = operator_timeline_panel(timeline_events)
     operator_required = latest_recovery.get("operator_required")
     operator_required_text = "Yes" if operator_required is True else "No" if operator_required is False else "Unknown"
     operator_reason = latest_recovery.get("operator_reason") or latest_recovery.get("reason") or "none"
@@ -6807,6 +6844,7 @@ def write_status_page(
         </div>
       </section>
     </section>
+    {timeline_panel}
     <section class="panel">
       <h2>Command Center</h2>
       {commands}
@@ -9723,6 +9761,20 @@ def incident_report(config: dict) -> int:
     return 0
 
 
+def operator_timeline(config: dict, *, limit: int = 20) -> int:
+    report, state = build_stateful_report(config)
+    market_metrics = market_metrics_from_config(config)
+    events = build_operator_timeline(
+        report,
+        state,
+        market_metrics=market_metrics,
+        recovery_records=recent_recovery_records(config),
+        limit=limit,
+    )
+    print(format_operator_timeline(config.get("node_name", "unknown"), events))
+    return 0
+
+
 def format_discord_status(report: dict[str, Any]) -> str:
     grpc_metrics = report.get("grpc_metrics") or {}
     indexer = report.get("indexer") or {}
@@ -10033,6 +10085,233 @@ def market_risk_alert_key(market_metrics: dict[str, Any]) -> str | None:
     )
 
 
+def operator_timeline_event(
+    *,
+    observed_at: Any,
+    source: str,
+    severity: str,
+    summary: str,
+    detail: str = "",
+    dedupe_key: str | None = None,
+) -> dict[str, Any]:
+    observed_text = str(observed_at or "unknown")
+    source_text = str(source or "unknown")
+    summary_text = str(summary or "event")
+    return {
+        "observed_at": observed_text,
+        "source": source_text,
+        "severity": str(severity or "info"),
+        "summary": summary_text,
+        "detail": str(detail or ""),
+        "dedupe_key": dedupe_key or f"{source_text}:{observed_text}:{summary_text}",
+    }
+
+
+def operator_timeline_sort_key(event: dict[str, Any]) -> tuple[float, str, str]:
+    parsed = parse_iso_datetime(event.get("observed_at"))
+    timestamp = parsed.timestamp() if parsed else 0.0
+    return (timestamp, str(event.get("source", "")), str(event.get("dedupe_key", "")))
+
+
+def operator_timeline_severity(value: Any) -> str:
+    text = str(value or "info").lower()
+    if text in {"critical", "error", "failed", "down"}:
+        return "critical"
+    if text in {"warn", "warning", "alert"}:
+        return "warn"
+    if text == "ok":
+        return "ok"
+    return "info"
+
+
+def build_operator_timeline(
+    report: dict[str, Any],
+    state: dict[str, Any],
+    *,
+    market_metrics: dict[str, Any] | None = None,
+    recovery_records: list[dict[str, Any]] | None = None,
+    limit: int = 20,
+    hours: float | None = None,
+    now: dt.datetime | None = None,
+) -> list[dict[str, Any]]:
+    events: dict[str, dict[str, Any]] = {}
+
+    def add(event: dict[str, Any]) -> None:
+        key = str(event.get("dedupe_key") or "")
+        if key:
+            events[key] = event
+
+    checked_at = report.get("checked_at")
+    failed = failed_check_names(report)
+    if report.get("status") != "ok" or failed:
+        add(
+            operator_timeline_event(
+                observed_at=checked_at,
+                source="node",
+                severity=operator_timeline_severity(report.get("severity")),
+                summary=f"node {report.get('status', 'unknown')}",
+                detail=f"failed_checks={','.join(failed) if failed else 'none'} health={report.get('health_score', 'unknown')}",
+                dedupe_key=f"node:{checked_at}:{report.get('severity')}:{','.join(failed)}",
+            )
+        )
+
+    incident = report.get("incident") or {}
+    if incident.get("active"):
+        incident_failed = incident.get("failed_checks") or failed
+        add(
+            operator_timeline_event(
+                observed_at=incident.get("started_at") or checked_at,
+                source="incident",
+                severity=operator_timeline_severity(report.get("severity")),
+                summary="active incident",
+                detail=f"duration={numeric(incident.get('duration_seconds')) or 0:.0f}s failed={','.join(incident_failed) if incident_failed else 'none'}",
+                dedupe_key=f"incident:active:{incident.get('started_at') or checked_at}:{','.join(incident_failed)}",
+            )
+        )
+    last_incident = state.get("last_incident") or {}
+    if last_incident.get("resolved_at"):
+        add(
+            operator_timeline_event(
+                observed_at=last_incident.get("resolved_at"),
+                source="incident",
+                severity="ok",
+                summary="incident resolved",
+                detail=f"failed={','.join(last_incident.get('failed_checks') or []) or 'none'}",
+                dedupe_key=f"incident:resolved:{last_incident.get('resolved_at')}",
+            )
+        )
+
+    for record in recovery_records or []:
+        observed = record.get("completed_at") or record.get("started_at")
+        action = record.get("action") or "unknown"
+        severity = "critical" if record.get("operator_required") is True else "ok" if action in {"executed", "dry_run", "skipped"} else "warn"
+        add(
+            operator_timeline_event(
+                observed_at=observed,
+                source="recovery",
+                severity=severity,
+                summary=f"recovery {action}",
+                detail=(
+                    f"before={record.get('severity_before', 'unknown')} "
+                    f"after={record.get('severity_after', 'unknown')} "
+                    f"reason={record.get('operator_reason') or record.get('reason') or 'none'}"
+                ),
+                dedupe_key=f"recovery:{observed}:{action}:{record.get('exit_code', 'none')}",
+            )
+        )
+
+    market = (market_metrics or {}).get("latest_successful") or {}
+    market_score = numeric(market.get("market_risk_score"))
+    if market and market_score is not None and market_score > 0:
+        add(
+            operator_timeline_event(
+                observed_at=market.get("checked_at"),
+                source="market",
+                severity="critical" if market_score >= 4 else "warn" if market_score >= 2 else "ok",
+                summary=f"market risk {market.get('market_risk_level', 'unknown')}",
+                detail=(
+                    f"score={market.get('market_risk_score', 'unknown')} "
+                    f"direction={market.get('market_risk_direction', 'unknown')} "
+                    f"reasons={market.get('market_risk_reasons', 'none')}"
+                ),
+                dedupe_key=market_risk_alert_key(market_metrics or {}) or f"market:{market.get('checked_at')}",
+            )
+        )
+
+    wallet = report.get("wallet") or {}
+    for item in list(wallet.get("events") or state.get("wallet_events") or [])[-20:]:
+        label = item.get("label") or "unlabeled"
+        add(
+            operator_timeline_event(
+                observed_at=item.get("observed_at"),
+                source="wallet",
+                severity="warn" if item.get("direction") == "outgoing" else "ok",
+                summary=f"wallet {item.get('direction', 'change')}",
+                detail=f"{label} delta={format_kas(item.get('delta_sompi'))}",
+                dedupe_key=f"wallet:{item.get('tx_id') or item.get('observed_at')}:{label}:{item.get('delta_sompi')}",
+            )
+        )
+
+    watch = report.get("indexer_watch") or {}
+    for item in list(watch.get("events") or state.get("indexer_watch_events") or [])[-20:]:
+        add(
+            operator_timeline_event(
+                observed_at=item.get("observed_at"),
+                source="indexer_watch",
+                severity="ok",
+                summary="watched address tx",
+                detail=format_watch_event_line(item, default_source="indexer"),
+                dedupe_key=f"indexer_watch:{item.get('tx_id') or item.get('observed_at')}:{item.get('address', '')}",
+            )
+        )
+
+    sdk = report.get("sdk_metrics") or {}
+    for item in list(sdk.get("events") or [])[-20:]:
+        add(
+            operator_timeline_event(
+                observed_at=item.get("observed_at") or item.get("timestamp"),
+                source="sdk_watch",
+                severity="ok",
+                summary="SDK watched address event",
+                detail=format_watch_event_line(item, default_source="sdk_subscription"),
+                dedupe_key=f"sdk_watch:{item.get('tx_id') or item.get('event_id') or item.get('observed_at')}",
+            )
+        )
+
+    whale = report.get("whale_watch") or {}
+    for item in list(whale.get("events") or [])[-20:]:
+        add(
+            operator_timeline_event(
+                observed_at=item.get("observed_at"),
+                source="whale",
+                severity="warn",
+                summary="whale transaction",
+                detail=f"amount={format_kas(item.get('amount_sompi'))} tx={short_hash(item.get('tx_id'))} source={item.get('source', 'unknown')}",
+                dedupe_key=f"whale:{item.get('tx_id') or item.get('observed_at')}",
+            )
+        )
+
+    mining = report.get("mining") or {}
+    if mining.get("enabled") and not mining.get("ok", True):
+        add(
+            operator_timeline_event(
+                observed_at=checked_at,
+                source="mining",
+                severity="warn",
+                summary="mining not ok",
+                detail=f"running={mining.get('running', False)} detail={mining.get('detail', 'unknown')}",
+                dedupe_key=f"mining:{checked_at}:{mining.get('detail', 'unknown')}",
+            )
+        )
+
+    items = sorted(events.values(), key=operator_timeline_sort_key, reverse=True)
+    if hours is not None:
+        reference = now or dt.datetime.now().astimezone()
+        cutoff = reference - dt.timedelta(hours=hours)
+        filtered = []
+        for item in items:
+            parsed = parse_iso_datetime(item.get("observed_at"))
+            if parsed is None or parsed >= cutoff:
+                filtered.append(item)
+        items = filtered
+    return items[: max(1, int(limit or 20))]
+
+
+def format_operator_timeline(node_name: str, events: list[dict[str, Any]]) -> str:
+    lines = [f"Kaspa operator timeline: {node_name}", f"items={len(events)}"]
+    if not events:
+        lines.append("recent_events=none")
+        return "\n".join(lines)
+    for item in events:
+        detail = f" detail={item.get('detail')}" if item.get("detail") else ""
+        lines.append(
+            f"- {item.get('observed_at', 'unknown')} "
+            f"[{item.get('severity', 'info')}] "
+            f"{item.get('source', 'unknown')}: {item.get('summary', 'event')}{detail}"
+        )
+    return "\n".join(lines)
+
+
 def format_whale_daily_report(report: dict[str, Any]) -> str:
     whale = report.get("whale_watch") or {}
     events = list(whale.get("events") or [])
@@ -10228,6 +10507,8 @@ def discord_command(
     if command == "utxos":
         return indexer_lookup(config, "utxos", query_value)
 
+    if command == "timeline":
+        return operator_timeline(config, limit=20)
     if command == "market":
         print(format_discord_market(config))
         return 0
@@ -12442,6 +12723,8 @@ def main() -> int:
     parser.add_argument("--sync-report", action="store_true", help="Print a focused mainnet sync progress report.")
     parser.add_argument("--diagnostics-summary", action="store_true", help="Print a sanitized diagnostics summary.")
     parser.add_argument("--incident-report", action="store_true", help="Print a sanitized Markdown incident report.")
+    parser.add_argument("--timeline", action="store_true", help="Print a unified operator event timeline.")
+    parser.add_argument("--timeline-limit", type=int, default=20, help="Number of operator timeline events to print.")
     parser.add_argument("--alert", action="store_true", help="Print only alert transition output and update state.")
     parser.add_argument("--stream-page", action="store_true", help="Write the 1080p OBS/YouTube rotating stream page.")
     parser.add_argument("--recover", action="store_true", help="Run the configured manual recovery command when unhealthy.")
@@ -12491,6 +12774,7 @@ def main() -> int:
             "search",
             "balance",
             "utxos",
+            "timeline",
             "market",
             "market-risk",
             "market-drill",
@@ -12623,6 +12907,8 @@ def main() -> int:
         return diagnostics_summary(config)
     if args.incident_report:
         return incident_report(config)
+    if args.timeline:
+        return operator_timeline(config, limit=args.timeline_limit)
     if args.alert:
         return alert(config)
     if args.stream_page:

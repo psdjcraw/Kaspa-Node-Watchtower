@@ -9,6 +9,9 @@ All notable changes to Kaspa Node Watchtower are tracked here.
 - Discord command bridge now exposes `market`, `market-risk`, and
   `market-drill` outputs for KAS/USDT market snapshots and positioning-risk
   drills.
+- Unified operator timeline output now merges node, incident, recovery, market,
+  wallet, indexer watch, SDK watch, whale, and mining events for CLI, Discord,
+  and the generated status page.
 - `watchtower.py --alert` now emits a market-risk-high alert body when a new
   critical market positioning snapshot is detected.
 

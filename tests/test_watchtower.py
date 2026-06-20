@@ -3284,6 +3284,110 @@ class WatchtowerUnitTests(unittest.TestCase):
         self.assertIn("Kaspa market risk: test-node", text)
         self.assertIn("level=critical score=4", text)
 
+    def test_operator_timeline_merges_sources_in_reverse_time_order(self):
+        report = {
+            "node_name": "test-node",
+            "checked_at": "2026-06-20T10:03:00+09:00",
+            "status": "alert",
+            "severity": "warn",
+            "health_score": 85,
+            "checks": [{"name": "block_progress", "ok": False, "detail": "stalled"}],
+            "incident": {
+                "active": True,
+                "started_at": "2026-06-20T10:00:00+09:00",
+                "duration_seconds": 180,
+                "failed_checks": ["block_progress"],
+            },
+            "wallet": {
+                "events": [
+                    {
+                        "observed_at": "2026-06-20T10:02:00+09:00",
+                        "label": "wallet",
+                        "direction": "incoming",
+                        "delta_sompi": 100000000,
+                        "tx_id": "wallet-tx",
+                    }
+                ]
+            },
+            "indexer_watch": {
+                "events": [
+                    {
+                        "observed_at": "2026-06-20T10:01:00+09:00",
+                        "label": "watch",
+                        "address": "kaspa:qabc",
+                        "tx_id": "watch-tx",
+                        "delta_sompi": 200000000,
+                        "direction": "incoming",
+                    }
+                ]
+            },
+            "sdk_metrics": {"events": []},
+            "whale_watch": {"events": []},
+            "mining": {"enabled": True, "ok": False, "running": False, "detail": "stale shares"},
+        }
+        market_metrics = {
+            "latest_successful": {
+                "checked_at": "2026-06-20T10:04:00+09:00",
+                "market_risk_score": 4,
+                "market_risk_level": "critical",
+                "market_risk_direction": "long_crowded",
+                "market_risk_reasons": "funding_z_extreme",
+            }
+        }
+        recovery_records = [
+            {
+                "started_at": "2026-06-20T10:05:00+09:00",
+                "action": "dry_run",
+                "severity_before": "warn",
+                "severity_after": "unknown",
+            }
+        ]
+
+        events = watchtower.build_operator_timeline(
+            report,
+            {},
+            market_metrics=market_metrics,
+            recovery_records=recovery_records,
+            limit=10,
+        )
+        text = watchtower.format_operator_timeline("test-node", events)
+
+        self.assertEqual(events[0]["source"], "recovery")
+        self.assertIn("market risk critical", text)
+        self.assertIn("wallet incoming", text)
+        self.assertIn("watched address tx", text)
+        self.assertIn("mining not ok", text)
+
+    def test_discord_timeline_command_prints_operator_timeline(self):
+        config = copy.deepcopy(watchtower.DEFAULT_CONFIG)
+        config["node_name"] = "test-node"
+        report = {
+            "node_name": "test-node",
+            "checked_at": "2026-06-20T10:03:00+09:00",
+            "status": "alert",
+            "severity": "warn",
+            "health_score": 85,
+            "checks": [{"name": "block_progress", "ok": False, "detail": "stalled"}],
+            "incident": {},
+            "wallet": {},
+            "indexer_watch": {},
+            "sdk_metrics": {},
+            "whale_watch": {},
+            "mining": {},
+        }
+
+        with (
+            mock.patch("watchtower.build_stateful_report", return_value=(report, {})),
+            mock.patch("watchtower.market_metrics_from_config", return_value={}),
+            mock.patch("watchtower.recent_recovery_records", return_value=[]),
+            mock.patch("builtins.print") as printed,
+        ):
+            code = watchtower.discord_command(config, "timeline")
+
+        self.assertEqual(code, 0)
+        self.assertIn("Kaspa operator timeline: test-node", printed.call_args.args[0])
+        self.assertIn("node alert", printed.call_args.args[0])
+
     def test_market_risk_drill_appends_snapshot_and_rewrites_metrics(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
@@ -3648,6 +3752,7 @@ class WatchtowerUnitTests(unittest.TestCase):
             self.assertIn("KAS/USDT Futures Liquidation Map 1W", html)
             self.assertIn("KAS/USDT Futures Liquidation Map 1M", html)
             self.assertIn("Signal Watch", html)
+            self.assertIn("Operator Timeline 24H", html)
             self.assertIn("api.bybit.com/v5/market/tickers", html)
             self.assertIn("api.bybit.com/v5/market/kline", html)
             self.assertIn("category=linear&symbol=KASUSDT", html)
@@ -3737,6 +3842,7 @@ class WatchtowerUnitTests(unittest.TestCase):
             self.assertIn("Whale Watch", html)
             self.assertIn("Whale Events", html)
             self.assertIn("restoreDashboardSelection", html)
+            self.assertIn("operator-timeline-panel", html)
             self.assertIn("window.history.replaceState", html)
             self.assertIn("kaspa-watchtower-active-tab", html)
             self.assertIn("kaspa-watchtower-active-timeframe", html)

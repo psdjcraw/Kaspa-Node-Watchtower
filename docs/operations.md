@@ -452,6 +452,7 @@ commands instead of reformatting watchtower output themselves:
 ```bash
 make discord-status
 make discord-incidents
+make discord-timeline
 make discord-maintenance
 make discord-mute MUTE_MINUTES=30 MUTE_REASON="kaspad upgrade"
 make discord-unmute
@@ -467,6 +468,7 @@ Suggested Discord mapping:
 
 - `/kaspa status` -> `make discord-status`
 - `/kaspa incidents` -> `make discord-incidents`
+- `/kaspa timeline` -> `make discord-timeline`
 - `/kaspa maintenance` -> `make discord-maintenance`
 - `/kaspa mute minutes:30 reason:kaspad upgrade` -> `make discord-mute`
 - `/kaspa unmute` -> `make discord-unmute`
@@ -492,6 +494,18 @@ on the positioning-risk verdict and next operator action. `make
 discord-market-drill` injects the same synthetic risk snapshot as
 `make market-risk-drill`, but routes through the Discord command adapter so
 slash-command payload handling is covered too.
+
+Operator timeline:
+
+```bash
+make timeline
+make discord-timeline
+```
+
+The unified timeline merges recent node incidents, recovery attempts, market
+risk snapshots, wallet/indexer/SDK watch events, whale events, and mining
+warnings into a single chronological operator view. The generated status page
+also shows an `Operator Timeline 24H` panel in the Ops tab.
 
 Watch readiness:
 

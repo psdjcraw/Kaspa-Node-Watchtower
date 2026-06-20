@@ -29,6 +29,7 @@ COMMANDS = {
     "search",
     "balance",
     "utxos",
+    "timeline",
     "market",
     "market-risk",
     "market-drill",
