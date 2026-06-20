@@ -6125,6 +6125,42 @@ def write_status_page(
     .market-indicator-row.down strong {{ color: var(--critical); }}
     .market-indicator-row.warn strong {{ color: #b26a00; }}
     .market-indicator-row.cool strong {{ color: #276b74; }}
+    .market-anomaly-list {{
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      margin-top: 12px;
+    }}
+    .market-anomaly-row {{
+      display: grid;
+      grid-template-columns: 84px 82px 1fr;
+      gap: 8px;
+      align-items: center;
+      min-height: 36px;
+      padding: 8px 10px;
+      border: 1px solid #edf1f6;
+      border-radius: 8px;
+      background: #f8fafc;
+      font-size: 12px;
+      font-weight: 800;
+      overflow-wrap: anywhere;
+    }}
+    .market-anomaly-row.warning {{ background: #fff7ed; border-color: #fed7aa; }}
+    .market-anomaly-row.critical {{ background: var(--critical-soft); border-color: #f1b8b2; }}
+    .market-anomaly-row.watch {{ background: #ecfeff; border-color: #a5f3fc; }}
+    .market-anomaly-row .severity {{ color: var(--muted); text-transform: uppercase; }}
+    .market-anomaly-row.warning .severity {{ color: #b26a00; }}
+    .market-anomaly-row.critical .severity {{ color: var(--critical); }}
+    .market-anomaly-row.watch .severity {{ color: #276b74; }}
+    .market-anomaly-empty {{
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+      padding: 10px;
+      border: 1px dashed var(--line);
+      border-radius: 8px;
+      margin-top: 12px;
+    }}
     .market-bollinger-fill {{ fill: rgba(37, 99, 235, 0.09); }}
     .market-bollinger-line {{ fill: none; stroke: #2563eb; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; opacity: 0.82; }}
     .market-bollinger-mid {{ stroke: #7c3aed; stroke-dasharray: 5 5; opacity: 0.72; }}
@@ -6520,7 +6556,7 @@ def write_status_page(
     main > .panel + .panel {{ margin-top: 14px; }}
     @media (max-width: 760px) {{
       main {{ padding: 14px; }}
-      .hero-top, .hero-strip, .layout, .chart-grid, .market-watch, .market-timeframe-grid, .market-indicator-card-grid, .liquidation-grid, .context-grid {{ display: block; }}
+      .hero-top, .hero-strip, .layout, .chart-grid, .market-watch, .market-timeframe-grid, .market-indicator-card-grid, .market-anomaly-list, .liquidation-grid, .context-grid {{ display: block; }}
       .hero-actions {{ justify-content: flex-start; margin-top: 12px; }}
       .incident, .incident-facts {{ display: block; }}
       .incident-facts div {{ margin-top: 8px; }}
@@ -6754,6 +6790,13 @@ def write_status_page(
             <div class="market-indicator-row" data-indicator-row="relative"><span>BTC</span><strong>pending</strong></div>
           </div>
         </div>
+      </div>
+      <div class="market-chart-head" style="margin-top: 14px;">
+        <h2>Indicator Anomalies</h2>
+        <div id="market-anomaly-status" class="market-status">Waiting for indicator refresh</div>
+      </div>
+      <div id="market-anomaly-list" class="market-anomaly-list">
+        <div class="market-anomaly-empty">No indicator anomalies detected yet</div>
       </div>
     </section>
     <section class="market-timeframe-grid">
@@ -7617,6 +7660,7 @@ def write_status_page(
     const marketSignals = new Map();
     const marketRefreshTimes = new Map();
     const marketSourceStates = new Map();
+    const marketIndicatorAnomalies = new Map();
     const marketIndicatorKeys = ["macd", "ema", "sma", "bb", "donchian", "atr", "adx", "stoch", "cci", "williams", "roc", "momentum", "obv", "mfi", "vwap", "volume"];
     const marketSourceOrder = [
       ["spot-ticker", "Spot ticker"],
@@ -8431,6 +8475,110 @@ def write_status_page(
       element.title = state.detail;
       element.setAttribute("aria-label", state.text + ": " + state.detail);
       element.className = "market-indicator-card" + (state.tone ? " " + state.tone : "");
+      marketRecordIndicatorAnomaly(element.getAttribute("data-indicator-card") || "unknown", "rsi", state);
+    }}
+
+    function marketIndicatorAnomalySeverity(key, state) {{
+      const text = String((state || {{}}).text || "").toLowerCase();
+      const tone = String((state || {{}}).tone || "").toLowerCase();
+      if (!text || text.includes("pending") || text.includes("unavailable") || text.includes("neutral") || text.includes("normal") || text.includes("flat")) {{
+        return "";
+      }}
+      if (key === "rsi" || key === "stoch" || key === "cci" || key === "williams" || key === "mfi") {{
+        return tone === "warn" || tone === "hot" || tone === "cool" ? "warning" : "";
+      }}
+      if (key === "bb" || key === "donchian" || key === "volume" || key === "atr") {{
+        return tone === "warn" || tone === "cool" || tone === "up" || tone === "down" ? "warning" : "";
+      }}
+      if (key === "macd") {{
+        if (text.includes("bear cross")) {{
+          return "critical";
+        }}
+        if (text.includes("bull cross")) {{
+          return "watch";
+        }}
+        return "";
+      }}
+      if (key === "adx") {{
+        return tone === "up" || tone === "down" ? "watch" : "";
+      }}
+      if (key === "roc" || key === "momentum" || key === "obv" || key === "relative") {{
+        return tone === "down" ? "warning" : tone === "up" ? "watch" : "";
+      }}
+      if (key === "ema" || key === "sma" || key === "vwap") {{
+        return tone === "down" ? "watch" : "";
+      }}
+      return "";
+    }}
+
+    function marketRecordIndicatorAnomaly(timeframe, key, state) {{
+      const severity = marketIndicatorAnomalySeverity(key, state);
+      const id = timeframe + ":" + key;
+      if (!severity) {{
+        marketIndicatorAnomalies.delete(id);
+      }} else {{
+        marketIndicatorAnomalies.set(id, {{
+          id,
+          timeframe,
+          key,
+          severity,
+          text: state.text || "anomaly",
+          detail: state.detail || state.text || "indicator anomaly",
+        }});
+      }}
+      marketRenderIndicatorAnomalies();
+    }}
+
+    function marketRenderIndicatorAnomalies() {{
+      const list = document.getElementById("market-anomaly-list");
+      const status = document.getElementById("market-anomaly-status");
+      if (!list) {{
+        return;
+      }}
+      const order = {{ critical: 0, warning: 1, watch: 2 }};
+      const items = Array.from(marketIndicatorAnomalies.values()).sort((left, right) => {{
+        const severityOrder = (order[left.severity] ?? 9) - (order[right.severity] ?? 9);
+        if (severityOrder !== 0) {{
+          return severityOrder;
+        }}
+        return (left.timeframe + left.key).localeCompare(right.timeframe + right.key);
+      }});
+      list.replaceChildren();
+      if (!items.length) {{
+        const empty = document.createElement("div");
+        empty.className = "market-anomaly-empty";
+        empty.textContent = "No indicator anomalies detected";
+        list.appendChild(empty);
+        if (status) {{
+          status.textContent = "0 active anomalies";
+        }}
+        return;
+      }}
+      items.slice(0, 16).forEach((item) => {{
+        const row = document.createElement("div");
+        row.className = "market-anomaly-row " + item.severity;
+        row.title = item.detail;
+
+        const severity = document.createElement("span");
+        severity.className = "severity";
+        severity.textContent = item.severity;
+        row.appendChild(severity);
+
+        const label = document.createElement("span");
+        label.textContent = item.timeframe + " " + item.key.toUpperCase();
+        row.appendChild(label);
+
+        const detail = document.createElement("strong");
+        detail.textContent = item.text;
+        row.appendChild(detail);
+
+        list.appendChild(row);
+      }});
+      if (status) {{
+        const critical = items.filter((item) => item.severity === "critical").length;
+        const warning = items.filter((item) => item.severity === "warning").length;
+        status.textContent = items.length + " active anomalies; critical=" + critical + " warning=" + warning;
+      }}
     }}
 
     function marketIndicatorRow(cardId, key, state) {{
@@ -8449,6 +8597,7 @@ def write_status_page(
       }}
       row.className = "market-indicator-row" + (state.tone ? " " + state.tone : "");
       row.setAttribute("aria-label", key + ": " + state.detail);
+      marketRecordIndicatorAnomaly(card.getAttribute("data-indicator-card") || "unknown", key, state);
     }}
 
     function marketUpdateIndicatorRows(cardId, candles) {{

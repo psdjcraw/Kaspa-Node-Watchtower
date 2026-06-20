@@ -19,6 +19,8 @@ All notable changes to Kaspa Node Watchtower are tracked here.
   visible KAS/USDT timeframes: EMA/SMA, MACD, Bollinger, Donchian, ATR, ADX,
   stochastic, CCI, Williams %R, ROC, momentum, OBV, MFI, VWAP, volume spike,
   RSI, and BTC-relative strength.
+- Generated market dashboards now summarize active indicator anomalies by
+  timeframe and indicator with watch, warning, and critical severity.
 - `watchtower.py --alert` now emits a market-risk-high alert body when a new
   critical market positioning snapshot is detected.
 
