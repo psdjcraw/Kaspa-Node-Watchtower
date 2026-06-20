@@ -138,8 +138,8 @@ Push to Docker Hub:
 
 ```bash
 docker login
-make docker-build DOCKER_TAG=0.8.1
-make docker-push DOCKER_TAG=0.8.1
+make docker-build DOCKER_TAG=0.8.2
+make docker-push DOCKER_TAG=0.8.2
 ```
 
 Default image:

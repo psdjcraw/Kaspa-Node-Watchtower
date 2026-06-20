@@ -123,6 +123,7 @@ Current target environment:
 - [Packaging options](docs/packaging-options.md)
 - [Docker image](docs/docker.md)
 - [Indexer integration plan](docs/indexer-integration-plan.md)
+- [v0.8.2 release notes](docs/release-notes-v0.8.2.md)
 - [v0.8.1 release notes](docs/release-notes-v0.8.1.md)
 - [v0.8.0 release notes](docs/release-notes-v0.8.0.md)
 - [v0.7.0 release notes](docs/release-notes-v0.7.0.md)
@@ -173,8 +174,8 @@ Build a Docker Hub-ready image:
 
 ```bash
 make docker-smoke
-make docker-build DOCKER_TAG=0.8.1
-make docker-push DOCKER_TAG=0.8.1
+make docker-build DOCKER_TAG=0.8.2
+make docker-push DOCKER_TAG=0.8.2
 ```
 
 The default image name is `psdjc/kaspa-node-watchtower`. See

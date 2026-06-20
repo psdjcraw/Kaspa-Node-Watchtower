@@ -4,6 +4,8 @@ All notable changes to Kaspa Node Watchtower are tracked here.
 
 ## Unreleased
 
+## 0.8.2 - 2026-06-20
+
 ### Added
 
 - `make discord-watch-check` and the Discord watch bridge now provide a live
@@ -26,7 +28,7 @@ All notable changes to Kaspa Node Watchtower are tracked here.
 
 ### Changed
 
-- Homebrew formula now points to the v0.8.1 GitHub Release asset and checksum.
+- Version now reports `0.8.2` for the v0.8.2 release.
 
 ## 0.8.1 - 2026-06-19
 
