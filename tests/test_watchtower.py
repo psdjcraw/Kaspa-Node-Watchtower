@@ -960,6 +960,12 @@ class WatchtowerUnitTests(unittest.TestCase):
                 "futures_open_interest_value": 7010000,
                 "futures_volume_24h": 78000000,
                 "futures_oi_volume_ratio": 2.9487,
+                "market_risk_score": 3,
+                "market_risk_level": "warning",
+                "market_risk_level_value": 1,
+                "market_risk_direction": "long_crowded",
+                "market_risk_reasons": "funding_z_elevated,basis_elevated,spot_dispersion_elevated",
+                "market_risk_reason_count": 3,
             },
         }
         multi_node_metrics = {
@@ -1027,6 +1033,9 @@ class WatchtowerUnitTests(unittest.TestCase):
         self.assertIn('kaspa_watchtower_market_futures_funding_z_score{node="test-node",source="Bybit KAS/USDT"} 1.25', metrics)
         self.assertIn("kaspa_watchtower_market_futures_open_interest_kas", metrics)
         self.assertIn("kaspa_watchtower_market_futures_oi_volume_ratio", metrics)
+        self.assertIn('kaspa_watchtower_market_positioning_risk_score{node="test-node",source="Bybit KAS/USDT"} 3', metrics)
+        self.assertIn('kaspa_watchtower_market_positioning_risk_level{level="warning",node="test-node",source="Bybit KAS/USDT"} 1', metrics)
+        self.assertIn('kaspa_watchtower_market_positioning_risk_reasons{direction="long_crowded",node="test-node",reasons="funding_z_elevated,basis_elevated,spot_dispersion_elevated",source="Bybit KAS/USDT"} 3', metrics)
         self.assertIn('kaspa_watchtower_mining_running{node="test-node"} 1', metrics)
         self.assertIn('kaspa_watchtower_mining_hashrate_hs{node="test-node"} 4.25e+07', metrics)
         self.assertIn('kaspa_watchtower_mining_accepted_shares{node="test-node"} 7', metrics)
@@ -1233,6 +1242,12 @@ class WatchtowerUnitTests(unittest.TestCase):
         self.assertTrue(
             any(
                 target.get("expr") == 'kaspa_watchtower_market_futures_funding_z_score{node="$node"}'
+                for target in futures_targets
+            )
+        )
+        self.assertTrue(
+            any(
+                target.get("expr") == 'kaspa_watchtower_market_positioning_risk_score{node="$node"}'
                 for target in futures_targets
             )
         )
@@ -3081,6 +3096,7 @@ class WatchtowerUnitTests(unittest.TestCase):
         self.assertIn("open_interest=230.00M KAS", text)
         self.assertIn("oi_value=$7.20M", text)
         self.assertIn("oi_volume=4.51x", text)
+        self.assertIn("market_risk=level=ok score=1 direction=long_crowded reasons=oi_volume_elevated", text)
 
     def test_fetch_market_snapshot_computes_basis_and_apr(self):
         spot_payload = {
@@ -3154,20 +3170,35 @@ class WatchtowerUnitTests(unittest.TestCase):
             "source": "Bybit KAS/USDT",
             "spot": {},
             "futures": {
-                "funding_rate": "0.0003",
+                "funding_rate": "0.00025",
                 "open_interest": "9000000",
                 "volume_24h": "3000000",
             },
         }
         history = [
             {"ok": True, "futures_funding_rate": 0.0},
-            {"ok": True, "futures_funding_rate": 0.0002},
+            {"ok": True, "futures_funding_rate": 0.0001},
         ]
 
         item = watchtower.market_snapshot_item(snapshot, history=history)
 
         self.assertAlmostEqual(item["futures_oi_volume_ratio"], 3.0)
-        self.assertAlmostEqual(item["futures_funding_z_score"], 2.0)
+        self.assertAlmostEqual(item["futures_funding_z_score"], 4.0)
+        self.assertEqual(item["market_risk_level"], "warning")
+        self.assertEqual(item["market_risk_score"], 3)
+
+    def test_market_positioning_risk_classifies_crowding(self):
+        risk = watchtower.market_positioning_risk(
+            funding_z_score=3.2,
+            oi_volume_ratio=5.5,
+            basis_pct=1.4,
+            spot_dispersion_pct=0.5,
+        )
+
+        self.assertEqual(risk["level"], "critical")
+        self.assertEqual(risk["score"], 5)
+        self.assertEqual(risk["direction"], "long_crowded")
+        self.assertIn("funding_z_extreme", risk["reasons"])
 
     def test_fetch_market_snapshot_returns_unavailable_on_api_failure(self):
         with mock.patch("watchtower.fetch_json_url", side_effect=ValueError("rate limited")):

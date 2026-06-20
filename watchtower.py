@@ -3455,6 +3455,63 @@ def market_funding_z_score(records: list[dict[str, Any]], current_rate: Any, sam
     return (current - mean) / stddev
 
 
+def market_positioning_risk(
+    *,
+    funding_z_score: Any = None,
+    oi_volume_ratio: Any = None,
+    basis_pct: Any = None,
+    spot_dispersion_pct: Any = None,
+) -> dict[str, Any]:
+    score = 0
+    reasons = []
+    funding_z = numeric(funding_z_score)
+    if funding_z is not None:
+        if abs(funding_z) >= 3:
+            score += 2
+            reasons.append("funding_z_extreme")
+        elif abs(funding_z) >= 2:
+            score += 1
+            reasons.append("funding_z_elevated")
+    oi_volume = numeric(oi_volume_ratio)
+    if oi_volume is not None:
+        if oi_volume >= 5:
+            score += 2
+            reasons.append("oi_volume_crowded")
+        elif oi_volume >= 3:
+            score += 1
+            reasons.append("oi_volume_elevated")
+    basis = numeric(basis_pct)
+    if basis is not None:
+        if abs(basis) >= 2:
+            score += 2
+            reasons.append("basis_extreme")
+        elif abs(basis) >= 1:
+            score += 1
+            reasons.append("basis_elevated")
+    dispersion = numeric(spot_dispersion_pct)
+    if dispersion is not None:
+        if dispersion >= 5:
+            score += 2
+            reasons.append("spot_dispersion_wide")
+        elif dispersion >= 3:
+            score += 1
+            reasons.append("spot_dispersion_elevated")
+    level = "critical" if score >= 4 else ("warning" if score >= 2 else "ok")
+    direction = "neutral"
+    if (funding_z is not None and funding_z > 0) or (basis is not None and basis > 0):
+        direction = "long_crowded"
+    if (funding_z is not None and funding_z < 0) or (basis is not None and basis < 0):
+        direction = "short_crowded" if direction == "neutral" else "mixed"
+    return {
+        "score": score,
+        "level": level,
+        "level_value": {"ok": 0, "warning": 1, "critical": 2}.get(level, -1),
+        "direction": direction,
+        "reasons": reasons,
+        "reason_count": len(reasons),
+    }
+
+
 def format_market_ratio(value: Any, suffix: str = "x") -> str:
     parsed = numeric(value)
     if parsed is None:
@@ -3525,6 +3582,12 @@ def market_snapshot_item(snapshot: dict[str, Any], history: list[dict[str, Any]]
     funding_z_score = numeric(futures.get("funding_z_score"))
     if funding_z_score is None:
         funding_z_score = market_funding_z_score(history or [], funding_rate)
+    risk = market_positioning_risk(
+        funding_z_score=funding_z_score,
+        oi_volume_ratio=oi_volume_ratio,
+        basis_pct=futures.get("basis_pct"),
+        spot_dispersion_pct=spot_dispersion.get("dispersion_pct"),
+    )
     return {
         "checked_at": dt.datetime.now().astimezone().isoformat(),
         "source": snapshot.get("source", "Bybit KAS/USDT"),
@@ -3552,6 +3615,12 @@ def market_snapshot_item(snapshot: dict[str, Any], history: list[dict[str, Any]]
         "futures_open_interest_value": numeric(futures.get("open_interest_value")),
         "futures_volume_24h": numeric(futures.get("volume_24h")),
         "futures_oi_volume_ratio": oi_volume_ratio,
+        "market_risk_score": risk["score"],
+        "market_risk_level": risk["level"],
+        "market_risk_level_value": risk["level_value"],
+        "market_risk_direction": risk["direction"],
+        "market_risk_reasons": ",".join(risk["reasons"]) if risk["reasons"] else "none",
+        "market_risk_reason_count": risk["reason_count"],
     }
 
 
@@ -3588,6 +3657,11 @@ def snapshot_from_market_item(item: dict[str, Any]) -> dict[str, Any]:
             "open_interest_value": item.get("futures_open_interest_value"),
             "volume_24h": item.get("futures_volume_24h"),
             "oi_volume_ratio": item.get("futures_oi_volume_ratio"),
+            "risk_score": item.get("market_risk_score"),
+            "risk_level": item.get("market_risk_level"),
+            "risk_level_value": item.get("market_risk_level_value"),
+            "risk_direction": item.get("market_risk_direction"),
+            "risk_reasons": item.get("market_risk_reasons"),
         },
     }
 
@@ -3604,6 +3678,16 @@ def format_market_snapshot(snapshot: dict[str, Any]) -> str:
     spot = snapshot.get("spot") or {}
     futures = snapshot.get("futures") or {}
     dispersion = spot.get("price_dispersion") or {}
+    risk = market_positioning_risk(
+        funding_z_score=futures.get("funding_z_score"),
+        oi_volume_ratio=futures.get("oi_volume_ratio"),
+        basis_pct=futures.get("basis_pct"),
+        spot_dispersion_pct=dispersion.get("dispersion_pct"),
+    )
+    risk_level = futures.get("risk_level") or risk["level"]
+    risk_score = futures.get("risk_score") if futures.get("risk_score") is not None else risk["score"]
+    risk_direction = futures.get("risk_direction") or risk["direction"]
+    risk_reasons = futures.get("risk_reasons") or (",".join(risk["reasons"]) if risk["reasons"] else "none")
     return "\n".join(
         [
             f"Kaspa market snapshot: {snapshot.get('source', 'Bybit KAS/USDT')}",
@@ -3640,6 +3724,13 @@ def format_market_snapshot(snapshot: dict[str, Any]) -> str:
                 f"volume_24h={format_market_volume(futures.get('volume_24h'))} "
                 f"oi_volume={format_market_ratio(futures.get('oi_volume_ratio'))} "
                 f"next_funding={format_market_time_ms(futures.get('next_funding_time'))}"
+            ),
+            (
+                "market_risk="
+                f"level={risk_level} "
+                f"score={risk_score} "
+                f"direction={risk_direction} "
+                f"reasons={risk_reasons}"
             ),
         ]
     )
@@ -11238,6 +11329,28 @@ def format_prometheus_metrics(
         "kaspa_watchtower_market_futures_oi_volume_ratio",
         latest_market.get("futures_oi_volume_ratio"),
         market_labels,
+    )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_market_positioning_risk_score",
+        latest_market.get("market_risk_score"),
+        market_labels,
+    )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_market_positioning_risk_level",
+        latest_market.get("market_risk_level_value"),
+        {**market_labels, "level": latest_market.get("market_risk_level", "unknown")},
+    )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_market_positioning_risk_reasons",
+        latest_market.get("market_risk_reason_count"),
+        {
+            **market_labels,
+            "direction": latest_market.get("market_risk_direction", "unknown"),
+            "reasons": latest_market.get("market_risk_reasons", "none"),
+        },
     )
     verdict_values = {"ok": 0, "warn": 1, "critical": 2, "unknown": -1}
     multi_node_nodes = multi_node_metrics.get("nodes") or []

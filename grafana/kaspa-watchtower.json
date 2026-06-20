@@ -1491,6 +1491,11 @@
           "expr": "kaspa_watchtower_market_futures_funding_z_score{node=\"$node\"}",
           "legendFormat": "{{source}} funding z",
           "refId": "D"
+        },
+        {
+          "expr": "kaspa_watchtower_market_positioning_risk_score{node=\"$node\"}",
+          "legendFormat": "{{source}} risk score",
+          "refId": "E"
         }
       ],
       "title": "KAS Futures Positioning",

@@ -519,6 +519,9 @@ processed transaction freshness, mainnet sync progress, benchmark trend,
 optional KAS/USDT spot/futures market context, recent SQLite history summary,
 integration status, GitHub Actions status, recovery attempts, and dashboard
 locations.
+Market snapshots include a positioning risk score from funding z-score,
+OI/volume crowding, futures basis, and cross-exchange spot dispersion.
+`KaspaMarketPositioningRiskHigh` fires when the score stays high.
 Integration and GitHub status failures are reported inline instead of stopping
 the rest of the report. Unlike alert and smoke wrappers, it intentionally emits
 output while healthy.

@@ -115,6 +115,16 @@ groups:
           summary: "Kaspa watchtower recovery command failed"
           description: "The latest recovery command returned a non-zero exit code for node {{ $labels.node }}."
 
+      - alert: KaspaMarketPositioningRiskHigh
+        expr: kaspa_watchtower_market_positioning_risk_score{job="kaspa-watchtower"} >= 4
+        for: 10m
+        labels:
+          severity: warning
+          service: kaspa-watchtower
+        annotations:
+          summary: "Kaspa market positioning risk is high"
+          description: "Market positioning risk score is {{ $value }} for {{ $labels.source }} on node {{ $labels.node }}."
+
       - alert: KaspaWatchtowerMultiNodeCritical
         expr: kaspa_watchtower_multi_node_verdict_value{job="kaspa-watchtower"} >= 2
         for: 2m

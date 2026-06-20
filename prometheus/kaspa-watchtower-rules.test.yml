@@ -392,6 +392,25 @@ tests:
 
   - interval: 1m
     input_series:
+      - series: 'kaspa_watchtower_market_positioning_risk_score{job="kaspa-watchtower",node="test",source="Bybit KAS/USDT"}'
+        values: '4+0x15'
+    alert_rule_test:
+      - eval_time: 11m
+        alertname: KaspaMarketPositioningRiskHigh
+        exp_alerts:
+          - exp_labels:
+              alertname: KaspaMarketPositioningRiskHigh
+              job: kaspa-watchtower
+              node: test
+              service: kaspa-watchtower
+              severity: warning
+              source: "Bybit KAS/USDT"
+            exp_annotations:
+              summary: "Kaspa market positioning risk is high"
+              description: "Market positioning risk score is 4 for Bybit KAS/USDT on node test."
+
+  - interval: 1m
+    input_series:
       - series: 'kaspa_watchtower_indexer_watch_enabled{job="kaspa-watchtower",node="test"}'
         values: '1+0x5'
       - series: 'kaspa_watchtower_watch_readiness_ok{job="kaspa-watchtower",node="test"}'
