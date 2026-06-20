@@ -439,6 +439,60 @@ class WatchtowerUnitTests(unittest.TestCase):
 
         self.assertFalse(watchtower.watch_readiness_ok(report))
 
+    def test_indexer_watch_drill_records_synthetic_event(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            config = copy.deepcopy(watchtower.DEFAULT_CONFIG)
+            config["state_path"] = str(tmp_path / "state.json")
+            config["status_page_path"] = str(tmp_path / "status.html")
+            config["stream_page_path"] = str(tmp_path / "stream.html")
+            config["prometheus_metrics_path"] = str(tmp_path / "watchtower.prom")
+            config["canvas_status_page_path"] = ""
+            config["canvas_stream_page_path"] = ""
+            address = "kaspa:" + "q" * 61
+            config["indexer_watch"]["watch_addresses"] = [{"label": "mining", "address": address}]
+            report = {
+                "node_name": "test-mainnet",
+                "checked_at": "2026-06-20T13:00:00+09:00",
+                "status": "ok",
+                "severity": "ok",
+                "health_score": 100,
+                "checks": [],
+                "latest_throughput": None,
+                "progress": {"relay_blocks_in_window": 0, "relay_events_in_window": 0, "window_minutes": 10},
+                "recovery": {"action": "none"},
+                "indexer_watch": {
+                    "enabled": True,
+                    "ok": True,
+                    "watch_addresses": [{"label": "mining", "address": address}],
+                    "events": [],
+                    "new_events": [],
+                },
+            }
+
+            with (
+                mock.patch("watchtower.build_stateful_report", return_value=(copy.deepcopy(report), {})),
+                mock.patch("watchtower.write_status_page"),
+                mock.patch("watchtower.write_stream_page"),
+                mock.patch("watchtower.write_prometheus_metrics"),
+                mock.patch("watchtower.recent_recovery_records", return_value=[]),
+                mock.patch("watchtower.build_benchmark_summary", return_value={}),
+                mock.patch("watchtower.build_recovery_summary", return_value={}),
+                mock.patch("watchtower.build_market_metrics", return_value={}),
+                mock.patch("builtins.print") as printed,
+            ):
+                code = watchtower.indexer_watch_drill(config, address, "mining", "tx-drill-1", 1.25)
+
+            self.assertEqual(code, 0)
+            saved = json.loads(Path(config["state_path"]).read_text(encoding="utf-8"))
+            event = saved["indexer_watch_events"][0]
+            self.assertEqual(event["source"], "indexer_drill")
+            self.assertEqual(event["tx_id"], "tx-drill-1")
+            self.assertEqual(event["amount_sompi"], 125000000)
+            text = printed.call_args.args[0]
+            self.assertIn("watched address tx", text)
+            self.assertIn("- mining source=indexer_drill direction=drill_indexer_address_tx", text)
+
     def test_indexer_watch_test_queries_address_endpoints(self):
         config = copy.deepcopy(watchtower.DEFAULT_CONFIG)
         config["indexer"]["enabled"] = True

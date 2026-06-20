@@ -456,6 +456,7 @@ make discord-maintenance
 make discord-mute MUTE_MINUTES=30 MUTE_REASON="kaspad upgrade"
 make discord-unmute
 make discord-watch-check
+make discord-watch-drill
 ```
 
 Suggested Discord mapping:
@@ -468,6 +469,7 @@ Suggested Discord mapping:
 - `/kaspa watch check` -> `make discord-watch-check`
 - `/kaspa watch list` -> `make discord-watch-list`
 - `/kaspa watch test address:kaspa:...` -> `make discord-watch-test ADDRESS=kaspa:...`
+- `/kaspa watch drill address:kaspa:...` -> `make discord-watch-drill ADDRESS=kaspa:... LABEL=drill AMOUNT_KAS=1.23`
 
 Watch readiness:
 
@@ -481,6 +483,17 @@ detected watch events. It exits non-zero when the watch path is not ready, which
 makes it suitable for an operator check while waiting for a real address event.
 Prometheus exports the same readiness as `kaspa_watchtower_watch_readiness_ok`;
 `KaspaWatchReadinessNotReady` fires when the configured watch path is not ready.
+
+Watch drill:
+
+```bash
+make discord-watch-drill ADDRESS=kaspa:... LABEL=drill TX_ID=test-tx-1 AMOUNT_KAS=1.23
+```
+
+This injects a synthetic indexer watch event into local state, refreshes the
+status and stream pages, rewrites Prometheus textfile metrics, and prints the
+same Discord alert body used for real watched-address transactions. Reusing the
+same `TX_ID` is deduped, so repeated drills do not inflate event history.
 
 The cron wrapper prefers `.venv/bin/python` so the gRPC dependencies can stay
 local to this repository.

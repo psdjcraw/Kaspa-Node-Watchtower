@@ -31,6 +31,7 @@ COMMANDS = {
     "utxos",
     "watch-list",
     "watch-check",
+    "watch-drill",
     "watch-add",
     "watch-remove",
     "watch-test",
@@ -92,6 +93,8 @@ def parse_discord_payload(payload: dict[str, Any]) -> tuple[str, float, str, str
         command = "watch-list"
     if command in {"watch_check", "watchcheck"}:
         command = "watch-check"
+    if command in {"watch_drill", "watchdrill"}:
+        command = "watch-drill"
     if command in {"watch_add", "watchadd"}:
         command = "watch-add"
     if command in {"watch_remove", "watchremove"}:
@@ -117,6 +120,8 @@ def main() -> int:
     parser.add_argument("--minutes", type=float, default=30, help="Mute window for mute commands.")
     parser.add_argument("--reason", default="", help="Maintenance reason for mute commands.")
     parser.add_argument("--query", default="", help="Lookup value for tx/address/search commands.")
+    parser.add_argument("--tx-id", default="", help="Synthetic tx id for watch drill commands.")
+    parser.add_argument("--amount-kas", type=float, default=0.0, help="Synthetic KAS amount for watch drill commands.")
     parser.add_argument(
         "--payload",
         help="Read a Discord/OpenClaw interaction JSON payload from this path, or '-' for stdin.",
@@ -142,6 +147,8 @@ def main() -> int:
         mute_minutes=minutes,
         reason=reason,
         query_value=query,
+        tx_id=args.tx_id,
+        amount_kas=args.amount_kas,
     )
 
 

@@ -2770,6 +2770,110 @@ def indexer_watch_test(config: dict[str, Any], address: str, label: str = "") ->
     return 0 if ok else 1
 
 
+def kas_to_sompi(value: Any) -> int:
+    parsed = numeric(value)
+    if parsed is None:
+        return 0
+    return int(round(parsed * 100_000_000))
+
+
+def indexer_watch_drill(
+    config: dict[str, Any],
+    address: str = "",
+    label: str = "",
+    tx_id: str = "",
+    amount_kas: Any = 0,
+) -> int:
+    targets = normalize_watch_addresses(indexer_watch_config(config).get("watch_addresses"))
+    address = str(address or "").strip()
+    selected = next((item for item in targets if item.get("address") == address), None)
+    if not selected and not address and targets:
+        selected = targets[0]
+        address = selected.get("address", "")
+    label = str(label or (selected or {}).get("label") or "drill").strip()
+    if not address:
+        print("Kaspa indexer watch-drill: missing address")
+        return 2
+    if not looks_like_kaspa_address(address):
+        print("Kaspa indexer watch-drill: invalid Kaspa address")
+        return 2
+
+    observed_at = dt.datetime.now().astimezone().isoformat()
+    tx_id = str(tx_id or f"drill-{dt.datetime.now().astimezone().strftime('%Y%m%d%H%M%S')}").strip()
+    event = {
+        "event_key": indexer_watch_event_key(address, tx_id),
+        "observed_at": observed_at,
+        "type": "drill_indexer_address_tx",
+        "source": "indexer_drill",
+        "address": address,
+        "label": label or "drill",
+        "tx_id": tx_id,
+        "amount_sompi": kas_to_sompi(amount_kas),
+        "amount_kas": numeric(amount_kas) or 0,
+        "transaction_time": observed_at,
+        "drill": True,
+    }
+
+    report, state = build_stateful_report(config)
+    watch = report.setdefault("indexer_watch", {})
+    events = list(state.get("indexer_watch_events") or [])
+    seen = {str(item.get("event_key") or indexer_watch_event_key(item.get("address"), item.get("tx_id"))) for item in events}
+    if event["event_key"] in seen:
+        watch["events"] = events
+        watch["new_events"] = []
+        print("Kaspa indexer watch-drill: duplicate event already recorded")
+        print(format_watch_event_line(event, default_source="indexer_drill"))
+        return 0
+
+    limit = positive_int(
+        indexer_watch_config(config).get("event_history_entries"),
+        DEFAULT_CONFIG["indexer_watch"]["event_history_entries"],
+    )
+    events.append(event)
+    state["indexer_watch_events"] = events[-limit:]
+    watch["watch_addresses"] = list(watch.get("watch_addresses") or targets)
+    watch["events"] = list(state["indexer_watch_events"])
+    watch["new_events"] = [event]
+    watch["ok"] = bool(watch.get("ok", True))
+    watch["detail"] = f"drill_event tx={tx_id} total_events={len(watch['events'])}"
+    save_state(Path(config.get("state_path") or DEFAULT_CONFIG["state_path"]), state)
+
+    benchmark_path = Path(config.get("benchmark_path") or DEFAULT_CONFIG["benchmark_path"])
+    history_db_path = sqlite_history_path(config)
+    market_snapshot_path = Path(config.get("market_snapshot_path") or DEFAULT_CONFIG["market_snapshot_path"])
+    status_page_path = Path(config.get("status_page_path") or DEFAULT_CONFIG["status_page_path"])
+    stream_page_path = Path(config.get("stream_page_path") or DEFAULT_CONFIG["stream_page_path"])
+    write_status_page(status_page_path, report, state, benchmark_path, recent_recovery_records(config), history_db_path, market_snapshot_path)
+    if config.get("canvas_status_page_path") or DEFAULT_CONFIG["canvas_status_page_path"]:
+        write_status_page(
+            Path(config.get("canvas_status_page_path") or DEFAULT_CONFIG["canvas_status_page_path"]),
+            report,
+            state,
+            benchmark_path,
+            recent_recovery_records(config),
+            history_db_path,
+            market_snapshot_path,
+        )
+    write_stream_page(stream_page_path, report, state, benchmark_path, market_snapshot_path)
+    if config.get("canvas_stream_page_path") or DEFAULT_CONFIG["canvas_stream_page_path"]:
+        write_stream_page(
+            Path(config.get("canvas_stream_page_path") or DEFAULT_CONFIG["canvas_stream_page_path"]),
+            report,
+            state,
+            benchmark_path,
+            market_snapshot_path,
+        )
+    write_prometheus_metrics(
+        Path(config.get("prometheus_metrics_path") or DEFAULT_CONFIG["prometheus_metrics_path"]),
+        report,
+        build_benchmark_summary(benchmark_path, limit=48),
+        build_recovery_summary(recovery_history_path(config)),
+        build_market_metrics(market_snapshot_path),
+    )
+    print(format_alert(report, event="indexer_watch_event"))
+    return 0
+
+
 def indexer_watch_config(config: dict[str, Any]) -> dict[str, Any]:
     raw = config.get("indexer_watch") if isinstance(config.get("indexer_watch"), dict) else {}
     return {**DEFAULT_CONFIG["indexer_watch"], **raw}
@@ -9783,6 +9887,8 @@ def discord_command(
     mute_minutes: float = 30,
     reason: str = "",
     query_value: str = "",
+    tx_id: str = "",
+    amount_kas: Any = 0,
 ) -> int:
     if command in {"mute", "mute-all", "unmute"}:
         if config_path is None:
@@ -9808,7 +9914,7 @@ def discord_command(
         )
         return 0
 
-    if command in {"watch-list", "watch-check", "watch-add", "watch-remove", "watch-test"}:
+    if command in {"watch-list", "watch-check", "watch-drill", "watch-add", "watch-remove", "watch-test"}:
         if command == "watch-list":
             report, _state = build_stateful_report(config)
             print(format_indexer_watch_status(report))
@@ -9817,6 +9923,8 @@ def discord_command(
             report, _state = build_stateful_report(config)
             print(format_watch_readiness(report))
             return 0 if watch_readiness_ok(report) else 1
+        if command == "watch-drill":
+            return indexer_watch_drill(config, query_value, reason, tx_id, amount_kas)
         if command == "watch-test":
             return indexer_watch_test(config, query_value, reason)
         if config_path is None:
@@ -12003,6 +12111,7 @@ def main() -> int:
             "utxos",
             "watch-list",
             "watch-check",
+            "watch-drill",
             "watch-add",
             "watch-remove",
             "watch-test",
@@ -12014,6 +12123,8 @@ def main() -> int:
     )
     parser.add_argument("--discord-mute-minutes", type=float, default=30, help="Mute window for --discord-command mute.")
     parser.add_argument("--discord-query", default="", help="Lookup value for --discord-command tx/address/search/balance/utxos.")
+    parser.add_argument("--discord-tx-id", default="", help="Synthetic tx id for --discord-command watch-drill.")
+    parser.add_argument("--discord-amount-kas", type=float, default=0.0, help="Synthetic amount for --discord-command watch-drill.")
     parser.add_argument(
         "--mute-all",
         action="store_true",
@@ -12103,6 +12214,8 @@ def main() -> int:
             mute_minutes=args.discord_mute_minutes,
             reason=args.maintenance_reason,
             query_value=args.discord_query,
+            tx_id=args.discord_tx_id,
+            amount_kas=args.discord_amount_kas,
         )
     if args.maintenance_status:
         print(format_maintenance_status(config))
