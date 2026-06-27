@@ -1,0 +1,593 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>KAS Market Metrics</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #101214;
+      --panel: #171b1f;
+      --panel-2: #1f252a;
+      --text: #eef2f5;
+      --muted: #9aa6af;
+      --line: #303941;
+      --blue: #63b3ff;
+      --green: #47d18c;
+      --yellow: #f4bf50;
+      --red: #ff6878;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      letter-spacing: 0;
+    }
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--line);
+      background: rgba(16, 18, 20, 0.95);
+      backdrop-filter: blur(10px);
+    }
+    h1 { margin: 0; font-size: 18px; font-weight: 760; }
+    .controls {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    button, input {
+      height: 32px;
+      border: 1px solid var(--line);
+      background: var(--panel-2);
+      color: var(--text);
+      border-radius: 6px;
+      padding: 0 10px;
+      font: inherit;
+      font-size: 13px;
+    }
+    button { cursor: pointer; min-width: 44px; }
+    button.active { border-color: var(--blue); color: var(--blue); }
+    input { width: min(310px, 42vw); }
+    main {
+      width: min(1740px, 100%);
+      margin: 0 auto;
+      padding: 18px;
+    }
+    .status {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 14px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .summary {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+    .summary-card, .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+    .summary-card {
+      min-height: 76px;
+      padding: 12px;
+    }
+    .summary-label {
+      color: var(--muted);
+      font-size: 12px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .summary-value {
+      margin-top: 8px;
+      font-size: 23px;
+      line-height: 1.1;
+      font-weight: 780;
+      overflow-wrap: anywhere;
+    }
+    .groups {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+      gap: 8px;
+      margin-bottom: 14px;
+    }
+    .groups button {
+      width: 100%;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .panels {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+    }
+    .panel {
+      min-height: 278px;
+      padding: 12px;
+    }
+    .panel-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 8px;
+    }
+    h2 {
+      margin: 0;
+      font-size: 13px;
+      font-weight: 720;
+      line-height: 1.25;
+      overflow-wrap: anywhere;
+    }
+    .meta {
+      color: var(--muted);
+      font-size: 11px;
+      text-align: right;
+      white-space: nowrap;
+    }
+    canvas { width: 100%; height: 210px; display: block; }
+    .empty {
+      display: grid;
+      place-items: center;
+      min-height: 210px;
+      color: var(--muted);
+      border: 1px dashed var(--line);
+      border-radius: 6px;
+      font-size: 12px;
+    }
+    .legend {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 11px;
+      max-height: 34px;
+      overflow: hidden;
+    }
+    .legend span::before {
+      content: "";
+      display: inline-block;
+      width: 7px;
+      height: 7px;
+      margin-right: 5px;
+      border-radius: 50%;
+      background: currentColor;
+    }
+    @media (max-width: 1280px) {
+      .panels { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .summary { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      .groups { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    }
+    @media (max-width: 760px) {
+      header { flex-direction: column; align-items: stretch; }
+      .controls { justify-content: flex-start; }
+      input { width: 100%; }
+      main { padding: 12px; }
+      .panels, .summary, .groups { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>KAS Market Metrics</h1>
+    <div class="controls">
+      <button data-range="15m" class="active">15m</button>
+      <button data-range="4h">4h</button>
+      <button data-range="1d">1D</button>
+      <button data-range="1w">1W</button>
+      <button data-range="1mo">1M</button>
+      <input id="search" type="search" placeholder="Filter metrics">
+      <button id="refresh">Refresh</button>
+    </div>
+  </header>
+  <main>
+    <div class="status">
+      <span id="updated">loading</span>
+      <span id="coverage"></span>
+      <span id="range-label"></span>
+    </div>
+    <section class="summary" id="summary"></section>
+    <section class="groups" id="groups"></section>
+    <section class="panels" id="panels"></section>
+  </main>
+  <script>
+    const colors = ["#63b3ff", "#47d18c", "#f4bf50", "#ff6878", "#4ed7db", "#d394ff", "#f08b52", "#a3e635", "#fb7185", "#38bdf8", "#facc15", "#c084fc"];
+    const ranges = {
+      "15m": { seconds: 900, step: 15, label: "15 minutes" },
+      "4h": { seconds: 14400, step: 60, label: "4 hours" },
+      "1d": { seconds: 86400, step: 300, label: "1 day" },
+      "1w": { seconds: 604800, step: 1800, label: "1 week" },
+      "1mo": { seconds: 2592000, step: 7200, label: "1 month" },
+    };
+    const groupRules = [
+      ["dashboard", "Dashboard"],
+      ["coingecko", "CoinGecko"],
+      ["coinone", "KRW"],
+      ["futures", "Futures"],
+      ["orderbook", "Orderbook"],
+      ["trade_flow", "Trade Flow"],
+      ["history", "History"],
+      ["spot_venue", "Venues"],
+      ["risk", "Risk"],
+    ];
+    const rangeMetricRules = {
+      "15m": {
+        label: "Live tape",
+        maxCards: 18,
+        includes: [
+          "last_price",
+          "mark_price",
+          "index_price",
+          "basis",
+          "funding_rate",
+          "time_to_next_funding",
+          "open_interest",
+          "orderbook",
+          "spread",
+          "trade_flow",
+          "liquidation_proxy",
+          "venue_arbitrage",
+          "kimchi_premium",
+        ],
+      },
+      "4h": {
+        label: "Intraday structure",
+        maxCards: 20,
+        includes: [
+          "kline",
+          "funding_series",
+          "open_interest_series",
+          "account_",
+          "long_short",
+          "trade_flow",
+          "orderbook",
+          "positioning_risk",
+          "liquidation_proxy",
+          "volume_24h",
+          "turnover_24h",
+        ],
+      },
+      "1d": {
+        label: "Daily context",
+        maxCards: 20,
+        includes: [
+          "high_24h",
+          "low_24h",
+          "range_24h",
+          "volume_24h",
+          "turnover_24h",
+          "price_change_percent",
+          "position_in_24h",
+          "positioning_risk_24h",
+          "market_cap",
+          "history",
+          "coinone",
+        ],
+      },
+      "1w": {
+        label: "Weekly trend",
+        maxCards: 18,
+        includes: [
+          "price_change_percent",
+          "market_cap",
+          "history",
+          "positioning_risk_24h",
+          "funding_series",
+          "open_interest_series",
+          "fdv_market_cap_ratio",
+          "sentiment",
+          "rank",
+        ],
+      },
+      "1mo": {
+        label: "Macro market",
+        maxCards: 18,
+        includes: [
+          "price_change_percent",
+          "market_cap",
+          "fdv_market_cap_ratio",
+          "history",
+          "market_cap_rank",
+          "sentiment",
+          "risk_trend",
+          "coingecko",
+        ],
+      },
+    };
+    let activeRange = "15m";
+    let activeGroup = "all";
+    let metricNames = [];
+    let generation = 0;
+
+    document.querySelectorAll("[data-range]").forEach(button => {
+      button.addEventListener("click", () => {
+        document.querySelectorAll("[data-range]").forEach(b => b.classList.remove("active"));
+        button.classList.add("active");
+        activeRange = button.dataset.range;
+        renderSummary();
+        renderGroups();
+        renderMetricPanels();
+      });
+    });
+    document.getElementById("refresh").addEventListener("click", () => discoverAndRender());
+    document.getElementById("search").addEventListener("input", () => renderMetricPanels());
+
+    async function discoverAndRender() {
+      const res = await fetch("/api/metric_names");
+      const json = await res.json();
+      metricNames = (json.data || []).sort();
+      renderSummary();
+      renderGroups();
+      renderMetricPanels();
+    }
+
+    function metricGroup(name) {
+      const short = name.replace("kaspa_watchtower_market_", "");
+      for (const [needle, label] of groupRules) {
+        if (short.includes(needle)) return label;
+      }
+      if (short.startsWith("spot_")) return "Spot";
+      return "Market";
+    }
+
+    function filteredMetrics() {
+      const term = document.getElementById("search").value.trim().toLowerCase();
+      return timeSelectedMetrics().filter(name => {
+        const groupOk = activeGroup === "all" || metricGroup(name) === activeGroup;
+        const searchOk = !term || name.toLowerCase().includes(term);
+        return groupOk && searchOk;
+      });
+    }
+
+    function timeSelectedMetrics() {
+      const preset = rangeMetricRules[activeRange];
+      if (!preset) return metricNames.slice();
+      const selected = metricNames.filter(name => {
+        const short = name.replace("kaspa_watchtower_market_", "").toLowerCase();
+        return preset.includes.some(needle => short.includes(needle));
+      });
+      return selected.slice(0, preset.maxCards);
+    }
+
+    function renderSummary() {
+      const root = document.getElementById("summary");
+      const selected = timeSelectedMetrics();
+      const groups = new Set(selected.map(metricGroup));
+      const preset = rangeMetricRules[activeRange];
+      root.innerHTML = [
+        ["Selected cards", `${selected.length} / ${metricNames.length}`],
+        ["Groups", groups.size],
+        ["Time profile", preset ? preset.label : "All"],
+        ["Auto discovery", "on"],
+        ["Source", "Prometheus"],
+      ].map(([label, value]) => `
+        <article class="summary-card">
+          <div class="summary-label">${label}</div>
+          <div class="summary-value">${value}</div>
+        </article>`).join("");
+    }
+
+    function renderGroups() {
+      const counts = new Map();
+      const selected = timeSelectedMetrics();
+      for (const name of selected) {
+        const group = metricGroup(name);
+        counts.set(group, (counts.get(group) || 0) + 1);
+      }
+      const ordered = [["all", selected.length], ...Array.from(counts.entries()).sort((a, b) => a[0].localeCompare(b[0]))];
+      document.getElementById("groups").innerHTML = ordered.map(([group, count]) => `
+        <button data-group="${group}" class="${group === activeGroup ? "active" : ""}">${group} ${count}</button>`).join("");
+      document.querySelectorAll("[data-group]").forEach(button => {
+        button.addEventListener("click", () => {
+          activeGroup = button.dataset.group;
+          renderGroups();
+          renderMetricPanels();
+        });
+      });
+    }
+
+    function renderMetricPanels() {
+      const metrics = filteredMetrics();
+      const root = document.getElementById("panels");
+      root.innerHTML = metrics.length ? metrics.map((name, index) => `
+        <article class="panel" data-metric="${name}">
+          <div class="panel-head">
+            <h2>${name.replace("kaspa_watchtower_market_", "")}</h2>
+            <div class="meta" id="meta-${index}">queued</div>
+          </div>
+          <canvas id="chart-${index}" height="210"></canvas>
+          <div class="legend" id="legend-${index}"></div>
+        </article>`).join("") : `<div class="empty">no metrics selected for this filter</div>`;
+      document.getElementById("coverage").textContent = `${metrics.length} visible / ${timeSelectedMetrics().length} selected / ${metricNames.length} total`;
+      loadVisibleMetrics();
+    }
+
+    async function queryRange(metric) {
+      const range = ranges[activeRange];
+      const end = Math.floor(Date.now() / 1000);
+      const params = new URLSearchParams({
+        query: metric,
+        start: end - range.seconds,
+        end,
+        step: range.step,
+      });
+      const res = await fetch(`/api/query_range?${params}`);
+      const json = await res.json();
+      return json.data?.result || [];
+    }
+
+    async function loadVisibleMetrics() {
+      const run = ++generation;
+      const metrics = filteredMetrics();
+      document.getElementById("updated").textContent = "updating...";
+      document.getElementById("range-label").textContent = `${ranges[activeRange].label}, step ${ranges[activeRange].step}s`;
+      const queue = metrics.map((metric, index) => ({ metric, index }));
+      let active = 0;
+      let done = 0;
+      let withData = 0;
+      await new Promise(resolve => {
+        const next = () => {
+          if (run !== generation) return resolve();
+          while (active < 8 && queue.length) {
+            const item = queue.shift();
+            active += 1;
+            loadOne(item.metric, item.index).then(hasData => {
+              if (hasData) withData += 1;
+            }).finally(() => {
+              active -= 1;
+              done += 1;
+              document.getElementById("coverage").textContent = `${done}/${metrics.length} loaded, ${withData} with data`;
+              if (!queue.length && active === 0) resolve();
+              else next();
+            });
+          }
+        };
+        next();
+      });
+      if (run === generation) {
+        document.getElementById("updated").textContent = `updated ${new Date().toLocaleTimeString()}`;
+        document.getElementById("coverage").textContent = `${withData}/${metrics.length} charts have data`;
+      }
+    }
+
+    async function loadOne(metric, index) {
+      const meta = document.getElementById(`meta-${index}`);
+      const canvas = document.getElementById(`chart-${index}`);
+      const legend = document.getElementById(`legend-${index}`);
+      if (!meta || !canvas || !legend) return false;
+      meta.textContent = "loading";
+      try {
+        const rawSeries = await queryRange(metric);
+        const series = rawSeries.map((item, i) => ({
+          label: labelFor(item.metric),
+          color: colors[i % colors.length],
+          points: item.values.map(([ts, value]) => [Number(ts) * 1000, Number(value)]).filter(p => Number.isFinite(p[1])),
+        })).filter(item => item.points.length).slice(0, colors.length);
+        drawChart(canvas, series);
+        legend.innerHTML = series.map(item => `<span style="color:${item.color}">${item.label}</span>`).join("");
+        meta.textContent = rawSeries.length > colors.length ? `${series.length}/${rawSeries.length} series` : `${series.length} series`;
+        return series.length > 0;
+      } catch (error) {
+        drawEmpty(canvas, "query failed");
+        meta.textContent = "error";
+        legend.innerHTML = "";
+        return false;
+      }
+    }
+
+    function labelFor(labels) {
+      const keys = ["venue", "book", "distance", "metric", "section", "signal", "status", "source", "node"];
+      const parts = keys.filter(key => labels[key]).map(key => labels[key]);
+      return parts.length ? parts.join(" / ") : labels.__name__.replace("kaspa_watchtower_market_", "");
+    }
+
+    function drawEmpty(canvas, text) {
+      const ctx = prepareCanvas(canvas);
+      const { w, h } = canvas._size;
+      ctx.fillStyle = "#9aa6af";
+      ctx.font = "12px sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText(text, w / 2, h / 2);
+    }
+
+    function prepareCanvas(canvas) {
+      const dpr = window.devicePixelRatio || 1;
+      const rect = canvas.getBoundingClientRect();
+      canvas.width = Math.max(1, Math.floor(rect.width * dpr));
+      canvas.height = Math.max(1, Math.floor(rect.height * dpr));
+      canvas._size = { w: rect.width, h: rect.height };
+      const ctx = canvas.getContext("2d");
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, rect.width, rect.height);
+      return ctx;
+    }
+
+    function drawChart(canvas, series) {
+      const ctx = prepareCanvas(canvas);
+      const { w, h } = canvas._size;
+      if (!series.length) return drawEmpty(canvas, "no data in selected range");
+      const all = series.flatMap(item => item.points);
+      const left = 54, right = 10, top = 8, bottom = 24;
+      const minX = Math.min(...all.map(p => p[0]));
+      const maxX = Math.max(...all.map(p => p[0]));
+      let minY = Math.min(...all.map(p => p[1]));
+      let maxY = Math.max(...all.map(p => p[1]));
+      if (minY === maxY) {
+        const pad = Math.max(Math.abs(minY) * 0.02, 1e-9);
+        minY -= pad;
+        maxY += pad;
+      }
+      const x = ts => left + ((ts - minX) / Math.max(1, maxX - minX)) * (w - left - right);
+      const y = value => top + (1 - (value - minY) / Math.max(1e-12, maxY - minY)) * (h - top - bottom);
+      ctx.strokeStyle = "#303941";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (let i = 0; i <= 4; i++) {
+        const yy = top + i * (h - top - bottom) / 4;
+        ctx.moveTo(left, yy);
+        ctx.lineTo(w - right, yy);
+      }
+      ctx.stroke();
+      ctx.fillStyle = "#9aa6af";
+      ctx.font = "10px sans-serif";
+      ctx.textAlign = "right";
+      for (let i = 0; i <= 4; i++) {
+        const value = maxY - i * (maxY - minY) / 4;
+        ctx.fillText(compact(value), left - 6, top + i * (h - top - bottom) / 4 + 4);
+      }
+      for (const item of series) {
+        ctx.strokeStyle = item.color;
+        ctx.lineWidth = 1.8;
+        ctx.beginPath();
+        item.points.forEach(([ts, value], i) => {
+          const xx = x(ts);
+          const yy = y(value);
+          if (i === 0) ctx.moveTo(xx, yy);
+          else ctx.lineTo(xx, yy);
+        });
+        ctx.stroke();
+      }
+      ctx.fillStyle = "#9aa6af";
+      ctx.textAlign = "left";
+      ctx.fillText(new Date(minX).toLocaleString(), left, h - 7);
+      ctx.textAlign = "right";
+      ctx.fillText(new Date(maxX).toLocaleString(), w - right, h - 7);
+    }
+
+    function compact(value) {
+      const n = Number(value);
+      if (!Number.isFinite(n)) return "n/a";
+      const abs = Math.abs(n);
+      if (abs >= 1e12) return (n / 1e12).toFixed(2) + "T";
+      if (abs >= 1e9) return (n / 1e9).toFixed(2) + "B";
+      if (abs >= 1e6) return (n / 1e6).toFixed(2) + "M";
+      if (abs >= 1e3) return (n / 1e3).toFixed(2) + "K";
+      if (abs >= 1) return n.toFixed(3).replace(/\.?0+$/, "");
+      return n.toPrecision(3);
+    }
+
+    discoverAndRender();
+    setInterval(discoverAndRender, 60000);
+    window.addEventListener("resize", () => loadVisibleMetrics());
+  </script>
+</body>
+</html>
