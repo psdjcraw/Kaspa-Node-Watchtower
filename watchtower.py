@@ -10791,6 +10791,32 @@ def market_metrics_from_config(config: dict[str, Any]) -> dict[str, Any]:
     return build_market_metrics(Path(config.get("market_snapshot_path") or DEFAULT_CONFIG["market_snapshot_path"]))
 
 
+def market_risk_dashboard_state(latest: dict[str, Any], trend: dict[str, Any] | None = None) -> dict[str, str]:
+    score = numeric(latest.get("market_risk_score"))
+    level = str(latest.get("market_risk_level") or "unknown")
+    verdict = str((trend or {}).get("verdict") or "unknown")
+    if score is None:
+        state = "NO DATA"
+        severity = "watch"
+    elif level == "critical" or score >= 4:
+        state = "CRIT"
+        severity = "critical"
+    elif level == "warning" or score >= 2:
+        state = "WARN"
+        severity = "warning"
+    else:
+        state = "OK"
+        severity = "ok"
+    if verdict in {"warming", "elevated"} and severity == "ok":
+        state = "WATCH"
+        severity = "watch"
+    return {
+        "state": state,
+        "severity": severity,
+        "priority": "risk-first" if severity in {"critical", "warning"} else "normal",
+    }
+
+
 def format_discord_market(config: dict[str, Any], market_metrics: dict[str, Any] | None = None) -> str:
     metrics = market_metrics or market_metrics_from_config(config)
     latest = metrics.get("latest_successful") or {}
@@ -10804,6 +10830,7 @@ def format_discord_market(config: dict[str, Any], market_metrics: dict[str, Any]
                 "next=run make market-risk-drill or watchtower.py --market-snapshot",
             ]
         )
+    dashboard_state = market_risk_dashboard_state(latest, trend)
     return "\n".join(
         [
             f"Kaspa market: {config.get('node_name', 'unknown')}",
@@ -10829,6 +10856,8 @@ def format_discord_market(config: dict[str, Any], market_metrics: dict[str, Any]
                 "risk="
                 f"level={latest.get('market_risk_level', 'unknown')} "
                 f"score={latest.get('market_risk_score', 'unknown')} "
+                f"dashboard_state={dashboard_state['state']} "
+                f"priority={dashboard_state['priority']} "
                 f"direction={latest.get('market_risk_direction', 'unknown')} "
                 f"reasons={latest.get('market_risk_reasons', 'none')}"
             ),
@@ -10860,11 +10889,15 @@ def format_discord_market_risk(config: dict[str, Any], market_metrics: dict[str,
     reasons = latest.get("market_risk_reasons", "none")
     verdict = str(trend.get("verdict") or "unknown")
     next_action = market_risk_next_action(level, score, verdict)
+    dashboard_state = market_risk_dashboard_state(latest, trend)
     return "\n".join(
         [
             f"Kaspa market risk: {config.get('node_name', 'unknown')}",
             (
                 f"level={level} score={score} "
+                f"dashboard_state={dashboard_state['state']} "
+                f"severity={dashboard_state['severity']} "
+                f"priority={dashboard_state['priority']} "
                 f"direction={latest.get('market_risk_direction', 'unknown')} "
                 f"reasons={reasons}"
             ),

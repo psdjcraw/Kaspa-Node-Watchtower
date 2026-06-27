@@ -3252,9 +3252,12 @@ class WatchtowerUnitTests(unittest.TestCase):
         risk_text = printed.call_args_list[1].args[0]
         self.assertIn("Kaspa market: test-node", market_text)
         self.assertIn("risk=level=critical score=4", market_text)
+        self.assertIn("dashboard_state=CRIT priority=risk-first", market_text)
         self.assertIn("trend=verdict=warming 24h_max=4.0", market_text)
         self.assertIn("Kaspa market risk: test-node", risk_text)
-        self.assertIn("level=critical score=4 direction=long_crowded", risk_text)
+        self.assertIn("level=critical score=4", risk_text)
+        self.assertIn("direction=long_crowded", risk_text)
+        self.assertIn("dashboard_state=CRIT severity=critical priority=risk-first", risk_text)
         self.assertIn("trend=verdict=warming", risk_text)
         self.assertIn("events=1 critical=1", risk_text)
         self.assertIn("next=check funding/OI crowding now", risk_text)
