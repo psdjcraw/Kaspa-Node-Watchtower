@@ -18,8 +18,9 @@ the primary source of truth.
 
 ## Next Execution Plan
 
-The next operator work should finish distribution and host handoff, then move
-into indexer integration:
+The next operator work should keep distribution checks green, finish Market
+Dashboard v2/Discord alert alignment, and move the Watchtower plus Indexer stack
+toward the explorer API baseline:
 
 - Keep `make smoke`, `make validate`, and Prometheus rule tests green before
   each deployment change.
@@ -30,10 +31,13 @@ into indexer integration:
 - Keep `scripts/ops_snapshot.sh` as the final release-readiness snapshot because
   it checks live node health, exporter metrics, Prometheus queries, active
   alerts, Grafana reachability, and GitHub Actions status in one command.
-- Finish v0.8 with release notes, package verification, and final smoke
-  guidance.
-- Start v0.9 by adding optional indexer health/status awareness to Watchtower
-  without changing the existing node monitoring behavior.
+- Keep the local market dashboard and Discord `market-risk` output aligned so
+  critical, warning, and recovered market states use the same operator language.
+- Treat v0.9 indexer awareness as implemented in Watchtower and keep it covered
+  by config validation, mocked unit tests, Prometheus metrics, status output,
+  alert rules, and smoke coverage.
+- Start v1.0 by validating the companion Rust indexer read APIs for transaction,
+  address, balance, UTXO, search, recent-block, and combined status lookups.
 - Keep the Rust indexer as a companion service first; integrate through
   health/metrics/API endpoints before deciding whether to fork, vendor, or
   submodule it.
@@ -47,13 +51,18 @@ becomes the PostgreSQL-backed chain data and explorer API layer.
 
 ### v0.9 - Indexer Awareness
 
-- Add optional `indexer` configuration for base URL, PostgreSQL/metrics mode,
-  and lag/staleness thresholds.
-- Poll indexer health and metrics from Watchtower.
-- Export Prometheus metrics for indexer availability, lag, checkpoint
-  freshness, API failures, and schema/version status when available.
-- Add status page, summary, and alert-rule coverage for indexer health.
-- Validate healthy, stale, and unavailable indexer states with mocked tests.
+Status: implemented in Watchtower.
+
+- Optional `indexer` configuration exists for base URL, path templates,
+  metrics mode, timeout, and lag/staleness thresholds.
+- Watchtower polls companion indexer health and metrics without changing the
+  existing local node monitoring behavior.
+- Prometheus exports indexer availability, health, metrics, lag, checkpoint
+  freshness, latency, and watch-readiness signals.
+- Summary/status output and alert formatting include indexer and watchlist
+  state.
+- Mocked tests cover healthy, stale, syncing, unavailable, lookup, and watchlist
+  paths.
 
 ### v1.0 - Explorer API Baseline
 

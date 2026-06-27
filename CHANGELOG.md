@@ -29,6 +29,9 @@ All notable changes to Kaspa Node Watchtower are tracked here.
 
 ### Changed
 
+- Discord `market` and `market-risk` output now includes the same dashboard
+  state language used by the market dashboard (`OK`, `WARN`, `CRIT`, and
+  risk-first priority) so chat alerts and the dashboard agree on severity.
 - Homebrew formula now points to the v0.8.2 GitHub Release asset and checksum.
 
 ## 0.8.2 - 2026-06-20
