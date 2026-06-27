@@ -17,6 +17,7 @@
       --green: #47d18c;
       --yellow: #f4bf50;
       --red: #ff6878;
+      --orange: #ff9f43;
     }
     * { box-sizing: border-box; }
     body {
@@ -123,6 +124,9 @@
       min-height: 278px;
       padding: 12px;
     }
+    .panel.watch { border-color: rgba(244, 191, 80, 0.58); }
+    .panel.warning { border-color: rgba(255, 159, 67, 0.7); }
+    .panel.critical { border-color: rgba(255, 104, 120, 0.82); }
     .panel-head {
       display: flex;
       align-items: flex-start;
@@ -143,6 +147,25 @@
       text-align: right;
       white-space: nowrap;
     }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 42px;
+      height: 18px;
+      margin-bottom: 4px;
+      padding: 0 6px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      font-size: 10px;
+      font-weight: 800;
+      line-height: 1;
+    }
+    .badge.ok { color: var(--green); border-color: rgba(71, 209, 140, 0.44); }
+    .badge.watch { color: var(--yellow); border-color: rgba(244, 191, 80, 0.5); }
+    .badge.warning { color: var(--orange); border-color: rgba(255, 159, 67, 0.62); }
+    .badge.critical { color: var(--red); border-color: rgba(255, 104, 120, 0.7); }
+    .meta-detail { display: block; }
     canvas { width: 100%; height: 210px; display: block; }
     .empty {
       display: grid;
@@ -355,7 +378,17 @@
         const groupOk = activeGroup === "all" || metricGroup(name) === activeGroup;
         const searchOk = !term || name.toLowerCase().includes(term);
         return groupOk && searchOk;
-      });
+      }).sort((a, b) => metricPriority(a) - metricPriority(b) || a.localeCompare(b));
+    }
+
+    function metricPriority(name) {
+      const short = name.replace("kaspa_watchtower_market_", "").toLowerCase();
+      if (short.includes("positioning_risk_score") || short.includes("positioning_risk_level")) return 0;
+      if (short.includes("funding_z") || short.includes("oi_volume_ratio") || short.includes("basis_percent")) return 1;
+      if (short.includes("liquidation_proxy") || short.includes("trade_flow") || short.includes("orderbook_imbalance")) return 2;
+      if (short.includes("slippage") || short.includes("spread_percent") || short.includes("kimchi_premium")) return 3;
+      if (short.includes("dashboard_metric_status_value") || short.includes("risk")) return 4;
+      return 10;
     }
 
     function timeSelectedMetrics() {
@@ -473,6 +506,7 @@
       const meta = document.getElementById(`meta-${index}`);
       const canvas = document.getElementById(`chart-${index}`);
       const legend = document.getElementById(`legend-${index}`);
+      const panel = document.querySelector(`[data-metric="${metric}"]`);
       if (!meta || !canvas || !legend) return false;
       meta.textContent = "loading";
       try {
@@ -484,14 +518,58 @@
         })).filter(item => item.points.length).slice(0, colors.length);
         drawChart(canvas, series);
         legend.innerHTML = series.map(item => `<span style="color:${item.color}">${item.label}</span>`).join("");
-        meta.textContent = rawSeries.length > colors.length ? `${series.length}/${rawSeries.length} series` : `${series.length} series`;
+        const latest = latestSeriesValue(series);
+        const state = metricState(metric, latest);
+        if (panel) {
+          panel.classList.remove("ok", "watch", "warning", "critical");
+          panel.classList.add(state.level);
+        }
+        meta.innerHTML = `
+          <span class="badge ${state.level}">${state.label}</span>
+          <span class="meta-detail">${rawSeries.length > colors.length ? `${series.length}/${rawSeries.length}` : series.length} series</span>`;
         return series.length > 0;
       } catch (error) {
         drawEmpty(canvas, "query failed");
-        meta.textContent = "error";
+        if (panel) panel.classList.add("critical");
+        meta.innerHTML = `<span class="badge critical">ERR</span><span class="meta-detail">query failed</span>`;
         legend.innerHTML = "";
         return false;
       }
+    }
+
+    function latestSeriesValue(series) {
+      const values = series.flatMap(item => item.points.slice(-1).map(point => point[1]));
+      const numericValues = values.map(Number).filter(Number.isFinite);
+      if (!numericValues.length) return null;
+      return numericValues.reduce((max, value) => Math.max(max, Math.abs(value)), 0);
+    }
+
+    function metricState(metric, value) {
+      const short = metric.replace("kaspa_watchtower_market_", "").toLowerCase();
+      if (value === null) return { level: "watch", label: "NO DATA" };
+      const abs = Math.abs(value);
+      if (short.includes("positioning_risk_score")) return thresholdState(value, 4, 2);
+      if (short.includes("positioning_risk_level")) return thresholdState(value, 2, 1);
+      if (short.includes("positioning_risk_24h_critical_events")) return thresholdState(value, 1, 0.1);
+      if (short.includes("positioning_risk_24h_events")) return thresholdState(value, 4, 1);
+      if (short.includes("funding_z_score")) return thresholdState(abs, 3, 2);
+      if (short.includes("oi_volume_ratio")) return thresholdState(value, 5, 3);
+      if (short.includes("basis_percent")) return thresholdState(abs, 2, 1);
+      if (short.includes("spread_percent")) return thresholdState(abs, 2, 0.75);
+      if (short.includes("slippage")) return thresholdState(abs, 5, 2);
+      if (short.includes("imbalance")) return thresholdState(abs, 0.8, 0.55);
+      if (short.includes("kimchi_premium")) return thresholdState(abs, 5, 2);
+      if (short.includes("dashboard_metric_status_value")) {
+        if (value < 0) return { level: "watch", label: "UNKNOWN" };
+        if (value <= 0 || value >= 4) return { level: "watch", label: "EDGE" };
+      }
+      return { level: "ok", label: "OK" };
+    }
+
+    function thresholdState(value, critical, warning) {
+      if (value >= critical) return { level: "critical", label: "CRIT" };
+      if (value >= warning) return { level: "warning", label: "WARN" };
+      return { level: "ok", label: "OK" };
     }
 
     function labelFor(labels) {
