@@ -117,11 +117,13 @@ Last verified manually on `2026-06-08`:
   stochastic, CCI, Williams %R, ROC, momentum, OBV, MFI, VWAP, volume spike,
   and BTC-relative strength for the visible KAS/USDT timeframes
 - Market Watchlist: personal investment charts for SpaceX, Tesla, S&P 500,
-  NASDAQ, KOSPI, KOSDAQ, Gold, Silver, WTI, and USD/KRW. Public Yahoo Finance
-  symbols are fetched server-side during status page generation and embedded as
-  preloaded OHLC rows, then rendered as 15m, 4h, 1D, 1W, and 1M candlestick
-  cards. SpaceX remains marked private because it has no public real-time
-  ticker.
+  NASDAQ, KOSPI, KOSDAQ, Gold, Silver, WTI, USD/KRW, and KAS/BTC sats. Public
+  Yahoo Finance symbols are fetched server-side during status page generation
+  and embedded as preloaded OHLC rows, then rendered as 15m, 4h, 1D, 1W, and
+  1M candlestick cards. KAS/BTC sats is a server-side synthetic candle series
+  from Bybit spot KASUSDT and BTCUSDT klines using
+  `KASUSD/BTCUSD*100000000`. SpaceX remains marked private because it has no
+  public real-time ticker.
 - Indicator anomaly summary: browser-side indicator states are normalized into
   watch, warning, and critical anomaly rows by timeframe and indicator
 - Market microstructure panel: Bybit orderbook and recent public trades provide

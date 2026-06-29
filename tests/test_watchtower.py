@@ -3241,6 +3241,25 @@ class WatchtowerUnitTests(unittest.TestCase):
         self.assertEqual(aggregated[0]["close"], 13)
         self.assertEqual(aggregated[0]["volume"], 600)
 
+    def test_investment_ratio_rows_build_sats_candles(self):
+        kas_rows = [
+            {"time": 1000, "open": 0.03, "high": 0.033, "low": 0.029, "close": 0.032, "volume": 1000},
+            {"time": 2000, "open": 0.032, "high": 0.034, "low": 0.031, "close": 0.033, "volume": 1200},
+        ]
+        btc_rows = [
+            {"time": 1000, "open": 60000, "high": 62000, "low": 59000, "close": 61000, "volume": 20},
+            {"time": 2000, "open": 61000, "high": 63000, "low": 60000, "close": 62000, "volume": 22},
+        ]
+
+        rows = watchtower.investment_ratio_rows(kas_rows, btc_rows, 100_000_000)
+
+        self.assertEqual(len(rows), 2)
+        self.assertAlmostEqual(rows[0]["open"], 0.03 / 60000 * 100_000_000)
+        self.assertAlmostEqual(rows[0]["high"], 0.033 / 59000 * 100_000_000)
+        self.assertAlmostEqual(rows[0]["low"], 0.029 / 62000 * 100_000_000)
+        self.assertAlmostEqual(rows[0]["close"], 0.032 / 61000 * 100_000_000)
+        self.assertEqual(rows[0]["volume"], 1000)
+
     def test_market_spot_orderbook_metrics_normalize_venue_payloads(self):
         payload = {
             "data": {
@@ -4029,6 +4048,10 @@ class WatchtowerUnitTests(unittest.TestCase):
             self.assertIn('label: "Silver"', html)
             self.assertIn('label: "WTI"', html)
             self.assertIn('label: "USD/KRW"', html)
+            self.assertIn('label: "KAS/BTC sats"', html)
+            self.assertIn('symbol: "KASUSD/BTCUSD*100000000"', html)
+            self.assertIn('source: "bybit_ratio"', html)
+            self.assertIn('unit: "sats"', html)
             self.assertIn('label: "15m", range: "5d", interval: "15m"', html)
             self.assertIn('label: "4h", range: "1mo", interval: "1h", aggregateHours: 4', html)
             self.assertIn('yahooSymbol: "TSLA"', html)
@@ -4040,6 +4063,7 @@ class WatchtowerUnitTests(unittest.TestCase):
             self.assertIn('yahooSymbol: "SI=F"', html)
             self.assertIn('yahooSymbol: "CL=F"', html)
             self.assertIn('yahooSymbol: "KRW=X"', html)
+            self.assertIn("formatInvestmentValue", html)
             self.assertIn("query2.finance.yahoo.com/v8/finance/chart", html)
             self.assertIn("investmentRowsFromYahoo", html)
             self.assertIn("investmentAggregateRows", html)

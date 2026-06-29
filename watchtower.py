@@ -47,6 +47,16 @@ INVESTMENT_ASSETS = [
     {"key": "silver", "label": "Silver", "symbol": "SI=F", "yahoo_symbol": "SI=F", "source": "yahoo"},
     {"key": "wti", "label": "WTI", "symbol": "CL=F", "yahoo_symbol": "CL=F", "source": "yahoo"},
     {"key": "usdkrw", "label": "USD/KRW", "symbol": "KRW=X", "yahoo_symbol": "KRW=X", "source": "yahoo"},
+    {
+        "key": "kasbtc_sats",
+        "label": "KAS/BTC sats",
+        "symbol": "KASUSD/BTCUSD*100000000",
+        "source": "bybit_ratio",
+        "numerator_symbol": "KASUSDT",
+        "denominator_symbol": "BTCUSDT",
+        "multiplier": 100_000_000,
+        "unit": "sats",
+    },
 ]
 
 DEFAULT_CONFIG = {
@@ -2632,9 +2642,96 @@ def investment_aggregate_rows(rows: list[dict[str, Any]], hours: Any) -> list[di
     return [buckets[key] for key in sorted(buckets)]
 
 
+def investment_bybit_kline_url(symbol: str, timeframe: dict[str, Any]) -> str:
+    intervals = {"15m": "15", "4h": "240", "1D": "D", "1W": "W", "1M": "M"}
+    interval = intervals.get(str(timeframe.get("label")), "D")
+    query = urllib.parse.urlencode(
+        {
+            "category": "spot",
+            "symbol": symbol,
+            "interval": interval,
+            "limit": 240,
+        }
+    )
+    return f"https://api.bybit.com/v5/market/kline?{query}"
+
+
+def investment_ratio_rows(
+    numerator_rows: list[dict[str, Any]],
+    denominator_rows: list[dict[str, Any]],
+    multiplier: Any,
+) -> list[dict[str, Any]]:
+    scale = numeric(multiplier) or 1
+    denominator_by_time = {numeric(row.get("time")): row for row in denominator_rows if numeric(row.get("time")) is not None}
+    rows: list[dict[str, Any]] = []
+    for numerator in numerator_rows:
+        timestamp = numeric(numerator.get("time"))
+        denominator = denominator_by_time.get(timestamp)
+        if timestamp is None or denominator is None:
+            continue
+        numerator_open = numeric(numerator.get("open"))
+        numerator_high = numeric(numerator.get("high"))
+        numerator_low = numeric(numerator.get("low"))
+        numerator_close = numeric(numerator.get("close"))
+        denominator_open = numeric(denominator.get("open"))
+        denominator_high = numeric(denominator.get("high"))
+        denominator_low = numeric(denominator.get("low"))
+        denominator_close = numeric(denominator.get("close"))
+        if None in (
+            numerator_open,
+            numerator_high,
+            numerator_low,
+            numerator_close,
+            denominator_open,
+            denominator_high,
+            denominator_low,
+            denominator_close,
+        ):
+            continue
+        if min(denominator_open, denominator_high, denominator_low, denominator_close) <= 0:
+            continue
+        rows.append(
+            {
+                "time": timestamp,
+                "open": numerator_open / denominator_open * scale,
+                "high": numerator_high / denominator_low * scale,
+                "low": numerator_low / denominator_high * scale,
+                "close": numerator_close / denominator_close * scale,
+                "volume": numeric(numerator.get("volume")) or 0,
+            }
+        )
+    return rows
+
+
+def investment_rows_from_bybit_klines(payload: Any) -> list[dict[str, Any]]:
+    return [
+        {
+            "time": row.get("timestamp_ms"),
+            "open": row.get("open"),
+            "high": row.get("high"),
+            "low": row.get("low"),
+            "close": row.get("close"),
+            "volume": row.get("volume"),
+        }
+        for row in bybit_kline_rows(payload)
+    ]
+
+
 def fetch_investment_chart(asset: dict[str, Any], timeframe: dict[str, Any], timeout: float = 5.0) -> tuple[str, str, dict[str, Any]]:
     asset_key = str(asset["key"])
     timeframe_label = str(timeframe["label"])
+    if asset.get("source") == "bybit_ratio":
+        try:
+            numerator_rows = investment_rows_from_bybit_klines(
+                fetch_json_url(investment_bybit_kline_url(str(asset["numerator_symbol"]), timeframe), timeout=timeout)
+            )
+            denominator_rows = investment_rows_from_bybit_klines(
+                fetch_json_url(investment_bybit_kline_url(str(asset["denominator_symbol"]), timeframe), timeout=timeout)
+            )
+            rows = investment_ratio_rows(numerator_rows, denominator_rows, asset.get("multiplier"))
+            return asset_key, timeframe_label, {"ok": bool(rows), "rows": rows[-240:], "source": "Bybit spot KASUSDT/BTCUSDT"}
+        except (OSError, urllib.error.URLError, urllib.error.HTTPError, json.JSONDecodeError, ValueError, KeyError) as exc:
+            return asset_key, timeframe_label, {"ok": False, "error": str(exc), "rows": []}
     if asset.get("source") != "yahoo":
         return asset_key, timeframe_label, {"ok": False, "error": "private_market_source_unavailable", "rows": []}
     try:
@@ -2660,7 +2757,7 @@ def fetch_investment_market_data(timeout: float = 5.0) -> dict[str, Any]:
         (asset, timeframe)
         for asset in INVESTMENT_ASSETS
         for timeframe in INVESTMENT_TIMEFRAMES
-        if asset.get("source") == "yahoo"
+        if asset.get("source") in {"yahoo", "bybit_ratio"}
     ]
     with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
         futures = [executor.submit(fetch_investment_chart, asset, timeframe, timeout) for asset, timeframe in jobs]
@@ -9172,6 +9269,7 @@ def write_status_page(
       {{ key: "silver", label: "Silver", symbol: "SI=F", yahooSymbol: "SI=F", source: "yahoo", note: "Yahoo Finance futures" }},
       {{ key: "wti", label: "WTI", symbol: "CL=F", yahooSymbol: "CL=F", source: "yahoo", note: "Yahoo Finance futures" }},
       {{ key: "usdkrw", label: "USD/KRW", symbol: "KRW=X", yahooSymbol: "KRW=X", source: "yahoo", note: "Yahoo Finance FX" }},
+      {{ key: "kasbtc_sats", label: "KAS/BTC sats", symbol: "KASUSD/BTCUSD*100000000", source: "bybit_ratio", note: "Bybit spot KASUSDT/BTCUSDT", unit: "sats" }},
     ];
     const investmentPreloadedData = {investment_data_json};
 
@@ -9227,6 +9325,20 @@ def write_status_page(
     function investmentYahooUrl(asset, timeframe) {{
       const symbol = encodeURIComponent(asset.yahooSymbol || asset.symbol);
       return "https://query2.finance.yahoo.com/v8/finance/chart/" + symbol + "?range=" + timeframe.range + "&interval=" + timeframe.interval + "&includePrePost=false";
+    }}
+
+    function formatInvestmentValue(value, asset) {{
+      const parsed = marketNumber(value);
+      if (parsed === null) {{
+        return "unknown";
+      }}
+      if (asset.unit === "sats") {{
+        return parsed.toLocaleString(undefined, {{
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        }}) + " sats";
+      }}
+      return formatMarketPrice(parsed);
     }}
 
     function investmentRowsFromYahoo(payload) {{
@@ -9357,7 +9469,7 @@ def write_status_page(
       const first = rows[0];
       const change = first.close ? ((latest.close - first.close) / first.close) * 100 : null;
       const label = document.createElementNS(ns, "text");
-      label.textContent = asset.label + " " + timeframe.label + " " + formatMarketPrice(latest.close);
+      label.textContent = asset.label + " " + timeframe.label + " " + formatInvestmentValue(latest.close, asset);
       label.setAttribute("x", String(leftPad));
       label.setAttribute("y", "18");
       label.setAttribute("fill", "#425466");
@@ -9365,7 +9477,7 @@ def write_status_page(
       label.setAttribute("font-weight", "900");
       svg.appendChild(label);
       if (status) {{
-        status.textContent = asset.note + " · latest " + formatMarketPrice(latest.close) + " · change " + formatMarketSignedPercent(change) + " · " + new Date(latest.time).toLocaleString();
+        status.textContent = asset.note + " · latest " + formatInvestmentValue(latest.close, asset) + " · change " + formatMarketSignedPercent(change) + " · " + new Date(latest.time).toLocaleString();
       }}
     }}
 
@@ -9400,7 +9512,7 @@ def write_status_page(
         investmentTimeframes.forEach((timeframe) => {{
           const status = document.getElementById(investmentStatusId(asset.key, timeframe));
           const data = (((investmentPreloadedData || {{}})[asset.key] || {{}}).timeframes || {{}})[timeframe.label];
-          if (asset.source !== "yahoo") {{
+          if (asset.source === "private") {{
             if (status) {{
               status.textContent = "Private market source unavailable";
             }}
@@ -9473,7 +9585,7 @@ def write_status_page(
           const status = document.createElement("div");
           status.id = investmentStatusId(asset.key, timeframe);
           status.className = "market-status";
-          status.textContent = asset.source === "yahoo" ? "Loading market data" : "Private market source unavailable";
+          status.textContent = asset.source === "private" ? "Private market source unavailable" : "Loading market data";
           head.appendChild(title);
           head.appendChild(status);
           card.appendChild(head);
