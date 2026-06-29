@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
 import datetime as dt
 import html
 import json
@@ -26,6 +27,27 @@ from typing import Any, Iterable
 
 
 VERSION = "0.8.2"
+
+INVESTMENT_TIMEFRAMES = [
+    {"label": "15m", "range": "5d", "interval": "15m"},
+    {"label": "4h", "range": "1mo", "interval": "1h", "aggregate_hours": 4},
+    {"label": "1D", "range": "6mo", "interval": "1d"},
+    {"label": "1W", "range": "5y", "interval": "1wk"},
+    {"label": "1M", "range": "10y", "interval": "1mo"},
+]
+
+INVESTMENT_ASSETS = [
+    {"key": "spacex", "label": "SpaceX", "symbol": "PRIVATE", "source": "private"},
+    {"key": "tesla", "label": "Tesla", "symbol": "TSLA", "yahoo_symbol": "TSLA", "source": "yahoo"},
+    {"key": "sp500", "label": "S&P 500", "symbol": "SPX", "yahoo_symbol": "^GSPC", "source": "yahoo"},
+    {"key": "nasdaq", "label": "NASDAQ", "symbol": "IXIC", "yahoo_symbol": "^IXIC", "source": "yahoo"},
+    {"key": "kospi", "label": "KOSPI", "symbol": "KOSPI", "yahoo_symbol": "^KS11", "source": "yahoo"},
+    {"key": "kosdaq", "label": "KOSDAQ", "symbol": "KOSDAQ", "yahoo_symbol": "^KQ11", "source": "yahoo"},
+    {"key": "gold", "label": "Gold", "symbol": "GC=F", "yahoo_symbol": "GC=F", "source": "yahoo"},
+    {"key": "silver", "label": "Silver", "symbol": "SI=F", "yahoo_symbol": "SI=F", "source": "yahoo"},
+    {"key": "wti", "label": "WTI", "symbol": "CL=F", "yahoo_symbol": "CL=F", "source": "yahoo"},
+    {"key": "usdkrw", "label": "USD/KRW", "symbol": "KRW=X", "yahoo_symbol": "KRW=X", "source": "yahoo"},
+]
 
 DEFAULT_CONFIG = {
     "config_version": 1,
@@ -274,6 +296,62 @@ def find_processes(match: str) -> list[str]:
         if match in line and "watchtower.py" not in line and "tail -f" not in line:
             lines.append(line.strip())
     return lines
+
+
+def parse_ps_etime_seconds(value: str) -> int | None:
+    value = value.strip()
+    if not value:
+        return None
+    days = 0
+    if "-" in value:
+        day_text, value = value.split("-", 1)
+        try:
+            days = int(day_text)
+        except ValueError:
+            return None
+    parts = value.split(":")
+    try:
+        numbers = [int(part) for part in parts]
+    except ValueError:
+        return None
+    if len(numbers) == 2:
+        hours = 0
+        minutes, seconds = numbers
+    elif len(numbers) == 3:
+        hours, minutes, seconds = numbers
+    else:
+        return None
+    return (((days * 24) + hours) * 60 + minutes) * 60 + seconds
+
+
+def process_summary_from_ps(lines: list[str]) -> dict[str, Any]:
+    processes = []
+    for line in lines:
+        parts = line.split(None, 4)
+        if len(parts) < 5:
+            continue
+        pid, pcpu, pmem, etime, command = parts
+        processes.append(
+            {
+                "pid": pid,
+                "cpu_percent": numeric(pcpu),
+                "memory_percent": numeric(pmem),
+                "etime": etime,
+                "uptime_seconds": parse_ps_etime_seconds(etime),
+                "command": command,
+            }
+        )
+    uptimes = [
+        int(item["uptime_seconds"])
+        for item in processes
+        if item.get("uptime_seconds") is not None
+    ]
+    return {
+        "processes": processes,
+        "count": len(processes),
+        "oldest_uptime_seconds": max(uptimes) if uptimes else None,
+        "youngest_uptime_seconds": min(uptimes) if uptimes else None,
+    }
 
 
 def dir_size(path: str) -> str:
@@ -1475,6 +1553,7 @@ def format_processes(processes: list[str]) -> str:
 def build_report(config: dict) -> dict[str, Any]:
     log_path = Path(config.get("log_path") or "")
     processes = find_processes(config["process_match"])
+    process_summary = process_summary_from_ps(processes)
     thresholds = config.get("thresholds", {})
     grpc_endpoint = config.get("grpc_endpoint") or config.get("rpc_endpoint") or ""
     disk = disk_usage(config.get("data_dir", ""))
@@ -1752,6 +1831,7 @@ def build_report(config: dict) -> dict[str, Any]:
         "checked_at": dt.datetime.now().astimezone().isoformat(),
         "process_match": config["process_match"],
         "processes": processes,
+        "process_summary": process_summary,
         "rpc_endpoint": config.get("rpc_endpoint") or "",
         "rpc": rpc,
         "grpc_endpoint": grpc_endpoint,
@@ -1793,6 +1873,7 @@ def build_stateful_report(config: dict) -> tuple[dict[str, Any], dict[str, Any]]
     state_path = Path(config.get("state_path") or DEFAULT_CONFIG["state_path"])
     state = load_state(state_path)
     apply_stateful_checks(report, state, config)
+    apply_peer_churn_metrics(report, state)
     apply_mining_policy_checks(report, config)
     apply_wallet_change_detection(report, state, config)
     (report.get("wallet") or {})["events"] = list(state.get("wallet_events") or [])
@@ -1905,6 +1986,42 @@ def parse_iso_datetime(value: str | None) -> dt.datetime | None:
         return dt.datetime.fromisoformat(value)
     except ValueError:
         return None
+
+
+def apply_peer_churn_metrics(report: dict[str, Any], state: dict[str, Any]) -> None:
+    grpc_metrics = report.get("grpc_metrics") or {}
+    peer_ids = [
+        str(item)
+        for item in (grpc_metrics.get("peer_ids") or [])
+        if str(item).strip()
+    ]
+    previous_ids = [
+        str(item)
+        for item in (
+            state.get("last_peer_ids")
+            or ((state.get("last_report") or {}).get("grpc_metrics") or {}).get("peer_ids")
+            or []
+        )
+        if str(item).strip()
+    ]
+    current = set(peer_ids)
+    previous = set(previous_ids)
+    added = sorted(current - previous) if previous_ids else []
+    removed = sorted(previous - current) if previous_ids else []
+    churn_count = len(added) + len(removed)
+    report["peer_churn"] = {
+        "available": bool(peer_ids),
+        "previous_available": bool(previous_ids),
+        "current_peer_ids": len(current),
+        "previous_peer_ids": len(previous),
+        "added": len(added),
+        "removed": len(removed),
+        "churn_count": churn_count,
+        "churn_ratio": None if not previous else churn_count / max(len(previous), 1),
+    }
+    if peer_ids:
+        state["last_peer_ids"] = sorted(current)
+        state["last_peer_observed_at"] = report.get("checked_at")
 
 
 def failed_check_names(report: dict[str, Any]) -> list[str]:
@@ -2445,6 +2562,112 @@ def fetch_json_url(url: str, timeout: float = 6.0) -> Any:
     with urllib.request.urlopen(request, timeout=timeout) as response:
         data = response.read()
     return json.loads(data.decode("utf-8"))
+
+
+def fetch_json_url_with_user_agent(url: str, timeout: float = 6.0, user_agent: str | None = None) -> Any:
+    request = urllib.request.Request(url, headers={"User-Agent": user_agent or f"kaspa-node-watchtower/{VERSION}"})
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        data = response.read()
+    return json.loads(data.decode("utf-8"))
+
+
+def investment_yahoo_chart_url(asset: dict[str, Any], timeframe: dict[str, Any]) -> str:
+    symbol = urllib.parse.quote(str(asset.get("yahoo_symbol") or asset.get("symbol") or ""), safe="")
+    query = urllib.parse.urlencode(
+        {
+            "range": timeframe["range"],
+            "interval": timeframe["interval"],
+            "includePrePost": "false",
+        }
+    )
+    return f"https://query2.finance.yahoo.com/v8/finance/chart/{symbol}?{query}"
+
+
+def investment_rows_from_yahoo(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    result = (((payload.get("chart") or {}).get("result") or [{}])[0]) or {}
+    timestamps = result.get("timestamp") or []
+    quote = (((result.get("indicators") or {}).get("quote") or [{}])[0]) or {}
+    opens = quote.get("open") or []
+    highs = quote.get("high") or []
+    lows = quote.get("low") or []
+    closes = quote.get("close") or []
+    volumes = quote.get("volume") or []
+    rows: list[dict[str, Any]] = []
+    for index, timestamp in enumerate(timestamps):
+        row = {
+            "time": (numeric(timestamp) or 0) * 1000,
+            "open": numeric(opens[index] if index < len(opens) else None),
+            "high": numeric(highs[index] if index < len(highs) else None),
+            "low": numeric(lows[index] if index < len(lows) else None),
+            "close": numeric(closes[index] if index < len(closes) else None),
+            "volume": numeric(volumes[index] if index < len(volumes) else 0) or 0,
+        }
+        if row["time"] and row["close"] is not None and row["high"] is not None and row["low"] is not None:
+            rows.append(row)
+    return rows
+
+
+def investment_aggregate_rows(rows: list[dict[str, Any]], hours: Any) -> list[dict[str, Any]]:
+    bucket_ms = (numeric(hours) or 0) * 60 * 60 * 1000
+    if not bucket_ms or len(rows) < 2:
+        return rows
+    buckets: dict[int, dict[str, Any]] = {}
+    for row in rows:
+        key = int((numeric(row.get("time")) or 0) // bucket_ms * bucket_ms)
+        bucket = buckets.get(key)
+        if bucket is None:
+            bucket = {
+                "time": key,
+                "open": row.get("open"),
+                "high": row.get("high"),
+                "low": row.get("low"),
+                "close": row.get("close"),
+                "volume": 0,
+            }
+            buckets[key] = bucket
+        bucket["high"] = max(numeric(bucket.get("high")) or 0, numeric(row.get("high")) or 0)
+        bucket["low"] = min(numeric(bucket.get("low")) or numeric(row.get("low")) or 0, numeric(row.get("low")) or 0)
+        bucket["close"] = row.get("close")
+        bucket["volume"] = (numeric(bucket.get("volume")) or 0) + (numeric(row.get("volume")) or 0)
+    return [buckets[key] for key in sorted(buckets)]
+
+
+def fetch_investment_chart(asset: dict[str, Any], timeframe: dict[str, Any], timeout: float = 5.0) -> tuple[str, str, dict[str, Any]]:
+    asset_key = str(asset["key"])
+    timeframe_label = str(timeframe["label"])
+    if asset.get("source") != "yahoo":
+        return asset_key, timeframe_label, {"ok": False, "error": "private_market_source_unavailable", "rows": []}
+    try:
+        payload = fetch_json_url_with_user_agent(
+            investment_yahoo_chart_url(asset, timeframe),
+            timeout=timeout,
+            user_agent="Mozilla/5.0 (Kaspa Node Watchtower)",
+        )
+        rows = investment_rows_from_yahoo(payload)
+        if timeframe.get("aggregate_hours"):
+            rows = investment_aggregate_rows(rows, timeframe["aggregate_hours"])
+        return asset_key, timeframe_label, {"ok": bool(rows), "rows": rows[-240:], "source": "Yahoo Finance"}
+    except (OSError, urllib.error.URLError, urllib.error.HTTPError, json.JSONDecodeError, ValueError) as exc:
+        return asset_key, timeframe_label, {"ok": False, "error": str(exc), "rows": []}
+
+
+def fetch_investment_market_data(timeout: float = 5.0) -> dict[str, Any]:
+    result: dict[str, Any] = {
+        asset["key"]: {"private": asset.get("source") != "yahoo", "timeframes": {}}
+        for asset in INVESTMENT_ASSETS
+    }
+    jobs = [
+        (asset, timeframe)
+        for asset in INVESTMENT_ASSETS
+        for timeframe in INVESTMENT_TIMEFRAMES
+        if asset.get("source") == "yahoo"
+    ]
+    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+        futures = [executor.submit(fetch_investment_chart, asset, timeframe, timeout) for asset, timeframe in jobs]
+        for future in concurrent.futures.as_completed(futures):
+            asset_key, timeframe_label, data = future.result()
+            result.setdefault(asset_key, {"timeframes": {}})["timeframes"][timeframe_label] = data
+    return result
 
 
 def indexer_config(config: dict[str, Any]) -> dict[str, Any]:
@@ -3346,6 +3569,102 @@ MARKET_SPOT_PRICE_SOURCES = [
     },
 ]
 
+MARKET_SPOT_ORDERBOOK_SOURCES = [
+    {
+        "source": "Gate",
+        "url": "https://api.gateio.ws/api/v4/spot/order_book?currency_pair=KAS_USDT&limit=50",
+    },
+    {
+        "source": "MEXC",
+        "url": "https://api.mexc.com/api/v3/depth?symbol=KASUSDT&limit=50",
+    },
+    {
+        "source": "KuCoin",
+        "url": "https://api.kucoin.com/api/v1/market/orderbook/level2_100?symbol=KAS-USDT",
+    },
+    {
+        "source": "Bitget",
+        "url": "https://api.bitget.com/api/v2/spot/market/orderbook?symbol=KASUSDT&type=step0&limit=50",
+    },
+]
+
+MARKET_SPOT_TRADE_SOURCES = [
+    {
+        "source": "Gate",
+        "url": "https://api.gateio.ws/api/v4/spot/trades?currency_pair=KAS_USDT&limit=100",
+    },
+    {
+        "source": "MEXC",
+        "url": "https://api.mexc.com/api/v3/trades?symbol=KASUSDT&limit=100",
+    },
+    {
+        "source": "KuCoin",
+        "url": "https://api.kucoin.com/api/v1/market/histories?symbol=KAS-USDT",
+    },
+    {
+        "source": "Bitget",
+        "url": "https://api.bitget.com/api/v2/spot/market/fills?symbol=KASUSDT&limit=100",
+    },
+]
+
+MARKET_FUTURES_VENUE_SOURCES = [
+    {
+        "source": "Gate",
+        "ticker_url": "https://api.gateio.ws/api/v4/futures/usdt/tickers?contract=KAS_USDT",
+        "contract_url": "https://api.gateio.ws/api/v4/futures/usdt/contracts/KAS_USDT",
+    },
+    {
+        "source": "MEXC",
+        "ticker_url": "https://contract.mexc.com/api/v1/contract/ticker?symbol=KAS_USDT",
+    },
+]
+
+COINGECKO_KAS_URL = (
+    "https://api.coingecko.com/api/v3/coins/kaspa"
+    "?localization=false&tickers=false&market_data=true&community_data=false&developer_data=false&sparkline=false"
+)
+COINGECKO_KAS_MARKET_CHART_URL = "https://api.coingecko.com/api/v3/coins/kaspa/market_chart?vs_currency=usd&days=max&interval=daily"
+
+MARKET_DASHBOARD_METRICS = {
+    "mining": [
+        ("hash_rate_7dma_phs", "Hash Rate 7DMA PH/s"),
+        ("hash_price_7dma_usd_per_ph_day", "Hash Price 7DMA Ph/day"),
+        ("difficulty", "Difficulty"),
+        ("revenue_kas_30d", "Revenue KAS 30-Day"),
+        ("revenue_usd_30d", "Revenue USD 30-Day"),
+        ("revenue_fees_usd_30d", "Revenue Fees USD 30-Day"),
+    ],
+    "on_chain": [
+        ("realized_hodl_ratio", "Realized HODL Ratio"),
+        ("mvrv_z_score", "MVRV Z-Score"),
+        ("reserve_risk", "Reserve Risk"),
+        ("coin_days_destroyed_90d", "90-Days Coin Days Destroyed"),
+        ("lth_sth_cost_basis_ratio", "LTH:STH Costs Basis Ratio"),
+        ("nupl_ratio", "Net Unrealized Profit Loss Ratio"),
+        ("percent_supply_in_profit_30d_ma", "Percent Supply in Profit 30-Day MA"),
+        ("realized_price_30d_change", "Realized Price 30-Day Change"),
+    ],
+    "price": [
+        ("mayer_multiple", "Mayer Multiple"),
+        ("dma_50", "50DMA"),
+        ("dma_100", "100DMA"),
+        ("dma_200", "200DMA"),
+        ("wma_100", "100WMA"),
+        ("realized_price", "Realized Price"),
+        ("sth_realized_price", "STH Realized Price"),
+        ("lth_realized_price", "LTH Realized Price"),
+    ],
+}
+MARKET_DASHBOARD_STATUS_VALUES = {
+    "unknown": -1,
+    "bear": 0,
+    "bear_neutral": 1,
+    "neutral": 2,
+    "bull_neutral": 3,
+    "bull": 4,
+}
+MARKET_DASHBOARD_SIGNAL_ORDER = ("bull", "bull_neutral", "neutral", "bear_neutral", "bear")
+
 
 def market_price_from_payload(payload: Any, path: list[Any]) -> float | None:
     if "*" in path:
@@ -3454,6 +3773,1132 @@ def market_oi_volume_ratio(open_interest: Any, volume_24h: Any) -> float | None:
     return oi / volume
 
 
+def market_range_percent(high: Any, low: Any) -> float | None:
+    high_value = numeric(high)
+    low_value = numeric(low)
+    if high_value is None or low_value in (None, 0):
+        return None
+    return ((high_value - low_value) / low_value) * 100
+
+
+def market_position_in_range(price: Any, high: Any, low: Any) -> float | None:
+    price_value = numeric(price)
+    high_value = numeric(high)
+    low_value = numeric(low)
+    if price_value is None or high_value is None or low_value is None or high_value == low_value:
+        return None
+    return (price_value - low_value) / (high_value - low_value)
+
+
+def bybit_orderbook_levels(payload: Any, side: str) -> list[tuple[float, float]]:
+    rows = ((payload.get("result") or {}).get(side) or []) if isinstance(payload, dict) else []
+    return market_orderbook_levels_from_rows(rows, reverse=side == "b")
+
+
+def market_orderbook_levels_from_rows(rows: Any, *, reverse: bool) -> list[tuple[float, float]]:
+    levels = []
+    for row in rows:
+        if isinstance(row, dict):
+            price = numeric(row.get("p") or row.get("price"))
+            size = numeric(row.get("s") or row.get("size") or row.get("amount"))
+        elif isinstance(row, list) and len(row) >= 2:
+            price = numeric(row[0])
+            size = numeric(row[1])
+        else:
+            continue
+        if price is None or size is None:
+            continue
+        levels.append((price, size))
+    return sorted(levels, key=lambda item: item[0], reverse=reverse)
+
+
+def market_orderbook_slippage(
+    levels: list[tuple[float, float]],
+    *,
+    notional_usdt: float,
+    mid_price: float,
+) -> float | None:
+    if mid_price <= 0 or notional_usdt <= 0:
+        return None
+    remaining = notional_usdt
+    base_filled = 0.0
+    quote_spent = 0.0
+    for price, size in levels:
+        level_notional = price * size
+        if level_notional <= 0:
+            continue
+        take_notional = min(remaining, level_notional)
+        take_size = take_notional / price
+        base_filled += take_size
+        quote_spent += take_notional
+        remaining -= take_notional
+        if remaining <= 1e-9:
+            break
+    if remaining > 1e-9 or base_filled <= 0:
+        return None
+    average_price = quote_spent / base_filled
+    return ((average_price - mid_price) / mid_price) * 100
+
+
+def market_orderbook_metrics_from_levels(bids: list[tuple[float, float]], asks: list[tuple[float, float]]) -> dict[str, Any]:
+    best_bid = bids[0][0] if bids else None
+    best_ask = asks[0][0] if asks else None
+    mid_price = None
+    spread_pct = None
+    if best_bid is not None and best_ask is not None:
+        mid_price = (best_bid + best_ask) / 2
+        spread_pct = None if mid_price == 0 else ((best_ask - best_bid) / mid_price) * 100
+    metrics: dict[str, Any] = {
+        "best_bid": best_bid,
+        "best_ask": best_ask,
+        "mid_price": mid_price,
+        "spread_pct": spread_pct,
+        "bid_levels": len(bids),
+        "ask_levels": len(asks),
+    }
+    if mid_price not in (None, 0):
+        for width in (0.1, 0.25, 0.5, 1.0, 2.0, 5.0, 10.0):
+            bid_cutoff = mid_price * (1 - width / 100)
+            ask_cutoff = mid_price * (1 + width / 100)
+            bid_size = sum(size for price, size in bids if price >= bid_cutoff)
+            ask_size = sum(size for price, size in asks if price <= ask_cutoff)
+            bid_notional = sum(price * size for price, size in bids if price >= bid_cutoff)
+            ask_notional = sum(price * size for price, size in asks if price <= ask_cutoff)
+            suffix = str(width).replace(".", "_")
+            metrics[f"bid_depth_{suffix}pct_kas"] = bid_size
+            metrics[f"ask_depth_{suffix}pct_kas"] = ask_size
+            metrics[f"bid_depth_{suffix}pct_usdt"] = bid_notional
+            metrics[f"ask_depth_{suffix}pct_usdt"] = ask_notional
+            total = bid_size + ask_size
+            metrics[f"imbalance_{suffix}pct"] = None if total == 0 else (bid_size - ask_size) / total
+        for notional in (1000, 5000, 10000):
+            metrics[f"buy_slippage_{notional}_usdt_pct"] = market_orderbook_slippage(
+                asks,
+                notional_usdt=float(notional),
+                mid_price=mid_price,
+            )
+            sell_slippage = market_orderbook_slippage(
+                bids,
+                notional_usdt=float(notional),
+                mid_price=mid_price,
+            )
+            metrics[f"sell_slippage_{notional}_usdt_pct"] = None if sell_slippage is None else -sell_slippage
+        if bids:
+            largest_bid = max(bids, key=lambda item: item[0] * item[1])
+            metrics["largest_bid_wall_price"] = largest_bid[0]
+            metrics["largest_bid_wall_kas"] = largest_bid[1]
+            metrics["largest_bid_wall_usdt"] = largest_bid[0] * largest_bid[1]
+            metrics["largest_bid_wall_distance_pct"] = ((mid_price - largest_bid[0]) / mid_price) * 100
+        if asks:
+            largest_ask = max(asks, key=lambda item: item[0] * item[1])
+            metrics["largest_ask_wall_price"] = largest_ask[0]
+            metrics["largest_ask_wall_kas"] = largest_ask[1]
+            metrics["largest_ask_wall_usdt"] = largest_ask[0] * largest_ask[1]
+            metrics["largest_ask_wall_distance_pct"] = ((largest_ask[0] - mid_price) / mid_price) * 100
+    return metrics
+
+
+def market_orderbook_metrics(payload: Any) -> dict[str, Any]:
+    bids = bybit_orderbook_levels(payload, "b")
+    asks = bybit_orderbook_levels(payload, "a")
+    return market_orderbook_metrics_from_levels(bids, asks)
+
+
+def market_spot_orderbook_metrics(source: str, payload: Any) -> dict[str, Any]:
+    if source in {"Gate", "MEXC"}:
+        bids = market_orderbook_levels_from_rows(payload.get("bids") if isinstance(payload, dict) else [], reverse=True)
+        asks = market_orderbook_levels_from_rows(payload.get("asks") if isinstance(payload, dict) else [], reverse=False)
+    elif source == "KuCoin":
+        data = payload.get("data") if isinstance(payload, dict) else {}
+        bids = market_orderbook_levels_from_rows((data or {}).get("bids"), reverse=True)
+        asks = market_orderbook_levels_from_rows((data or {}).get("asks"), reverse=False)
+    elif source == "Bitget":
+        data = payload.get("data") if isinstance(payload, dict) else {}
+        bids = market_orderbook_levels_from_rows((data or {}).get("bids"), reverse=True)
+        asks = market_orderbook_levels_from_rows((data or {}).get("asks"), reverse=False)
+    else:
+        return {}
+    return market_orderbook_metrics_from_levels(bids, asks)
+
+
+def fetch_market_spot_orderbooks(timeout: float = 6.0) -> dict[str, Any]:
+    books: dict[str, Any] = {}
+    errors = 0
+    for source in MARKET_SPOT_ORDERBOOK_SOURCES:
+        venue = str(source["source"])
+        try:
+            books[venue] = market_spot_orderbook_metrics(venue, fetch_json_url(str(source["url"]), timeout=timeout))
+        except (OSError, urllib.error.URLError, ValueError, json.JSONDecodeError, KeyError, StopIteration):
+            errors += 1
+            books[venue] = {}
+    return {"books": books, "errors": errors}
+
+
+def bybit_first_row(payload: Any, source: str) -> dict[str, Any]:
+    return market_api_list(payload, source)[0]
+
+
+def coinone_ticker_metrics(payload: Any) -> dict[str, Any]:
+    rows = payload.get("tickers") if isinstance(payload, dict) else None
+    ticker = rows[0] if isinstance(rows, list) and rows else {}
+    asks = ticker.get("best_asks") or []
+    bids = ticker.get("best_bids") or []
+    ask = asks[0] if isinstance(asks, list) and asks else {}
+    bid = bids[0] if isinstance(bids, list) and bids else {}
+    best_ask = numeric(ask.get("price"))
+    best_bid = numeric(bid.get("price"))
+    mid = None
+    spread_pct = None
+    if best_ask is not None and best_bid is not None:
+        mid = (best_ask + best_bid) / 2
+        spread_pct = None if mid == 0 else ((best_ask - best_bid) / mid) * 100
+    return {
+        "last": numeric(ticker.get("last")),
+        "high": numeric(ticker.get("high")),
+        "low": numeric(ticker.get("low")),
+        "first": numeric(ticker.get("first")),
+        "quote_volume": numeric(ticker.get("quote_volume")),
+        "target_volume": numeric(ticker.get("target_volume")),
+        "best_ask": best_ask,
+        "best_bid": best_bid,
+        "spread_pct": spread_pct,
+        "timestamp_ms": numeric(ticker.get("timestamp")),
+    }
+
+
+def bybit_trade_flow(payload: Any) -> dict[str, Any]:
+    rows = ((payload.get("result") or {}).get("list") or []) if isinstance(payload, dict) else []
+    normalized = []
+    buy_size = 0.0
+    sell_size = 0.0
+    buy_notional = 0.0
+    sell_notional = 0.0
+    buy_count = 0
+    sell_count = 0
+    largest_size = 0.0
+    latest_ts = None
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        price = numeric(row.get("price"))
+        size = numeric(row.get("size"))
+        if price is None or size is None:
+            continue
+        normalized.append({"price": price, "size": size, "side": str(row.get("side") or "").lower(), "timestamp_ms": numeric(row.get("time"))})
+    return market_trade_flow_from_rows(normalized)
+
+
+def market_trade_flow_from_rows(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    buy_size = 0.0
+    sell_size = 0.0
+    buy_notional = 0.0
+    sell_notional = 0.0
+    buy_count = 0
+    sell_count = 0
+    largest_size = 0.0
+    latest_ts = None
+    for row in rows:
+        price = numeric(row.get("price"))
+        size = numeric(row.get("size"))
+        if price is None or size is None:
+            continue
+        side = str(row.get("side") or "").lower()
+        notional = price * size
+        largest_size = max(largest_size, size)
+        latest_ts = max(latest_ts or 0, numeric(row.get("timestamp_ms")) or 0)
+        if side == "buy":
+            buy_size += size
+            buy_notional += notional
+            buy_count += 1
+        elif side == "sell":
+            sell_size += size
+            sell_notional += notional
+            sell_count += 1
+    total_size = buy_size + sell_size
+    total_notional = buy_notional + sell_notional
+    total_count = buy_count + sell_count
+    return {
+        "trades": total_count,
+        "buy_trades": buy_count,
+        "sell_trades": sell_count,
+        "buy_volume_kas": buy_size,
+        "sell_volume_kas": sell_size,
+        "buy_notional_usdt": buy_notional,
+        "sell_notional_usdt": sell_notional,
+        "total_volume_kas": total_size,
+        "total_notional_usdt": total_notional,
+        "cvd_kas": buy_size - sell_size,
+        "cvd_usdt": buy_notional - sell_notional,
+        "buy_ratio": None if total_size == 0 else buy_size / total_size,
+        "avg_trade_size_kas": None if total_count == 0 else total_size / total_count,
+        "largest_trade_size_kas": largest_size,
+        "latest_trade_timestamp_seconds": None if latest_ts is None else latest_ts / 1000,
+    }
+
+
+def market_spot_trade_rows(source: str, payload: Any) -> list[dict[str, Any]]:
+    if source == "Gate":
+        rows = payload if isinstance(payload, list) else []
+        return [
+            {
+                "price": row.get("price"),
+                "size": row.get("amount"),
+                "side": row.get("side"),
+                "timestamp_ms": numeric(row.get("create_time_ms")) or ((numeric(row.get("create_time")) or 0) * 1000),
+            }
+            for row in rows
+            if isinstance(row, dict)
+        ]
+    if source == "MEXC":
+        rows = payload if isinstance(payload, list) else []
+        return [
+            {
+                "price": row.get("price"),
+                "size": row.get("qty"),
+                "side": "sell" if row.get("isBuyerMaker") else "buy",
+                "timestamp_ms": row.get("time"),
+            }
+            for row in rows
+            if isinstance(row, dict)
+        ]
+    if source == "KuCoin":
+        rows = (payload.get("data") or []) if isinstance(payload, dict) else []
+        return [
+            {
+                "price": row.get("price"),
+                "size": row.get("size"),
+                "side": row.get("side"),
+                "timestamp_ms": (numeric(row.get("time")) or 0) / 1_000_000,
+            }
+            for row in rows
+            if isinstance(row, dict)
+        ]
+    if source == "Bitget":
+        rows = (payload.get("data") or []) if isinstance(payload, dict) else []
+        return [
+            {
+                "price": row.get("price"),
+                "size": row.get("size"),
+                "side": row.get("side"),
+                "timestamp_ms": row.get("ts"),
+            }
+            for row in rows
+            if isinstance(row, dict)
+        ]
+    return []
+
+
+def fetch_market_spot_trade_flows(timeout: float = 6.0) -> dict[str, Any]:
+    flows: dict[str, Any] = {}
+    errors = 0
+    for source in MARKET_SPOT_TRADE_SOURCES:
+        venue = str(source["source"])
+        try:
+            rows = market_spot_trade_rows(venue, fetch_json_url(str(source["url"]), timeout=timeout))
+            flows[venue] = market_trade_flow_from_rows(rows)
+        except (OSError, urllib.error.URLError, ValueError, json.JSONDecodeError, KeyError, StopIteration):
+            errors += 1
+            flows[venue] = {}
+    return {"flows": flows, "errors": errors}
+
+
+def bybit_kline_rows(payload: Any) -> list[dict[str, Any]]:
+    rows = ((payload.get("result") or {}).get("list") or []) if isinstance(payload, dict) else []
+    candles = []
+    for row in rows:
+        if not isinstance(row, list) or len(row) < 7:
+            continue
+        candles.append(
+            {
+                "timestamp_ms": numeric(row[0]),
+                "open": numeric(row[1]),
+                "high": numeric(row[2]),
+                "low": numeric(row[3]),
+                "close": numeric(row[4]),
+                "volume": numeric(row[5]),
+                "turnover": numeric(row[6]),
+            }
+        )
+    return sorted(
+        [item for item in candles if item.get("timestamp_ms") is not None],
+        key=lambda item: item["timestamp_ms"],
+    )
+
+
+def series_return_percent(values: list[float]) -> float | None:
+    if len(values) < 2 or values[0] == 0:
+        return None
+    return ((values[-1] - values[0]) / values[0]) * 100
+
+
+def series_realized_volatility_percent(values: list[float]) -> float | None:
+    values = [value for value in values if value > 0]
+    if len(values) < 3:
+        return None
+    returns = [math.log(values[index] / values[index - 1]) for index in range(1, len(values))]
+    if len(returns) < 2:
+        return None
+    mean = sum(returns) / len(returns)
+    variance = sum((item - mean) ** 2 for item in returns) / len(returns)
+    return math.sqrt(variance) * 100
+
+
+def series_rsi(values: list[float], period: int = 14) -> float | None:
+    if len(values) <= period:
+        return None
+    deltas = [values[index] - values[index - 1] for index in range(1, len(values))]
+    recent = deltas[-period:]
+    gains = [max(delta, 0) for delta in recent]
+    losses = [abs(min(delta, 0)) for delta in recent]
+    avg_gain = sum(gains) / period
+    avg_loss = sum(losses) / period
+    if avg_loss == 0:
+        return 100.0
+    rs = avg_gain / avg_loss
+    return 100 - (100 / (1 + rs))
+
+
+def series_sma(values: list[float], period: int) -> float | None:
+    if len(values) < period:
+        return None
+    return sum(values[-period:]) / period
+
+
+def series_ema(values: list[float], period: int) -> float | None:
+    if len(values) < period:
+        return None
+    multiplier = 2 / (period + 1)
+    ema = sum(values[:period]) / period
+    for value in values[period:]:
+        ema = (value - ema) * multiplier + ema
+    return ema
+
+
+def series_macd(values: list[float]) -> dict[str, Any]:
+    if len(values) < 35:
+        return {"macd": None, "signal": None, "histogram": None}
+    macd_values = []
+    for index in range(26, len(values) + 1):
+        window = values[:index]
+        ema_12 = series_ema(window, 12)
+        ema_26 = series_ema(window, 26)
+        if ema_12 is not None and ema_26 is not None:
+            macd_values.append(ema_12 - ema_26)
+    signal = series_ema(macd_values, 9)
+    macd = macd_values[-1] if macd_values else None
+    return {
+        "macd": macd,
+        "signal": signal,
+        "histogram": None if macd is None or signal is None else macd - signal,
+    }
+
+
+def series_bollinger(values: list[float], period: int = 20) -> dict[str, Any]:
+    if len(values) < period:
+        return {"mid": None, "upper": None, "lower": None, "width_percent": None, "position": None}
+    window = values[-period:]
+    mid = sum(window) / period
+    variance = sum((value - mid) ** 2 for value in window) / period
+    deviation = math.sqrt(variance)
+    upper = mid + 2 * deviation
+    lower = mid - 2 * deviation
+    latest = values[-1]
+    return {
+        "mid": mid,
+        "upper": upper,
+        "lower": lower,
+        "width_percent": None if mid == 0 else ((upper - lower) / mid) * 100,
+        "position": None if upper == lower else (latest - lower) / (upper - lower),
+    }
+
+
+def series_atr(candles: list[dict[str, Any]], period: int = 14) -> float | None:
+    if len(candles) <= period:
+        return None
+    true_ranges = []
+    previous_close = numeric(candles[0].get("close"))
+    for candle in candles[1:]:
+        high = numeric(candle.get("high"))
+        low = numeric(candle.get("low"))
+        close = numeric(candle.get("close"))
+        if high is None or low is None or previous_close is None:
+            previous_close = close
+            continue
+        true_ranges.append(max(high - low, abs(high - previous_close), abs(low - previous_close)))
+        previous_close = close
+    if len(true_ranges) < period:
+        return None
+    return sum(true_ranges[-period:]) / period
+
+
+def series_vwap(candles: list[dict[str, Any]]) -> float | None:
+    notional = 0.0
+    volume = 0.0
+    for candle in candles:
+        high = numeric(candle.get("high"))
+        low = numeric(candle.get("low"))
+        close = numeric(candle.get("close"))
+        candle_volume = numeric(candle.get("volume"))
+        if high is None or low is None or close is None or candle_volume is None:
+            continue
+        typical = (high + low + close) / 3
+        notional += typical * candle_volume
+        volume += candle_volume
+    return None if volume == 0 else notional / volume
+
+
+def series_obv(candles: list[dict[str, Any]]) -> float | None:
+    if len(candles) < 2:
+        return None
+    obv = 0.0
+    previous_close = numeric(candles[0].get("close"))
+    for candle in candles[1:]:
+        close = numeric(candle.get("close"))
+        volume = numeric(candle.get("volume"))
+        if close is None or volume is None or previous_close is None:
+            previous_close = close
+            continue
+        if close > previous_close:
+            obv += volume
+        elif close < previous_close:
+            obv -= volume
+        previous_close = close
+    return obv
+
+
+def series_mfi(candles: list[dict[str, Any]], period: int = 14) -> float | None:
+    if len(candles) <= period:
+        return None
+    flows = []
+    previous_typical = None
+    for candle in candles:
+        high = numeric(candle.get("high"))
+        low = numeric(candle.get("low"))
+        close = numeric(candle.get("close"))
+        volume = numeric(candle.get("volume"))
+        if high is None or low is None or close is None or volume is None:
+            continue
+        typical = (high + low + close) / 3
+        flow = typical * volume
+        if previous_typical is not None:
+            flows.append((flow, typical >= previous_typical))
+        previous_typical = typical
+    if len(flows) < period:
+        return None
+    recent = flows[-period:]
+    positive = sum(flow for flow, is_positive in recent if is_positive)
+    negative = sum(flow for flow, is_positive in recent if not is_positive)
+    if negative == 0:
+        return 100.0
+    ratio = positive / negative
+    return 100 - (100 / (1 + ratio))
+
+
+def series_correlation(values_a: list[float], values_b: list[float]) -> float | None:
+    count = min(len(values_a), len(values_b))
+    if count < 3:
+        return None
+    a = values_a[-count:]
+    b = values_b[-count:]
+    mean_a = sum(a) / count
+    mean_b = sum(b) / count
+    covariance = sum((a[index] - mean_a) * (b[index] - mean_b) for index in range(count))
+    variance_a = sum((value - mean_a) ** 2 for value in a)
+    variance_b = sum((value - mean_b) ** 2 for value in b)
+    if variance_a == 0 or variance_b == 0:
+        return None
+    return covariance / math.sqrt(variance_a * variance_b)
+
+
+def series_beta(values_a: list[float], values_b: list[float]) -> float | None:
+    count = min(len(values_a), len(values_b))
+    if count < 3:
+        return None
+    a = values_a[-count:]
+    b = values_b[-count:]
+    mean_a = sum(a) / count
+    mean_b = sum(b) / count
+    covariance = sum((a[index] - mean_a) * (b[index] - mean_b) for index in range(count))
+    variance_b = sum((value - mean_b) ** 2 for value in b)
+    return None if variance_b == 0 else covariance / variance_b
+
+
+def close_returns(candles: list[dict[str, Any]]) -> list[float]:
+    closes = [float(value) for candle in candles if (value := numeric(candle.get("close"))) is not None and value > 0]
+    return [math.log(closes[index] / closes[index - 1]) for index in range(1, len(closes)) if closes[index - 1] > 0]
+
+
+def bybit_kline_metrics(candles: list[dict[str, Any]]) -> dict[str, Any]:
+    closes = [float(item["close"]) for item in candles if numeric(item.get("close")) is not None]
+    highs = [float(item["high"]) for item in candles if numeric(item.get("high")) is not None]
+    lows = [float(item["low"]) for item in candles if numeric(item.get("low")) is not None]
+    volumes = [float(item["volume"]) for item in candles if numeric(item.get("volume")) is not None]
+    turnovers = [float(item["turnover"]) for item in candles if numeric(item.get("turnover")) is not None]
+    metrics: dict[str, Any] = {
+        "candles": len(candles),
+        "latest_close": closes[-1] if closes else None,
+        "high": max(highs) if highs else None,
+        "low": min(lows) if lows else None,
+        "volume": sum(volumes),
+        "turnover": sum(turnovers),
+        "return_percent": series_return_percent(closes),
+        "realized_volatility_percent": series_realized_volatility_percent(closes),
+        "rsi_14": series_rsi(closes, 14),
+        "sma_9": series_sma(closes, 9),
+        "sma_20": series_sma(closes, 20),
+        "ema_9": series_ema(closes, 9),
+        "ema_20": series_ema(closes, 20),
+        "atr_14": series_atr(candles, 14),
+        "vwap": series_vwap(candles),
+        "obv": series_obv(candles),
+        "mfi_14": series_mfi(candles, 14),
+    }
+    macd = series_macd(closes)
+    metrics["macd"] = macd.get("macd")
+    metrics["macd_signal"] = macd.get("signal")
+    metrics["macd_histogram"] = macd.get("histogram")
+    bollinger = series_bollinger(closes, 20)
+    metrics["bollinger_mid"] = bollinger.get("mid")
+    metrics["bollinger_upper"] = bollinger.get("upper")
+    metrics["bollinger_lower"] = bollinger.get("lower")
+    metrics["bollinger_width_percent"] = bollinger.get("width_percent")
+    metrics["bollinger_position"] = bollinger.get("position")
+    if highs and lows and closes:
+        metrics["range_percent"] = market_range_percent(max(highs), min(lows))
+        metrics["position_in_range"] = market_position_in_range(closes[-1], max(highs), min(lows))
+    return metrics
+
+
+def market_kline_windows(candles: list[dict[str, Any]]) -> dict[str, Any]:
+    return {
+        "15m": bybit_kline_metrics(candles[-1:]),
+        "1h": bybit_kline_metrics(candles[-4:]),
+        "4h": bybit_kline_metrics(candles[-16:]),
+        "24h": bybit_kline_metrics(candles[-96:]),
+    }
+
+
+def market_cross_asset_metrics(
+    kas_candles: list[dict[str, Any]],
+    reference_candles: list[dict[str, Any]],
+) -> dict[str, Any]:
+    kas_returns = close_returns(kas_candles)
+    reference_returns = close_returns(reference_candles)
+    metrics: dict[str, Any] = {}
+    windows = {"1h": 4, "4h": 16, "24h": 96}
+    for window, candles in windows.items():
+        count = max(1, candles - 1)
+        kas_window = kas_returns[-count:]
+        ref_window = reference_returns[-count:]
+        metrics[f"correlation_{window}"] = series_correlation(kas_window, ref_window)
+        metrics[f"beta_{window}"] = series_beta(kas_window, ref_window)
+        metrics[f"relative_return_{window}_percent_points"] = None
+        kas_close = [numeric(item.get("close")) for item in kas_candles[-candles:]]
+        ref_close = [numeric(item.get("close")) for item in reference_candles[-candles:]]
+        kas_close_values = [float(value) for value in kas_close if value is not None]
+        ref_close_values = [float(value) for value in ref_close if value is not None]
+        kas_return = series_return_percent(kas_close_values)
+        ref_return = series_return_percent(ref_close_values)
+        if kas_return is not None and ref_return is not None:
+            metrics[f"relative_return_{window}_percent_points"] = kas_return - ref_return
+    return metrics
+
+
+def market_venue_arbitrage(
+    spot_orderbook: dict[str, Any],
+    venue_orderbooks: dict[str, Any],
+    *,
+    assumed_fee_percent: float = 0.2,
+) -> dict[str, Any]:
+    quotes = []
+    if spot_orderbook:
+        quotes.append(("Bybit", spot_orderbook))
+    for venue, orderbook in venue_orderbooks.items():
+        if isinstance(orderbook, dict):
+            quotes.append((str(venue), orderbook))
+    bids = [
+        (venue, numeric(orderbook.get("best_bid")))
+        for venue, orderbook in quotes
+        if numeric(orderbook.get("best_bid")) is not None
+    ]
+    asks = [
+        (venue, numeric(orderbook.get("best_ask")))
+        for venue, orderbook in quotes
+        if numeric(orderbook.get("best_ask")) is not None
+    ]
+    if not bids or not asks:
+        return {"venues": len(quotes), "assumed_fee_percent": assumed_fee_percent}
+    best_bid_venue, best_bid = max(bids, key=lambda item: item[1])
+    best_ask_venue, best_ask = min(asks, key=lambda item: item[1])
+    spread = None if best_ask in (None, 0) else ((best_bid - best_ask) / best_ask) * 100
+    return {
+        "venues": len(quotes),
+        "best_bid": best_bid,
+        "best_ask": best_ask,
+        "best_bid_venue": best_bid_venue,
+        "best_ask_venue": best_ask_venue,
+        "spread_percent": spread,
+        "net_spread_percent": None if spread is None else spread - assumed_fee_percent,
+        "assumed_fee_percent": assumed_fee_percent,
+    }
+
+
+def bybit_account_ratio_metrics(payload: Any) -> dict[str, Any]:
+    rows = ((payload.get("result") or {}).get("list") or []) if isinstance(payload, dict) else []
+    latest = rows[0] if rows else {}
+    buy_ratio = numeric(latest.get("buyRatio"))
+    sell_ratio = numeric(latest.get("sellRatio"))
+    return {
+        "buy_ratio": buy_ratio,
+        "sell_ratio": sell_ratio,
+        "long_short_ratio": None if sell_ratio in (None, 0) or buy_ratio is None else buy_ratio / sell_ratio,
+        "net_long_ratio": None if buy_ratio is None or sell_ratio is None else buy_ratio - sell_ratio,
+        "timestamp_seconds": None if numeric(latest.get("timestamp")) is None else numeric(latest.get("timestamp")) / 1000,
+    }
+
+
+def bybit_open_interest_series_metrics(payload: Any) -> dict[str, Any]:
+    rows = ((payload.get("result") or {}).get("list") or []) if isinstance(payload, dict) else []
+    values = [
+        numeric(row.get("openInterest"))
+        for row in reversed(rows)
+        if isinstance(row, dict) and numeric(row.get("openInterest")) is not None
+    ]
+    if not values:
+        return {}
+    latest = values[-1]
+    first = values[0]
+    return {
+        "samples": len(values),
+        "latest": latest,
+        "min": min(values),
+        "max": max(values),
+        "delta": latest - first,
+        "change_percent": None if first == 0 else ((latest - first) / first) * 100,
+    }
+
+
+def bybit_funding_history_metrics(payload: Any) -> dict[str, Any]:
+    rows = ((payload.get("result") or {}).get("list") or []) if isinstance(payload, dict) else []
+    values = [
+        numeric(row.get("fundingRate"))
+        for row in reversed(rows)
+        if isinstance(row, dict) and numeric(row.get("fundingRate")) is not None
+    ]
+    if not values:
+        return {}
+    positive = sum(1 for item in values if item > 0)
+    negative = sum(1 for item in values if item < 0)
+    return {
+        "samples": len(values),
+        "latest": values[-1],
+        "min": min(values),
+        "max": max(values),
+        "avg": sum(values) / len(values),
+        "positive_count": positive,
+        "negative_count": negative,
+        "positive_ratio": positive / len(values),
+    }
+
+
+def gate_futures_metrics(ticker_payload: Any, contract_payload: Any) -> dict[str, Any]:
+    ticker_rows = ticker_payload if isinstance(ticker_payload, list) else []
+    ticker = ticker_rows[0] if ticker_rows and isinstance(ticker_rows[0], dict) else {}
+    contract = contract_payload if isinstance(contract_payload, dict) else {}
+    long_users = numeric(contract.get("long_users"))
+    short_users = numeric(contract.get("short_users"))
+    last_price = numeric(ticker.get("last") or contract.get("last_price"))
+    index_price = numeric(ticker.get("index_price") or contract.get("index_price"))
+    mark_price = numeric(ticker.get("mark_price") or contract.get("mark_price"))
+    volume_24h = numeric(ticker.get("volume_24h_base"))
+    open_interest = numeric(ticker.get("total_size") or contract.get("position_size"))
+    return {
+        "last_price": last_price,
+        "mark_price": mark_price,
+        "index_price": index_price,
+        "basis_percent": None if mark_price is None or index_price in (None, 0) else ((mark_price - index_price) / index_price) * 100,
+        "funding_rate": numeric(ticker.get("funding_rate") or contract.get("funding_rate")),
+        "funding_indicative_rate": numeric(ticker.get("funding_rate_indicative") or contract.get("funding_rate_indicative")),
+        "next_funding_timestamp_seconds": numeric(contract.get("funding_next_apply")),
+        "high_24h": numeric(ticker.get("high_24h")),
+        "low_24h": numeric(ticker.get("low_24h")),
+        "change_24h_percent": numeric(ticker.get("change_percentage")),
+        "volume_24h_kas": volume_24h,
+        "turnover_24h_usdt": numeric(ticker.get("volume_24h_quote") or ticker.get("volume_24h_settle")),
+        "open_interest_contracts": open_interest,
+        "oi_volume_ratio": market_oi_volume_ratio(open_interest, volume_24h),
+        "highest_bid": numeric(ticker.get("highest_bid")),
+        "lowest_ask": numeric(ticker.get("lowest_ask")),
+        "long_users": long_users,
+        "short_users": short_users,
+        "long_short_user_ratio": None if short_users in (None, 0) or long_users is None else long_users / short_users,
+        "net_long_user_ratio": None if long_users is None or short_users is None else (long_users - short_users) / max(long_users + short_users, 1),
+        "max_leverage": numeric(contract.get("leverage_max")),
+        "min_leverage": numeric(contract.get("leverage_min")),
+        "maintenance_margin_rate": numeric(contract.get("maintenance_rate")),
+        "risk_limit_base": numeric(contract.get("risk_limit_base")),
+        "risk_limit_step": numeric(contract.get("risk_limit_step")),
+        "order_size_min": numeric(contract.get("order_size_min")),
+        "order_size_max": numeric(contract.get("order_size_max")),
+    }
+
+
+def mexc_futures_metrics(ticker_payload: Any) -> dict[str, Any]:
+    data = ticker_payload.get("data") if isinstance(ticker_payload, dict) else {}
+    data = data if isinstance(data, dict) else {}
+    last_price = numeric(data.get("lastPrice"))
+    index_price = numeric(data.get("indexPrice"))
+    mark_price = numeric(data.get("fairPrice"))
+    return {
+        "last_price": last_price,
+        "mark_price": mark_price,
+        "index_price": index_price,
+        "basis_percent": None if mark_price is None or index_price in (None, 0) else ((mark_price - index_price) / index_price) * 100,
+        "funding_rate": numeric(data.get("fundingRate")),
+        "high_24h": numeric(data.get("high24Price")),
+        "low_24h": numeric(data.get("lower24Price")),
+        "change_24h_ratio": numeric(data.get("riseFallRate")),
+        "change_24h_percent": None if numeric(data.get("riseFallRate")) is None else numeric(data.get("riseFallRate")) * 100,
+        "change_7d_ratio": numeric((data.get("riseFallRates") or {}).get("r7")),
+        "change_30d_ratio": numeric((data.get("riseFallRates") or {}).get("r30")),
+        "change_90d_ratio": numeric((data.get("riseFallRates") or {}).get("r90")),
+        "change_180d_ratio": numeric((data.get("riseFallRates") or {}).get("r180")),
+        "change_365d_ratio": numeric((data.get("riseFallRates") or {}).get("r365")),
+        "volume_24h_contracts": numeric(data.get("volume24")),
+        "turnover_24h_usdt": numeric(data.get("amount24")),
+        "open_interest_contracts": numeric(data.get("holdVol")),
+        "highest_bid": numeric(data.get("bid1")),
+        "lowest_ask": numeric(data.get("ask1")),
+        "max_bid_price": numeric(data.get("maxBidPrice")),
+        "min_ask_price": numeric(data.get("minAskPrice")),
+        "timestamp_seconds": None if numeric(data.get("timestamp")) is None else numeric(data.get("timestamp")) / 1000,
+    }
+
+
+def fetch_market_futures_venues(timeout: float = 6.0) -> dict[str, Any]:
+    venues: dict[str, Any] = {}
+    errors = 0
+    for source in MARKET_FUTURES_VENUE_SOURCES:
+        venue = str(source["source"])
+        try:
+            if venue == "Gate":
+                ticker = fetch_json_url(str(source["ticker_url"]), timeout=timeout)
+                contract = fetch_json_url(str(source["contract_url"]), timeout=timeout)
+                venues[venue] = gate_futures_metrics(ticker, contract)
+            elif venue == "MEXC":
+                venues[venue] = mexc_futures_metrics(fetch_json_url(str(source["ticker_url"]), timeout=timeout))
+        except (OSError, urllib.error.URLError, ValueError, json.JSONDecodeError, KeyError, StopIteration):
+            errors += 1
+            venues[venue] = {}
+    return {"venues": venues, "errors": errors}
+
+
+def coingecko_currency_value(mapping: Any, currency: str = "usd") -> float | None:
+    return numeric(mapping.get(currency)) if isinstance(mapping, dict) else numeric(mapping)
+
+
+def coingecko_market_metrics(payload: Any) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        return {}
+    market_data = payload.get("market_data") or {}
+    metrics = {
+        "market_cap_rank": numeric(payload.get("market_cap_rank")),
+        "watchlist_portfolio_users": numeric(payload.get("watchlist_portfolio_users")),
+        "sentiment_votes_up_percent": numeric(payload.get("sentiment_votes_up_percentage")),
+        "sentiment_votes_down_percent": numeric(payload.get("sentiment_votes_down_percentage")),
+        "market_cap_usd": coingecko_currency_value(market_data.get("market_cap"), "usd"),
+        "market_cap_btc": coingecko_currency_value(market_data.get("market_cap"), "btc"),
+        "market_cap_eth": coingecko_currency_value(market_data.get("market_cap"), "eth"),
+        "market_cap_krw": coingecko_currency_value(market_data.get("market_cap"), "krw"),
+        "fdv_usd": coingecko_currency_value(market_data.get("fully_diluted_valuation"), "usd"),
+        "total_volume_usd": coingecko_currency_value(market_data.get("total_volume"), "usd"),
+        "total_volume_btc": coingecko_currency_value(market_data.get("total_volume"), "btc"),
+        "high_24h_usd": coingecko_currency_value(market_data.get("high_24h"), "usd"),
+        "low_24h_usd": coingecko_currency_value(market_data.get("low_24h"), "usd"),
+        "ath_usd": coingecko_currency_value(market_data.get("ath"), "usd"),
+        "ath_change_percent": coingecko_currency_value(market_data.get("ath_change_percentage"), "usd"),
+        "atl_usd": coingecko_currency_value(market_data.get("atl"), "usd"),
+        "atl_change_percent": coingecko_currency_value(market_data.get("atl_change_percentage"), "usd"),
+        "total_supply": numeric(market_data.get("total_supply")),
+        "max_supply": numeric(market_data.get("max_supply")),
+        "circulating_supply": numeric(market_data.get("circulating_supply")),
+    }
+    for window in ("1h", "24h", "7d", "14d", "30d", "60d", "200d", "1y"):
+        key = f"price_change_percentage_{window}_in_currency"
+        metrics[f"price_change_{window}_usd_percent"] = coingecko_currency_value(market_data.get(key), "usd")
+        metrics[f"price_change_{window}_btc_percent"] = coingecko_currency_value(market_data.get(key), "btc")
+        metrics[f"price_change_{window}_eth_percent"] = coingecko_currency_value(market_data.get(key), "eth")
+        metrics[f"price_change_{window}_krw_percent"] = coingecko_currency_value(market_data.get(key), "krw")
+    market_cap = numeric(metrics.get("market_cap_usd"))
+    fdv = numeric(metrics.get("fdv_usd"))
+    circulating = numeric(metrics.get("circulating_supply"))
+    max_supply = numeric(metrics.get("max_supply"))
+    metrics["fdv_market_cap_ratio"] = None if market_cap in (None, 0) or fdv is None else fdv / market_cap
+    metrics["circulating_supply_ratio"] = None if max_supply in (None, 0) or circulating is None else circulating / max_supply
+    return metrics
+
+
+def coingecko_market_chart_prices(payload: Any) -> list[dict[str, Any]]:
+    rows = payload.get("prices") if isinstance(payload, dict) else []
+    prices = []
+    for row in rows or []:
+        if not isinstance(row, list) or len(row) < 2:
+            continue
+        timestamp_ms = numeric(row[0])
+        price = numeric(row[1])
+        if timestamp_ms is None or price is None:
+            continue
+        prices.append({"timestamp_ms": timestamp_ms, "price": price})
+    return sorted(prices, key=lambda item: item["timestamp_ms"])
+
+
+def simple_average(values: list[float]) -> float | None:
+    if not values:
+        return None
+    return sum(values) / len(values)
+
+
+def daily_price_ma(prices: list[dict[str, Any]], days: int) -> float | None:
+    values = [float(item["price"]) for item in prices[-days:] if numeric(item.get("price")) is not None]
+    if len(values) < days:
+        return None
+    return simple_average(values)
+
+
+def weekly_price_ma(prices: list[dict[str, Any]], weeks: int) -> float | None:
+    if not prices:
+        return None
+    weekly: dict[tuple[int, int], list[float]] = {}
+    for item in prices:
+        timestamp_ms = numeric(item.get("timestamp_ms"))
+        price = numeric(item.get("price"))
+        if timestamp_ms is None or price is None:
+            continue
+        day = dt.datetime.fromtimestamp(timestamp_ms / 1000, tz=dt.timezone.utc).date()
+        iso_year, iso_week, _weekday = day.isocalendar()
+        weekly.setdefault((iso_year, iso_week), []).append(price)
+    closes = [values[-1] for _key, values in sorted(weekly.items()) if values]
+    if len(closes) < weeks:
+        return None
+    return simple_average(closes[-weeks:])
+
+
+def fetch_coingecko_market_chart_metrics(timeout: float = 6.0) -> dict[str, Any]:
+    prices = coingecko_market_chart_prices(fetch_json_url(COINGECKO_KAS_MARKET_CHART_URL, timeout=timeout))
+    metrics = price_chart_metrics_from_prices(prices)
+    metrics["source"] = "coingecko_market_chart"
+    return metrics
+
+
+def price_chart_metrics_from_prices(prices: list[dict[str, Any]]) -> dict[str, Any]:
+    latest_price = prices[-1]["price"] if prices else None
+    dma_50 = daily_price_ma(prices, 50)
+    dma_100 = daily_price_ma(prices, 100)
+    dma_200 = daily_price_ma(prices, 200)
+    wma_100 = weekly_price_ma(prices, 100)
+    return {
+        "samples": len(prices),
+        "latest_price": latest_price,
+        "dma_50": dma_50,
+        "dma_100": dma_100,
+        "dma_200": dma_200,
+        "wma_100": wma_100,
+        "mayer_multiple": None if latest_price is None or dma_200 in (None, 0) else latest_price / dma_200,
+    }
+
+
+def fetch_bybit_daily_price_chart_metrics(timeout: float = 6.0) -> dict[str, Any]:
+    url = "https://api.bybit.com/v5/market/kline?category=spot&symbol=KASUSDT&interval=D&limit=1000"
+    candles = bybit_kline_rows(fetch_json_url(url, timeout=timeout))
+    prices = [
+        {"timestamp_ms": item.get("timestamp_ms"), "price": item.get("close")}
+        for item in candles
+        if numeric(item.get("timestamp_ms")) is not None and numeric(item.get("close")) is not None
+    ]
+    metrics = price_chart_metrics_from_prices(prices)
+    metrics["source"] = "bybit_daily_kline"
+    return metrics
+
+
+def market_dashboard_metric(
+    section: str,
+    key: str,
+    label: str,
+    value: Any,
+    *,
+    value_7d_prior: Any = None,
+    value_30d_prior: Any = None,
+    change_30d_percent: Any = None,
+    percentile: Any = None,
+    status: str = "unknown",
+    source: str = "computed",
+) -> dict[str, Any]:
+    current = numeric(value)
+    prior_30d = numeric(value_30d_prior)
+    if change_30d_percent is None and current is not None and prior_30d not in (None, 0):
+        change_30d_percent = ((current - prior_30d) / prior_30d) * 100
+    normalized_status = str(status or "unknown").strip().lower().replace(" ", "_").replace("-", "_")
+    if normalized_status not in MARKET_DASHBOARD_STATUS_VALUES:
+        normalized_status = "unknown"
+    return {
+        "section": section,
+        "metric": key,
+        "label": label,
+        "value": current,
+        "value_7d_prior": numeric(value_7d_prior),
+        "value_30d_prior": prior_30d,
+        "change_30d_percent": numeric(change_30d_percent),
+        "percentile": numeric(percentile),
+        "status": normalized_status,
+        "status_value": MARKET_DASHBOARD_STATUS_VALUES[normalized_status],
+        "available": current is not None,
+        "source": source,
+    }
+
+
+def market_dashboard_price_status(key: str, value: Any, spot_price: Any) -> str:
+    parsed = numeric(value)
+    price = numeric(spot_price)
+    if parsed is None or price is None:
+        return "unknown"
+    if key == "mayer_multiple":
+        if parsed < 0.85:
+            return "bull"
+        if parsed < 1.36:
+            return "bull_neutral"
+        if parsed < 2.04:
+            return "bear_neutral"
+        return "bear"
+    if key in {"dma_50", "dma_100", "dma_200", "wma_100", "realized_price", "sth_realized_price", "lth_realized_price"}:
+        return "bull" if price >= parsed else "bear"
+    return "unknown"
+
+
+def prior_market_value(records: list[dict[str, Any]], field: str, *, days: int) -> float | None:
+    successful = [item for item in records if item.get("ok") and numeric(item.get(field)) is not None]
+    latest = successful[-1] if successful else {}
+    latest_at = parse_iso_datetime(latest.get("checked_at")) if latest else None
+    if latest_at is None:
+        return None
+    cutoff = latest_at - dt.timedelta(days=days)
+    baseline = None
+    for item in reversed(successful):
+        parsed = parse_iso_datetime(item.get("checked_at"))
+        if parsed is not None and parsed <= cutoff:
+            baseline = item
+            break
+    if baseline is None:
+        baseline = successful[0] if successful else None
+    return numeric((baseline or {}).get(field))
+
+
+def market_dashboard_metrics(
+    item: dict[str, Any],
+    records: list[dict[str, Any]] | None = None,
+    *,
+    grpc_metrics: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    records = records or []
+    grpc_metrics = grpc_metrics or {}
+    spot_price = numeric(item.get("spot_last_price"))
+    price_chart = item.get("coingecko_price_chart") or {}
+    metrics: list[dict[str, Any]] = []
+
+    hash_rate_phs = None
+    hashes_per_second = numeric(grpc_metrics.get("network_hashes_per_second"))
+    if hashes_per_second is not None:
+        hash_rate_phs = hashes_per_second / 1_000_000_000_000_000
+    difficulty = numeric(grpc_metrics.get("difficulty"))
+    mining_values = {
+        "hash_rate_7dma_phs": hash_rate_phs,
+        "hash_price_7dma_usd_per_ph_day": None,
+        "difficulty": difficulty,
+        "revenue_kas_30d": None,
+        "revenue_usd_30d": None,
+        "revenue_fees_usd_30d": None,
+    }
+    for key, label in MARKET_DASHBOARD_METRICS["mining"]:
+        metrics.append(
+            market_dashboard_metric(
+                "mining",
+                key,
+                label,
+                mining_values.get(key),
+                status="unknown",
+                source="node" if mining_values.get(key) is not None else "unavailable",
+            )
+        )
+
+    on_chain_values = {
+        "realized_hodl_ratio": None,
+        "mvrv_z_score": None,
+        "reserve_risk": None,
+        "coin_days_destroyed_90d": None,
+        "lth_sth_cost_basis_ratio": None,
+        "nupl_ratio": None,
+        "percent_supply_in_profit_30d_ma": None,
+        "realized_price_30d_change": None,
+    }
+    for key, label in MARKET_DASHBOARD_METRICS["on_chain"]:
+        metrics.append(market_dashboard_metric("on_chain", key, label, on_chain_values.get(key), source="unavailable"))
+
+    price_values = {
+        "mayer_multiple": price_chart.get("mayer_multiple"),
+        "dma_50": price_chart.get("dma_50"),
+        "dma_100": price_chart.get("dma_100"),
+        "dma_200": price_chart.get("dma_200"),
+        "wma_100": price_chart.get("wma_100"),
+        "realized_price": None,
+        "sth_realized_price": None,
+        "lth_realized_price": None,
+    }
+    for key, label in MARKET_DASHBOARD_METRICS["price"]:
+        source = str(price_chart.get("source") or "price_chart") if price_values.get(key) is not None else "unavailable"
+        metrics.append(
+            market_dashboard_metric(
+                "price",
+                key,
+                label,
+                price_values.get(key),
+                value_7d_prior=prior_market_value(records, f"dashboard_price_{key}", days=7),
+                value_30d_prior=prior_market_value(records, f"dashboard_price_{key}", days=30),
+                status=market_dashboard_price_status(key, price_values.get(key), spot_price),
+                source=source,
+            )
+        )
+
+    counts = {signal: 0 for signal in MARKET_DASHBOARD_SIGNAL_ORDER}
+    for metric in metrics:
+        status = metric.get("status")
+        if status in counts:
+            counts[str(status)] += 1
+    return {
+        "metrics": metrics,
+        "signal_counts": counts,
+        "available_metrics": sum(1 for metric in metrics if metric.get("available")),
+        "total_metrics": len(metrics),
+    }
+
+
+def liquidation_proxy_metrics(candles: list[dict[str, Any]], oi_metrics: dict[str, Any]) -> dict[str, Any]:
+    oi_delta = numeric(oi_metrics.get("delta"))
+    closes = [numeric(item.get("close")) for item in candles if numeric(item.get("close")) is not None]
+    price_return = series_return_percent([float(item) for item in closes if item is not None])
+    long_flush = 0.0
+    short_squeeze = 0.0
+    if oi_delta is not None and oi_delta < 0 and price_return is not None:
+        if price_return < 0:
+            long_flush = abs(oi_delta)
+        elif price_return > 0:
+            short_squeeze = abs(oi_delta)
+    return {
+        "oi_delta": oi_delta,
+        "price_return_percent": price_return,
+        "long_flush_proxy_kas": long_flush,
+        "short_squeeze_proxy_kas": short_squeeze,
+    }
+
+
 def market_funding_z_score(records: list[dict[str, Any]], current_rate: Any, sample_limit: int = 21) -> float | None:
     current = numeric(current_rate)
     if current is None:
@@ -3548,6 +4993,86 @@ def market_risk_score_value(item: dict[str, Any]) -> float | None:
     if not item.get("ok"):
         return None
     return numeric(item.get("market_risk_score"))
+
+
+def market_window_records(records: list[dict[str, Any]], *, hours: float) -> list[dict[str, Any]]:
+    successful = [item for item in records if item.get("ok")]
+    latest = successful[-1] if successful else {}
+    latest_at = parse_iso_datetime(latest.get("checked_at")) if latest else None
+    if latest_at is None:
+        return []
+    cutoff = latest_at - dt.timedelta(hours=hours)
+    return [
+        item
+        for item in successful
+        if (parsed := parse_iso_datetime(item.get("checked_at"))) is not None and parsed >= cutoff
+    ]
+
+
+def market_field_delta(records: list[dict[str, Any]], field: str, *, hours: float) -> dict[str, Any]:
+    successful = [item for item in records if item.get("ok") and numeric(item.get(field)) is not None]
+    latest = successful[-1] if successful else {}
+    latest_at = parse_iso_datetime(latest.get("checked_at")) if latest else None
+    latest_value = numeric(latest.get(field)) if latest else None
+    if latest_at is None or latest_value is None:
+        return {"delta": None, "change_percent": None}
+    cutoff = latest_at - dt.timedelta(hours=hours)
+    baseline = None
+    for item in reversed(successful):
+        parsed = parse_iso_datetime(item.get("checked_at"))
+        if parsed is not None and parsed <= cutoff:
+            baseline = item
+            break
+    baseline = baseline or (successful[0] if successful else None)
+    baseline_value = numeric(baseline.get(field)) if baseline else None
+    if baseline_value is None:
+        return {"delta": None, "change_percent": None}
+    delta = latest_value - baseline_value
+    return {
+        "delta": delta,
+        "change_percent": None if baseline_value == 0 else (delta / baseline_value) * 100,
+        "baseline_age_hours": max(0.0, (latest_at - (parse_iso_datetime(baseline.get("checked_at")) or latest_at)).total_seconds() / 3600)
+        if baseline
+        else None,
+    }
+
+
+def market_realized_volatility(records: list[dict[str, Any]], field: str, *, hours: float) -> float | None:
+    window = market_window_records(records, hours=hours)
+    values = [numeric(item.get(field)) for item in window]
+    values = [value for value in values if value is not None and value > 0]
+    if len(values) < 3:
+        return None
+    returns = [math.log(values[index] / values[index - 1]) for index in range(1, len(values)) if values[index - 1] > 0]
+    if len(returns) < 2:
+        return None
+    mean = sum(returns) / len(returns)
+    variance = sum((item - mean) ** 2 for item in returns) / len(returns)
+    return math.sqrt(variance) * 100
+
+
+def market_history_metrics(records: list[dict[str, Any]]) -> dict[str, Any]:
+    metrics: dict[str, Any] = {}
+    for hours in (1, 4, 24):
+        suffix = f"{int(hours)}h"
+        for field, prefix in (
+            ("spot_last_price", "spot_price"),
+            ("spot_volume_24h", "spot_volume_24h"),
+            ("futures_open_interest", "futures_open_interest"),
+            ("futures_volume_24h", "futures_volume_24h"),
+            ("futures_funding_rate", "futures_funding_rate"),
+            ("futures_basis_pct", "futures_basis"),
+            ("futures_oi_volume_ratio", "futures_oi_volume_ratio"),
+        ):
+            delta = market_field_delta(records, field, hours=hours)
+            metrics[f"{prefix}_delta_{suffix}"] = delta.get("delta")
+            metrics[f"{prefix}_change_{suffix}_percent"] = delta.get("change_percent")
+        metrics[f"spot_realized_volatility_{suffix}_percent"] = market_realized_volatility(
+            records,
+            "spot_last_price",
+            hours=hours,
+        )
+    return metrics
 
 
 def market_risk_trend(records: list[dict[str, Any]], *, hours: float = 24.0) -> dict[str, Any]:
@@ -3652,6 +5177,21 @@ def market_risk_next_action(level: Any, score: Any, verdict: str = "unknown") ->
 def fetch_market_snapshot(timeout: float = 6.0) -> dict[str, Any]:
     spot_url = "https://api.bybit.com/v5/market/tickers?category=spot&symbol=KASUSDT"
     futures_url = "https://api.bybit.com/v5/market/tickers?category=linear&symbol=KASUSDT"
+    spot_orderbook_url = "https://api.bybit.com/v5/market/orderbook?category=spot&symbol=KASUSDT&limit=50"
+    futures_orderbook_url = "https://api.bybit.com/v5/market/orderbook?category=linear&symbol=KASUSDT&limit=50"
+    btc_spot_url = "https://api.bybit.com/v5/market/tickers?category=spot&symbol=BTCUSDT"
+    eth_spot_url = "https://api.bybit.com/v5/market/tickers?category=spot&symbol=ETHUSDT"
+    coinone_kas_url = "https://api.coinone.co.kr/public/v2/ticker_new/KRW/KAS"
+    coinone_usdt_url = "https://api.coinone.co.kr/public/v2/ticker_new/KRW/USDT"
+    spot_trades_url = "https://api.bybit.com/v5/market/recent-trade?category=spot&symbol=KASUSDT&limit=200"
+    futures_trades_url = "https://api.bybit.com/v5/market/recent-trade?category=linear&symbol=KASUSDT&limit=200"
+    spot_kline_url = "https://api.bybit.com/v5/market/kline?category=spot&symbol=KASUSDT&interval=15&limit=96"
+    futures_kline_url = "https://api.bybit.com/v5/market/kline?category=linear&symbol=KASUSDT&interval=15&limit=96"
+    btc_kline_url = "https://api.bybit.com/v5/market/kline?category=spot&symbol=BTCUSDT&interval=15&limit=96"
+    eth_kline_url = "https://api.bybit.com/v5/market/kline?category=spot&symbol=ETHUSDT&interval=15&limit=96"
+    account_ratio_url = "https://api.bybit.com/v5/market/account-ratio?category=linear&symbol=KASUSDT&period=1h&limit=24"
+    open_interest_url = "https://api.bybit.com/v5/market/open-interest?category=linear&symbol=KASUSDT&intervalTime=1h&limit=24"
+    funding_history_url = "https://api.bybit.com/v5/market/funding/history?category=linear&symbol=KASUSDT&limit=24"
     try:
         spot = market_api_list(fetch_json_url(spot_url, timeout=timeout), "Bybit spot")[0]
         futures = market_api_list(fetch_json_url(futures_url, timeout=timeout), "Bybit linear")[0]
@@ -3667,21 +5207,168 @@ def fetch_market_snapshot(timeout: float = 6.0) -> dict[str, Any]:
     funding_interval = numeric(futures.get("fundingIntervalHour")) or 8
     funding_apr = None if funding_rate is None else funding_rate * (24 / funding_interval) * 365 * 100
     spot_sources = fetch_market_spot_price_sources(spot, timeout=timeout)
+    orderbook_errors = 0
+    try:
+        spot_orderbook = market_orderbook_metrics(fetch_json_url(spot_orderbook_url, timeout=timeout))
+    except (OSError, urllib.error.URLError, ValueError, json.JSONDecodeError, StopIteration):
+        orderbook_errors += 1
+        spot_orderbook = {}
+    try:
+        futures_orderbook = market_orderbook_metrics(fetch_json_url(futures_orderbook_url, timeout=timeout))
+    except (OSError, urllib.error.URLError, ValueError, json.JSONDecodeError, StopIteration):
+        orderbook_errors += 1
+        futures_orderbook = {}
+    optional_errors = 0
+    try:
+        btc_spot = bybit_first_row(fetch_json_url(btc_spot_url, timeout=timeout), "Bybit BTC spot")
+    except (OSError, urllib.error.URLError, ValueError, json.JSONDecodeError, StopIteration):
+        optional_errors += 1
+        btc_spot = {}
+    try:
+        eth_spot = bybit_first_row(fetch_json_url(eth_spot_url, timeout=timeout), "Bybit ETH spot")
+    except (OSError, urllib.error.URLError, ValueError, json.JSONDecodeError, StopIteration):
+        optional_errors += 1
+        eth_spot = {}
+    try:
+        coinone_kas = coinone_ticker_metrics(fetch_json_url(coinone_kas_url, timeout=timeout))
+    except (OSError, urllib.error.URLError, ValueError, json.JSONDecodeError, KeyError, StopIteration):
+        optional_errors += 1
+        coinone_kas = {}
+    try:
+        coinone_usdt = coinone_ticker_metrics(fetch_json_url(coinone_usdt_url, timeout=timeout))
+    except (OSError, urllib.error.URLError, ValueError, json.JSONDecodeError, KeyError, StopIteration):
+        optional_errors += 1
+        coinone_usdt = {}
+    try:
+        spot_trade_flow = bybit_trade_flow(fetch_json_url(spot_trades_url, timeout=timeout))
+    except (OSError, urllib.error.URLError, ValueError, json.JSONDecodeError, StopIteration):
+        optional_errors += 1
+        spot_trade_flow = {}
+    try:
+        futures_trade_flow = bybit_trade_flow(fetch_json_url(futures_trades_url, timeout=timeout))
+    except (OSError, urllib.error.URLError, ValueError, json.JSONDecodeError, StopIteration):
+        optional_errors += 1
+        futures_trade_flow = {}
+    try:
+        spot_candles = bybit_kline_rows(fetch_json_url(spot_kline_url, timeout=timeout))
+    except (OSError, urllib.error.URLError, ValueError, json.JSONDecodeError, StopIteration):
+        optional_errors += 1
+        spot_candles = []
+    try:
+        futures_candles = bybit_kline_rows(fetch_json_url(futures_kline_url, timeout=timeout))
+    except (OSError, urllib.error.URLError, ValueError, json.JSONDecodeError, StopIteration):
+        optional_errors += 1
+        futures_candles = []
+    try:
+        btc_candles = bybit_kline_rows(fetch_json_url(btc_kline_url, timeout=timeout))
+    except (OSError, urllib.error.URLError, ValueError, json.JSONDecodeError, StopIteration):
+        optional_errors += 1
+        btc_candles = []
+    try:
+        eth_candles = bybit_kline_rows(fetch_json_url(eth_kline_url, timeout=timeout))
+    except (OSError, urllib.error.URLError, ValueError, json.JSONDecodeError, StopIteration):
+        optional_errors += 1
+        eth_candles = []
+    try:
+        account_ratio = bybit_account_ratio_metrics(fetch_json_url(account_ratio_url, timeout=timeout))
+    except (OSError, urllib.error.URLError, ValueError, json.JSONDecodeError, StopIteration):
+        optional_errors += 1
+        account_ratio = {}
+    try:
+        oi_series = bybit_open_interest_series_metrics(fetch_json_url(open_interest_url, timeout=timeout))
+    except (OSError, urllib.error.URLError, ValueError, json.JSONDecodeError, StopIteration):
+        optional_errors += 1
+        oi_series = {}
+    try:
+        funding_history = bybit_funding_history_metrics(fetch_json_url(funding_history_url, timeout=timeout))
+    except (OSError, urllib.error.URLError, ValueError, json.JSONDecodeError, StopIteration):
+        optional_errors += 1
+        funding_history = {}
+    spot_venue_orderbooks = fetch_market_spot_orderbooks(timeout=timeout)
+    optional_errors += int(spot_venue_orderbooks.get("errors") or 0)
+    spot_venue_trade_flows = fetch_market_spot_trade_flows(timeout=timeout)
+    optional_errors += int(spot_venue_trade_flows.get("errors") or 0)
+    futures_venues = fetch_market_futures_venues(timeout=timeout)
+    optional_errors += int(futures_venues.get("errors") or 0)
+    try:
+        coingecko_market = coingecko_market_metrics(fetch_json_url(COINGECKO_KAS_URL, timeout=timeout))
+    except (OSError, urllib.error.URLError, ValueError, json.JSONDecodeError, KeyError, StopIteration):
+        optional_errors += 1
+        coingecko_market = {}
+    try:
+        coingecko_price_chart = fetch_coingecko_market_chart_metrics(timeout=timeout)
+    except (OSError, urllib.error.URLError, ValueError, json.JSONDecodeError, KeyError, StopIteration):
+        try:
+            coingecko_price_chart = fetch_bybit_daily_price_chart_metrics(timeout=timeout)
+        except (OSError, urllib.error.URLError, ValueError, json.JSONDecodeError, KeyError, StopIteration):
+            optional_errors += 1
+            coingecko_price_chart = {}
+    liquidation_proxy = liquidation_proxy_metrics(futures_candles, oi_series)
     return {
         "ok": True,
         "source": "Bybit KAS/USDT",
+        "orderbook_errors": orderbook_errors,
+        "optional_errors": optional_errors,
+        "btc": {
+            "last_price": btc_spot.get("lastPrice"),
+            "change_24h": btc_spot.get("price24hPcnt"),
+            "volume_24h": btc_spot.get("volume24h"),
+            "turnover_24h": btc_spot.get("turnover24h"),
+        },
+        "eth": {
+            "last_price": eth_spot.get("lastPrice"),
+            "change_24h": eth_spot.get("price24hPcnt"),
+            "volume_24h": eth_spot.get("volume24h"),
+            "turnover_24h": eth_spot.get("turnover24h"),
+        },
+        "cross_asset": {
+            "btc": market_cross_asset_metrics(spot_candles, btc_candles),
+            "eth": market_cross_asset_metrics(spot_candles, eth_candles),
+        },
+        "krw": {
+            "kas": coinone_kas,
+            "usdt": coinone_usdt,
+        },
+        "trade_flow": {
+            "spot": spot_trade_flow,
+            "futures": futures_trade_flow,
+        },
+        "multi_venue_spot_orderbooks": spot_venue_orderbooks.get("books") or {},
+        "venue_arbitrage": market_venue_arbitrage(
+            spot_orderbook,
+            spot_venue_orderbooks.get("books") or {},
+        ),
+        "multi_venue_spot_trade_flows": spot_venue_trade_flows.get("flows") or {},
+        "futures_venues": futures_venues.get("venues") or {},
+        "coingecko": coingecko_market,
+        "coingecko_price_chart": coingecko_price_chart,
+        "kline": {
+            "spot": market_kline_windows(spot_candles),
+            "futures": market_kline_windows(futures_candles),
+        },
+        "futures_series": {
+            "account_ratio": account_ratio,
+            "open_interest": oi_series,
+            "funding": funding_history,
+            "liquidation_proxy": liquidation_proxy,
+        },
         "spot": {
             "last_price": spot.get("lastPrice"),
             "change_24h": spot.get("price24hPcnt"),
             "volume_24h": spot.get("volume24h"),
+            "turnover_24h": spot.get("turnover24h"),
             "high_24h": spot.get("highPrice24h"),
             "low_24h": spot.get("lowPrice24h"),
             "price_sources": spot_sources.get("prices") or [],
             "price_dispersion": spot_sources.get("dispersion") or {},
+            "orderbook": spot_orderbook,
         },
         "futures": {
+            "last_price": futures.get("lastPrice"),
             "mark_price": futures.get("markPrice") or futures.get("lastPrice"),
             "index_price": futures.get("indexPrice"),
+            "high_24h": futures.get("highPrice24h"),
+            "low_24h": futures.get("lowPrice24h"),
             "basis_pct": basis_pct,
             "funding_rate": futures.get("fundingRate"),
             "funding_apr_pct": funding_apr,
@@ -3689,7 +5376,9 @@ def fetch_market_snapshot(timeout: float = 6.0) -> dict[str, Any]:
             "open_interest": futures.get("openInterest"),
             "open_interest_value": futures.get("openInterestValue"),
             "volume_24h": futures.get("volume24h"),
+            "turnover_24h": futures.get("turnover24h"),
             "oi_volume_ratio": market_oi_volume_ratio(futures.get("openInterest"), futures.get("volume24h")),
+            "orderbook": futures_orderbook,
         },
     }
 
@@ -3697,7 +5386,40 @@ def fetch_market_snapshot(timeout: float = 6.0) -> dict[str, Any]:
 def market_snapshot_item(snapshot: dict[str, Any], history: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     spot = snapshot.get("spot") or {}
     futures = snapshot.get("futures") or {}
+    btc = snapshot.get("btc") or {}
+    eth = snapshot.get("eth") or {}
+    cross_asset = snapshot.get("cross_asset") or {}
+    krw = snapshot.get("krw") or {}
+    coinone_kas = krw.get("kas") or {}
+    coinone_usdt = krw.get("usdt") or {}
+    trade_flow = snapshot.get("trade_flow") or {}
+    multi_venue_spot_orderbooks = snapshot.get("multi_venue_spot_orderbooks") or {}
+    venue_arbitrage = snapshot.get("venue_arbitrage") or {}
+    multi_venue_spot_trade_flows = snapshot.get("multi_venue_spot_trade_flows") or {}
+    futures_venues = snapshot.get("futures_venues") or {}
+    coingecko = snapshot.get("coingecko") or {}
+    kline = snapshot.get("kline") or {}
+    futures_series = snapshot.get("futures_series") or {}
+    coingecko_price_chart = snapshot.get("coingecko_price_chart") or {}
     spot_dispersion = spot.get("price_dispersion") or {}
+    spot_orderbook = spot.get("orderbook") or {}
+    futures_orderbook = futures.get("orderbook") or {}
+    spot_last_price = numeric(spot.get("last_price"))
+    btc_last_price = numeric(btc.get("last_price"))
+    eth_last_price = numeric(eth.get("last_price"))
+    coinone_kas_krw = numeric(coinone_kas.get("last"))
+    coinone_usdt_krw = numeric(coinone_usdt.get("last"))
+    global_price = numeric(spot_dispersion.get("median")) or spot_last_price
+    coinone_kas_usdt = None
+    kimchi_premium = None
+    if coinone_kas_krw is not None and coinone_usdt_krw not in (None, 0):
+        coinone_kas_usdt = coinone_kas_krw / coinone_usdt_krw
+        if global_price not in (None, 0):
+            kimchi_premium = ((coinone_kas_usdt - global_price) / global_price) * 100
+    kas_btc_ratio = None if spot_last_price is None or btc_last_price in (None, 0) else spot_last_price / btc_last_price
+    relative_btc_24h = None
+    if numeric(spot.get("change_24h")) is not None and numeric(btc.get("change_24h")) is not None:
+        relative_btc_24h = (numeric(spot.get("change_24h")) - numeric(btc.get("change_24h"))) * 100
     funding_rate = numeric(futures.get("funding_rate"))
     oi_volume_ratio = numeric(futures.get("oi_volume_ratio"))
     if oi_volume_ratio is None:
@@ -3711,24 +5433,79 @@ def market_snapshot_item(snapshot: dict[str, Any], history: list[dict[str, Any]]
         basis_pct=futures.get("basis_pct"),
         spot_dispersion_pct=spot_dispersion.get("dispersion_pct"),
     )
-    return {
+    item = {
         "checked_at": dt.datetime.now().astimezone().isoformat(),
         "source": snapshot.get("source", "Bybit KAS/USDT"),
         "ok": bool(snapshot.get("ok")),
         "error": snapshot.get("error"),
-        "spot_last_price": numeric(spot.get("last_price")),
+        "market_optional_source_errors": int(snapshot.get("optional_errors") or 0),
+        "spot_last_price": spot_last_price,
         "spot_change_24h": numeric(spot.get("change_24h")),
         "spot_high_24h": numeric(spot.get("high_24h")),
         "spot_low_24h": numeric(spot.get("low_24h")),
+        "spot_range_24h_pct": market_range_percent(spot.get("high_24h"), spot.get("low_24h")),
+        "spot_position_in_24h_range": market_position_in_range(
+            spot.get("last_price"),
+            spot.get("high_24h"),
+            spot.get("low_24h"),
+        ),
         "spot_volume_24h": numeric(spot.get("volume_24h")),
+        "spot_turnover_24h": numeric(spot.get("turnover_24h")),
+        "spot_price_sources_detail": spot.get("price_sources") or [],
         "spot_price_median": numeric(spot_dispersion.get("median")),
         "spot_price_min": numeric(spot_dispersion.get("min")),
         "spot_price_max": numeric(spot_dispersion.get("max")),
         "spot_price_dispersion_pct": numeric(spot_dispersion.get("dispersion_pct")),
         "spot_price_sources": int(spot_dispersion.get("sources") or 0),
         "spot_price_source_errors": int(spot_dispersion.get("errors") or 0),
+        "spot_orderbook": spot_orderbook,
+        "market_orderbook_errors": int(snapshot.get("orderbook_errors") or 0),
+        "btc_last_price": btc_last_price,
+        "btc_change_24h": numeric(btc.get("change_24h")),
+        "btc_volume_24h": numeric(btc.get("volume_24h")),
+        "btc_turnover_24h": numeric(btc.get("turnover_24h")),
+        "kas_btc_ratio": kas_btc_ratio,
+        "kas_relative_btc_24h_percent_points": relative_btc_24h,
+        "eth_last_price": eth_last_price,
+        "eth_change_24h": numeric(eth.get("change_24h")),
+        "eth_volume_24h": numeric(eth.get("volume_24h")),
+        "eth_turnover_24h": numeric(eth.get("turnover_24h")),
+        "kas_eth_ratio": None if spot_last_price is None or eth_last_price in (None, 0) else spot_last_price / eth_last_price,
+        "kas_relative_eth_24h_percent_points": None
+        if numeric(spot.get("change_24h")) is None or numeric(eth.get("change_24h")) is None
+        else (numeric(spot.get("change_24h")) - numeric(eth.get("change_24h"))) * 100,
+        "cross_asset": cross_asset,
+        "venue_arbitrage": venue_arbitrage,
+        "coinone_kas_krw": coinone_kas_krw,
+        "coinone_kas_high_krw": numeric(coinone_kas.get("high")),
+        "coinone_kas_low_krw": numeric(coinone_kas.get("low")),
+        "coinone_kas_volume_24h_kas": numeric(coinone_kas.get("target_volume")),
+        "coinone_kas_turnover_24h_krw": numeric(coinone_kas.get("quote_volume")),
+        "coinone_kas_best_bid_krw": numeric(coinone_kas.get("best_bid")),
+        "coinone_kas_best_ask_krw": numeric(coinone_kas.get("best_ask")),
+        "coinone_kas_spread_percent": numeric(coinone_kas.get("spread_pct")),
+        "coinone_usdt_krw": coinone_usdt_krw,
+        "coinone_kas_implied_usdt": coinone_kas_usdt,
+        "coinone_kimchi_premium_percent": kimchi_premium,
+        "trade_flow": trade_flow,
+        "multi_venue_spot_orderbooks": multi_venue_spot_orderbooks,
+        "multi_venue_spot_trade_flows": multi_venue_spot_trade_flows,
+        "futures_venues": futures_venues,
+        "coingecko": coingecko,
+        "coingecko_price_chart": coingecko_price_chart,
+        "kline": kline,
+        "futures_series": futures_series,
+        "futures_last_price": numeric(futures.get("last_price")),
         "futures_mark_price": numeric(futures.get("mark_price")),
         "futures_index_price": numeric(futures.get("index_price")),
+        "futures_high_24h": numeric(futures.get("high_24h")),
+        "futures_low_24h": numeric(futures.get("low_24h")),
+        "futures_range_24h_pct": market_range_percent(futures.get("high_24h"), futures.get("low_24h")),
+        "futures_position_in_24h_range": market_position_in_range(
+            futures.get("last_price") or futures.get("mark_price"),
+            futures.get("high_24h"),
+            futures.get("low_24h"),
+        ),
         "futures_basis_pct": numeric(futures.get("basis_pct")),
         "futures_funding_rate": funding_rate,
         "futures_funding_apr_pct": numeric(futures.get("funding_apr_pct")),
@@ -3737,7 +5514,9 @@ def market_snapshot_item(snapshot: dict[str, Any], history: list[dict[str, Any]]
         "futures_open_interest": numeric(futures.get("open_interest")),
         "futures_open_interest_value": numeric(futures.get("open_interest_value")),
         "futures_volume_24h": numeric(futures.get("volume_24h")),
+        "futures_turnover_24h": numeric(futures.get("turnover_24h")),
         "futures_oi_volume_ratio": oi_volume_ratio,
+        "futures_orderbook": futures_orderbook,
         "market_risk_score": risk["score"],
         "market_risk_level": risk["level"],
         "market_risk_level_value": risk["level_value"],
@@ -3745,6 +5524,12 @@ def market_snapshot_item(snapshot: dict[str, Any], history: list[dict[str, Any]]
         "market_risk_reasons": ",".join(risk["reasons"]) if risk["reasons"] else "none",
         "market_risk_reason_count": risk["reason_count"],
     }
+    dashboard = market_dashboard_metrics(item, history or [])
+    item["dashboard"] = dashboard
+    for metric in dashboard.get("metrics") or []:
+        if metric.get("section") == "price":
+            item[f"dashboard_price_{metric.get('metric')}"] = metric.get("value")
+    return item
 
 
 def snapshot_from_market_item(item: dict[str, Any]) -> dict[str, Any]:
@@ -5616,6 +7401,7 @@ def write_status_page(
     recovery_records: list[dict[str, Any]] | None = None,
     sqlite_history: Path | None = None,
     market_snapshot_path: Path | None = None,
+    investment_data: dict[str, Any] | None = None,
 ) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     checks = "\n".join(
@@ -5823,6 +7609,7 @@ def write_status_page(
       </div>
     </section>
     """
+    investment_data_json = json.dumps(investment_data or {}, ensure_ascii=False, separators=(",", ":"))
     page = f"""<!doctype html>
 <html lang="en">
 <head>
@@ -6089,6 +7876,30 @@ def write_status_page(
       grid-template-columns: repeat(5, minmax(0, 1fr));
       gap: 10px;
     }}
+    .investment-card-grid {{
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 12px;
+    }}
+    .investment-asset-panel:not(.active) {{ display: none; }}
+    .investment-card {{
+      display: flex;
+      flex-direction: column;
+      min-height: 322px;
+      padding: 11px;
+      border: 1px solid #edf1f6;
+      border-radius: 8px;
+      background: #f8fafc;
+      min-width: 0;
+    }}
+    .investment-card .market-chart {{ flex: 1 1 auto; }}
+    .investment-source-note {{
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+      margin-top: 8px;
+    }}
     .market-indicator-card {{
       display: grid;
       gap: 7px;
@@ -6108,23 +7919,44 @@ def write_status_page(
     .market-indicator-card.cool .value {{ color: #276b74; }}
     .market-indicator-card.neutral .value {{ color: var(--ink); }}
     .market-indicator-card .state {{ color: var(--muted); font-size: 12px; font-weight: 800; overflow-wrap: anywhere; }}
-    .market-indicator-rows {{ display: grid; gap: 5px; }}
+    .market-indicator-rows {{
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(124px, 1fr));
+      gap: 7px;
+    }}
     .market-indicator-row {{
       display: grid;
-      grid-template-columns: 42px 1fr;
-      gap: 7px;
-      align-items: center;
-      min-height: 25px;
+      gap: 4px;
+      align-content: start;
+      min-height: 58px;
+      padding: 8px;
+      border: 1px solid #edf1f6;
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.7);
       font-size: 12px;
       font-weight: 800;
       overflow-wrap: anywhere;
     }}
-    .market-indicator-row span {{ color: var(--muted); }}
-    .market-indicator-row strong {{ color: var(--ink); }}
+    .market-indicator-row.indicator-row-hidden {{ display: none; }}
+    .market-indicator-row span {{ color: var(--muted); font-size: 11px; text-transform: uppercase; }}
+    .market-indicator-row strong {{ color: var(--ink); font-size: 13px; line-height: 1.25; }}
     .market-indicator-row.up strong {{ color: var(--ok); }}
     .market-indicator-row.down strong {{ color: var(--critical); }}
     .market-indicator-row.warn strong {{ color: #b26a00; }}
     .market-indicator-row.cool strong {{ color: #276b74; }}
+    .market-indicator-sparkline {{
+      width: 100%;
+      height: 42px;
+      display: block;
+      margin-top: 2px;
+      border: 1px solid #edf1f6;
+      border-radius: 6px;
+      background: #f8fafc;
+    }}
+    .market-indicator-sparkline path {{
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }}
     .market-anomaly-list {{
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -6165,6 +7997,31 @@ def write_status_page(
     .market-bollinger-line {{ fill: none; stroke: #2563eb; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; opacity: 0.82; }}
     .market-bollinger-mid {{ stroke: #7c3aed; stroke-dasharray: 5 5; opacity: 0.72; }}
     .market-bollinger-label {{ fill: #2563eb; font-size: 11px; font-weight: 800; }}
+    .market-bollinger-card-grid {{
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+      margin-bottom: 10px;
+    }}
+    .market-cross-card-grid {{
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+      margin-bottom: 14px;
+    }}
+    .market-bollinger-card-grid .market-chart {{
+      height: 190px;
+    }}
+    .market-cross-card-grid .market-cross-panel {{
+      margin-bottom: 0;
+    }}
+    .market-bollinger-card {{
+      min-width: 0;
+      padding: 10px;
+      border: 1px solid #edf1f6;
+      border-radius: 8px;
+      background: #f8fafc;
+    }}
     .market-chart {{
       width: 100%;
       height: 230px;
@@ -6177,7 +8034,7 @@ def write_status_page(
       display: block;
       margin-bottom: 14px;
     }}
-    .timeframe-panel:not(.active),
+    .market-section-panel:not(.active),
     .liquidation-panel:not(.active),
     .tab-panel:not(.active) {{ display: none; }}
     .market-watch > .panel,
@@ -6223,6 +8080,12 @@ def write_status_page(
       margin-bottom: 14px;
       display: flex;
       flex-direction: column;
+    }}
+    .market-volume-card-grid {{
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+      margin-bottom: 14px;
     }}
     .market-volume-panel .market-chart {{
       flex: 1 1 auto;
@@ -6556,7 +8419,7 @@ def write_status_page(
     main > .panel + .panel {{ margin-top: 14px; }}
     @media (max-width: 760px) {{
       main {{ padding: 14px; }}
-      .hero-top, .hero-strip, .layout, .chart-grid, .market-watch, .market-timeframe-grid, .market-indicator-card-grid, .market-anomaly-list, .liquidation-grid, .context-grid {{ display: block; }}
+      .hero-top, .hero-strip, .layout, .chart-grid, .market-watch, .market-timeframe-grid, .market-indicator-card-grid, .market-anomaly-list, .market-cross-card-grid, .market-volume-card-grid, .investment-card-grid, .liquidation-grid, .context-grid {{ display: block; }}
       .hero-actions {{ justify-content: flex-start; margin-top: 12px; }}
       .incident, .incident-facts {{ display: block; }}
       .incident-facts div {{ margin-top: 8px; }}
@@ -6623,15 +8486,20 @@ def write_status_page(
       <a class="tab-button" href="/games/">Games</a>
     </nav>
     <section id="tab-market" class="tab-panel active">
-    <div class="subtab-row" aria-label="KAS/USDT timeframe selector">
-      <button class="subtab-button active" type="button" data-timeframe-target="15m">15m</button>
-      <button class="subtab-button" type="button" data-timeframe-target="4h">4h</button>
-      <button class="subtab-button" type="button" data-timeframe-target="1d">1D</button>
-      <button class="subtab-button" type="button" data-timeframe-target="1w">1W</button>
-      <button class="subtab-button" type="button" data-timeframe-target="1m">1M</button>
-      <button class="subtab-button" type="button" data-timeframe-target="all">All</button>
+    <div class="subtab-row" aria-label="Market indicator selector">
+      <button class="subtab-button active" type="button" data-market-target="price">Price</button>
+      <button class="subtab-button" type="button" data-market-target="rsi" data-indicator-preset="rsi">RSI</button>
+      <button class="subtab-button" type="button" data-market-target="trend" data-indicator-preset="trend">Trend</button>
+      <button class="subtab-button" type="button" data-market-target="bollinger">Bollinger</button>
+      <button class="subtab-button" type="button" data-market-target="volatility" data-indicator-preset="volatility">Volatility</button>
+      <button class="subtab-button" type="button" data-market-target="momentum" data-indicator-preset="momentum">Momentum</button>
+      <button class="subtab-button" type="button" data-market-target="volume-flow" data-indicator-preset="volume">Volume-Flow</button>
+      <button class="subtab-button" type="button" data-market-target="watchlist">Watchlist</button>
+      <button class="subtab-button" type="button" data-market-target="relative">Relative</button>
+      <button class="subtab-button" type="button" data-market-target="volume">Volume</button>
+      <button class="subtab-button" type="button" data-market-target="microstructure">Microstructure</button>
     </div>
-    <section class="market-watch">
+    <section class="market-watch market-section-panel active" data-market-panel="price">
       <section class="panel market-price">
         <div class="market-pair">
           <h2>KAS/USDT</h2>
@@ -6652,7 +8520,7 @@ def write_status_page(
           </div>
         </div>
       </section>
-      <section class="panel timeframe-panel active" data-timeframe-panel="15m">
+      <section class="panel market-price-chart">
         <div class="market-chart-head">
           <div class="market-title-row">
             <h2>KAS/USDT 15m</h2>
@@ -6664,10 +8532,20 @@ def write_status_page(
         <svg id="market-chart" class="market-chart" viewBox="0 0 720 230" role="img" aria-label="KAS/USDT 15 minute candlestick chart"></svg>
       </section>
     </section>
-    <section class="panel market-indicator-panel">
+    <section class="panel market-indicator-panel market-section-panel" data-market-panel="indicators">
       <div class="market-chart-head">
         <h2>Market Indicators</h2>
         <div class="market-status">Trend, momentum, volatility, volume, flow, and BTC-relative by timeframe</div>
+      </div>
+      <div class="subtab-row" aria-label="Market indicator detail selector">
+        <button class="subtab-button active" type="button" data-indicator-target="all">All</button>
+        <button class="subtab-button" type="button" data-indicator-target="rsi">RSI</button>
+        <button class="subtab-button" type="button" data-indicator-target="trend">Trend</button>
+        <button class="subtab-button" type="button" data-indicator-target="bollinger">Bollinger</button>
+        <button class="subtab-button" type="button" data-indicator-target="volatility">Volatility</button>
+        <button class="subtab-button" type="button" data-indicator-target="momentum">Momentum</button>
+        <button class="subtab-button" type="button" data-indicator-target="volume">Volume-Flow</button>
+        <button class="subtab-button" type="button" data-indicator-target="relative">Relative</button>
       </div>
       <div class="market-indicator-card-grid">
         <div id="market-rsi-card-15m" class="market-indicator-card" data-indicator-card="15m">
@@ -6799,8 +8677,8 @@ def write_status_page(
         <div class="market-anomaly-empty">No indicator anomalies detected yet</div>
       </div>
     </section>
-    <section class="market-timeframe-grid">
-      <section class="panel timeframe-panel" data-timeframe-panel="4h">
+    <section class="market-timeframe-grid market-section-panel active" data-market-panel="price">
+      <section class="panel market-price-chart">
         <div class="market-chart-head">
           <div class="market-title-row">
             <h2>KAS/USDT 4h</h2>
@@ -6811,7 +8689,7 @@ def write_status_page(
         </div>
         <svg id="market-chart-4h" class="market-chart" viewBox="0 0 720 230" role="img" aria-label="KAS/USDT 4 hour candlestick chart"></svg>
       </section>
-      <section class="panel timeframe-panel" data-timeframe-panel="1d">
+      <section class="panel market-price-chart">
         <div class="market-chart-head">
           <div class="market-title-row">
             <h2>KAS/USDT 1D</h2>
@@ -6822,7 +8700,7 @@ def write_status_page(
         </div>
         <svg id="market-chart-1d" class="market-chart" viewBox="0 0 720 230" role="img" aria-label="KAS/USDT daily candlestick chart"></svg>
       </section>
-      <section class="panel timeframe-panel" data-timeframe-panel="1w">
+      <section class="panel market-price-chart">
         <div class="market-chart-head">
           <div class="market-title-row">
             <h2>KAS/USDT 1W</h2>
@@ -6833,7 +8711,7 @@ def write_status_page(
         </div>
         <svg id="market-chart-1w" class="market-chart" viewBox="0 0 720 230" role="img" aria-label="KAS/USDT weekly candlestick chart"></svg>
       </section>
-      <section class="panel timeframe-panel" data-timeframe-panel="1m">
+      <section class="panel market-price-chart">
         <div class="market-chart-head">
           <div class="market-title-row">
             <h2>KAS/USDT 1M</h2>
@@ -6844,7 +8722,8 @@ def write_status_page(
         </div>
         <svg id="market-chart-1m" class="market-chart" viewBox="0 0 720 230" role="img" aria-label="KAS/USDT monthly candlestick chart"></svg>
       </section>
-      <section class="panel timeframe-panel" data-timeframe-panel="all">
+    </section>
+    <section class="panel market-bollinger-panel market-section-panel" data-market-panel="bollinger">
         <div class="market-chart-head">
           <div class="market-title-row">
             <h2>KAS/USDT All Bollinger</h2>
@@ -6858,73 +8737,153 @@ def write_status_page(
           <span style="color: #7c3aed"><i></i>BB basis</span>
           <span style="color: #d97706"><i></i>EMA</span>
         </div>
+        <div class="market-bollinger-card-grid">
+          <section class="market-bollinger-card">
+            <div class="market-chart-head">
+              <h2>KAS/USDT 15m Bollinger</h2>
+              <div id="market-status-bb-15m" class="market-status">Loading 15m bands</div>
+            </div>
+            <svg id="market-chart-bb-15m" class="market-chart" viewBox="0 0 720 230" role="img" aria-label="KAS/USDT 15 minute Bollinger Bands chart"></svg>
+          </section>
+          <section class="market-bollinger-card">
+            <div class="market-chart-head">
+              <h2>KAS/USDT 4h Bollinger</h2>
+              <div id="market-status-bb-4h" class="market-status">Loading 4h bands</div>
+            </div>
+            <svg id="market-chart-bb-4h" class="market-chart" viewBox="0 0 720 230" role="img" aria-label="KAS/USDT 4 hour Bollinger Bands chart"></svg>
+          </section>
+          <section class="market-bollinger-card">
+            <div class="market-chart-head">
+              <h2>KAS/USDT 1D Bollinger</h2>
+              <div id="market-status-bb-1d" class="market-status">Loading 1D bands</div>
+            </div>
+            <svg id="market-chart-bb-1d" class="market-chart" viewBox="0 0 720 230" role="img" aria-label="KAS/USDT daily Bollinger Bands chart"></svg>
+          </section>
+          <section class="market-bollinger-card">
+            <div class="market-chart-head">
+              <h2>KAS/USDT 1W Bollinger</h2>
+              <div id="market-status-bb-1w" class="market-status">Loading 1W bands</div>
+            </div>
+            <svg id="market-chart-bb-1w" class="market-chart" viewBox="0 0 720 230" role="img" aria-label="KAS/USDT weekly Bollinger Bands chart"></svg>
+          </section>
+          <section class="market-bollinger-card">
+            <div class="market-chart-head">
+              <h2>KAS/USDT 1M Bollinger</h2>
+              <div id="market-status-bb-1m" class="market-status">Loading 1M bands</div>
+            </div>
+            <svg id="market-chart-bb-1m" class="market-chart" viewBox="0 0 720 230" role="img" aria-label="KAS/USDT monthly Bollinger Bands chart"></svg>
+          </section>
+        </div>
         <svg id="market-chart-all" class="market-chart" viewBox="0 0 720 230" role="img" aria-label="Full-period KAS/USDT candlestick chart with Bollinger Bands"></svg>
+    </section>
+    <section class="panel market-watchlist-panel market-section-panel" data-market-panel="watchlist">
+      <div class="market-chart-head">
+        <h2>Watchlist</h2>
+        <div class="market-status">Personal investment chart slots by asset and timeframe</div>
+      </div>
+      <div id="investment-asset-tabs" class="subtab-row" aria-label="Watchlist asset selector"></div>
+      <div id="investment-chart-panels"></div>
+    </section>
+    <div class="market-cross-card-grid market-section-panel" data-market-panel="relative">
+      <section class="panel market-cross-panel">
+        <div class="market-chart-head">
+          <h2>KAS/USDT vs BTC/USDT 15m</h2>
+          <div id="market-cross-status-15m" class="market-status">Loading 15m cross</div>
+        </div>
+        <div class="market-legend">
+          <span style="color: #b42318"><i></i>KAS/USDT</span>
+          <span style="color: #2563eb"><i></i>BTC/USDT</span>
+        </div>
+        <svg id="market-cross-chart-15m" class="market-chart" viewBox="0 0 720 230" role="img" aria-label="KAS/USDT and BTC/USDT 15 minute normalized comparison chart"></svg>
       </section>
-    </section>
-    <section class="panel market-cross-panel">
-      <div class="market-chart-head">
-        <h2>KAS/USDT vs BTC/USDT 15m</h2>
-        <div id="market-cross-status-15m" class="market-status">Loading 15m cross</div>
-      </div>
-      <div class="market-legend">
-        <span style="color: #b42318"><i></i>KAS/USDT</span>
-        <span style="color: #2563eb"><i></i>BTC/USDT</span>
-      </div>
-      <svg id="market-cross-chart-15m" class="market-chart" viewBox="0 0 720 230" role="img" aria-label="KAS/USDT and BTC/USDT 15 minute normalized comparison chart"></svg>
-    </section>
-    <section class="panel market-cross-panel">
-      <div class="market-chart-head">
-        <h2>KAS/USDT vs BTC/USDT 4h</h2>
-        <div id="market-cross-status-4h" class="market-status">Loading 4h cross</div>
-      </div>
-      <div class="market-legend">
-        <span style="color: #b42318"><i></i>KAS/USDT</span>
-        <span style="color: #2563eb"><i></i>BTC/USDT</span>
-      </div>
-      <svg id="market-cross-chart-4h" class="market-chart" viewBox="0 0 720 230" role="img" aria-label="KAS/USDT and BTC/USDT 4 hour normalized comparison chart"></svg>
-    </section>
-    <section class="panel market-cross-panel">
-      <div class="market-chart-head">
-        <h2>KAS/USDT vs BTC/USDT 1D</h2>
-        <div id="market-cross-status" class="market-status">Loading daily cross</div>
-      </div>
-      <div class="market-legend">
-        <span style="color: #b42318"><i></i>KAS/USDT</span>
-        <span style="color: #2563eb"><i></i>BTC/USDT</span>
-      </div>
-      <svg id="market-cross-chart" class="market-chart" viewBox="0 0 720 230" role="img" aria-label="KAS/USDT and BTC/USDT daily normalized comparison chart"></svg>
-    </section>
-    <section class="panel market-cross-panel">
-      <div class="market-chart-head">
-        <h2>KAS/USDT vs BTC/USDT 1W</h2>
-        <div id="market-cross-status-1w" class="market-status">Loading weekly cross</div>
-      </div>
-      <div class="market-legend">
-        <span style="color: #b42318"><i></i>KAS/USDT</span>
-        <span style="color: #2563eb"><i></i>BTC/USDT</span>
-      </div>
-      <svg id="market-cross-chart-1w" class="market-chart" viewBox="0 0 720 230" role="img" aria-label="KAS/USDT and BTC/USDT weekly normalized comparison chart"></svg>
-    </section>
-    <section class="panel market-cross-panel">
-      <div class="market-chart-head">
-        <h2>KAS/USDT vs BTC/USDT 1M</h2>
-        <div id="market-cross-status-1m" class="market-status">Loading monthly cross</div>
-      </div>
-      <div class="market-legend">
-        <span style="color: #b42318"><i></i>KAS/USDT</span>
-        <span style="color: #2563eb"><i></i>BTC/USDT</span>
-      </div>
-      <svg id="market-cross-chart-1m" class="market-chart" viewBox="0 0 720 230" role="img" aria-label="KAS/USDT and BTC/USDT monthly normalized comparison chart"></svg>
-    </section>
-    <section class="panel market-volume-panel">
-      <div class="market-chart-head">
-        <h2>KAS Exchange Volume 1D</h2>
-        <div id="market-volume-status" class="market-status">Loading exchange volumes</div>
-      </div>
-      <div id="market-volume-legend" class="market-legend"></div>
-      <svg id="market-volume-chart" class="market-chart" viewBox="0 0 720 244" role="img" aria-label="Daily KAS trading volume by exchange and total"></svg>
-    </section>
-    <section class="panel market-microstructure-panel">
+      <section class="panel market-cross-panel">
+        <div class="market-chart-head">
+          <h2>KAS/USDT vs BTC/USDT 4h</h2>
+          <div id="market-cross-status-4h" class="market-status">Loading 4h cross</div>
+        </div>
+        <div class="market-legend">
+          <span style="color: #b42318"><i></i>KAS/USDT</span>
+          <span style="color: #2563eb"><i></i>BTC/USDT</span>
+        </div>
+        <svg id="market-cross-chart-4h" class="market-chart" viewBox="0 0 720 230" role="img" aria-label="KAS/USDT and BTC/USDT 4 hour normalized comparison chart"></svg>
+      </section>
+      <section class="panel market-cross-panel">
+        <div class="market-chart-head">
+          <h2>KAS/USDT vs BTC/USDT 1D</h2>
+          <div id="market-cross-status" class="market-status">Loading daily cross</div>
+        </div>
+        <div class="market-legend">
+          <span style="color: #b42318"><i></i>KAS/USDT</span>
+          <span style="color: #2563eb"><i></i>BTC/USDT</span>
+        </div>
+        <svg id="market-cross-chart" class="market-chart" viewBox="0 0 720 230" role="img" aria-label="KAS/USDT and BTC/USDT daily normalized comparison chart"></svg>
+      </section>
+      <section class="panel market-cross-panel">
+        <div class="market-chart-head">
+          <h2>KAS/USDT vs BTC/USDT 1W</h2>
+          <div id="market-cross-status-1w" class="market-status">Loading weekly cross</div>
+        </div>
+        <div class="market-legend">
+          <span style="color: #b42318"><i></i>KAS/USDT</span>
+          <span style="color: #2563eb"><i></i>BTC/USDT</span>
+        </div>
+        <svg id="market-cross-chart-1w" class="market-chart" viewBox="0 0 720 230" role="img" aria-label="KAS/USDT and BTC/USDT weekly normalized comparison chart"></svg>
+      </section>
+      <section class="panel market-cross-panel">
+        <div class="market-chart-head">
+          <h2>KAS/USDT vs BTC/USDT 1M</h2>
+          <div id="market-cross-status-1m" class="market-status">Loading monthly cross</div>
+        </div>
+        <div class="market-legend">
+          <span style="color: #b42318"><i></i>KAS/USDT</span>
+          <span style="color: #2563eb"><i></i>BTC/USDT</span>
+        </div>
+        <svg id="market-cross-chart-1m" class="market-chart" viewBox="0 0 720 230" role="img" aria-label="KAS/USDT and BTC/USDT monthly normalized comparison chart"></svg>
+      </section>
+    </div>
+    <div class="market-volume-card-grid market-section-panel" data-market-panel="volume">
+      <section class="panel market-volume-panel">
+        <div class="market-chart-head">
+          <h2>KAS Exchange Volume 15m</h2>
+          <div id="market-volume-status-15m" class="market-status">Loading 15m exchange volumes</div>
+        </div>
+        <div id="market-volume-legend-15m" class="market-legend"></div>
+        <svg id="market-volume-chart-15m" class="market-chart" viewBox="0 0 720 244" role="img" aria-label="15 minute KAS trading volume by exchange and total"></svg>
+      </section>
+      <section class="panel market-volume-panel">
+        <div class="market-chart-head">
+          <h2>KAS Exchange Volume 4h</h2>
+          <div id="market-volume-status-4h" class="market-status">Loading 4h exchange volumes</div>
+        </div>
+        <div id="market-volume-legend-4h" class="market-legend"></div>
+        <svg id="market-volume-chart-4h" class="market-chart" viewBox="0 0 720 244" role="img" aria-label="4 hour KAS trading volume by exchange and total"></svg>
+      </section>
+      <section class="panel market-volume-panel">
+        <div class="market-chart-head">
+          <h2>KAS Exchange Volume 1D</h2>
+          <div id="market-volume-status" class="market-status">Loading daily exchange volumes</div>
+        </div>
+        <div id="market-volume-legend" class="market-legend"></div>
+        <svg id="market-volume-chart" class="market-chart" viewBox="0 0 720 244" role="img" aria-label="Daily KAS trading volume by exchange and total"></svg>
+      </section>
+      <section class="panel market-volume-panel">
+        <div class="market-chart-head">
+          <h2>KAS Exchange Volume 1W</h2>
+          <div id="market-volume-status-1w" class="market-status">Loading weekly exchange volumes</div>
+        </div>
+        <div id="market-volume-legend-1w" class="market-legend"></div>
+        <svg id="market-volume-chart-1w" class="market-chart" viewBox="0 0 720 244" role="img" aria-label="Weekly KAS trading volume by exchange and total"></svg>
+      </section>
+      <section class="panel market-volume-panel">
+        <div class="market-chart-head">
+          <h2>KAS Exchange Volume 1M</h2>
+          <div id="market-volume-status-1m" class="market-status">Loading monthly exchange volumes</div>
+        </div>
+        <div id="market-volume-legend-1m" class="market-legend"></div>
+        <svg id="market-volume-chart-1m" class="market-chart" viewBox="0 0 720 244" role="img" aria-label="Monthly KAS trading volume by exchange and total"></svg>
+      </section>
+    </div>
+    <section class="panel market-microstructure-panel market-section-panel" data-market-panel="microstructure">
       <div class="market-chart-head">
         <h2>KAS/USDT Microstructure</h2>
         <div id="market-microstructure-status" class="market-status">Loading order book and trades</div>
@@ -7190,8 +9149,382 @@ def write_status_page(
     }}
 
     const statusActiveTabKey = "kaspa-watchtower-active-tab";
-    const statusActiveTimeframeKey = "kaspa-watchtower-active-timeframe";
+    const statusActiveMarketKey = "kaspa-watchtower-active-market-section";
+    const statusActiveIndicatorKey = "kaspa-watchtower-active-indicator-section";
+    const statusActiveInvestmentKey = "kaspa-watchtower-active-investment-asset";
     const statusActiveLiquidationKey = "kaspa-watchtower-active-liquidation";
+
+    const investmentTimeframes = [
+      {{ label: "15m", range: "5d", interval: "15m" }},
+      {{ label: "4h", range: "1mo", interval: "1h", aggregateHours: 4 }},
+      {{ label: "1D", range: "6mo", interval: "1d" }},
+      {{ label: "1W", range: "5y", interval: "1wk" }},
+      {{ label: "1M", range: "10y", interval: "1mo" }},
+    ];
+    const investmentAssets = [
+      {{ key: "spacex", label: "SpaceX", symbol: "PRIVATE", source: "private", note: "Private company; public real-time ticker unavailable" }},
+      {{ key: "tesla", label: "Tesla", symbol: "TSLA", yahooSymbol: "TSLA", source: "yahoo", note: "Yahoo Finance" }},
+      {{ key: "sp500", label: "S&P 500", symbol: "SPX", yahooSymbol: "^GSPC", source: "yahoo", note: "Yahoo Finance" }},
+      {{ key: "nasdaq", label: "NASDAQ", symbol: "IXIC", yahooSymbol: "^IXIC", source: "yahoo", note: "Yahoo Finance" }},
+      {{ key: "kospi", label: "KOSPI", symbol: "KOSPI", yahooSymbol: "^KS11", source: "yahoo", note: "Yahoo Finance" }},
+      {{ key: "kosdaq", label: "KOSDAQ", symbol: "KOSDAQ", yahooSymbol: "^KQ11", source: "yahoo", note: "Yahoo Finance" }},
+      {{ key: "gold", label: "Gold", symbol: "GC=F", yahooSymbol: "GC=F", source: "yahoo", note: "Yahoo Finance futures" }},
+      {{ key: "silver", label: "Silver", symbol: "SI=F", yahooSymbol: "SI=F", source: "yahoo", note: "Yahoo Finance futures" }},
+      {{ key: "wti", label: "WTI", symbol: "CL=F", yahooSymbol: "CL=F", source: "yahoo", note: "Yahoo Finance futures" }},
+      {{ key: "usdkrw", label: "USD/KRW", symbol: "KRW=X", yahooSymbol: "KRW=X", source: "yahoo", note: "Yahoo Finance FX" }},
+    ];
+    const investmentPreloadedData = {investment_data_json};
+
+    function investmentChartId(assetKey, timeframe) {{
+      const label = typeof timeframe === "string" ? timeframe : timeframe.label;
+      return "investment-chart-" + assetKey + "-" + label.toLowerCase();
+    }}
+
+    function investmentStatusId(assetKey, timeframe) {{
+      const label = typeof timeframe === "string" ? timeframe : timeframe.label;
+      return "investment-status-" + assetKey + "-" + label.toLowerCase();
+    }}
+
+    function drawInvestmentPlaceholder(svg, asset, timeframe) {{
+      if (!svg) {{
+        return;
+      }}
+      const timeframeLabel = typeof timeframe === "string" ? timeframe : timeframe.label;
+      const ns = "http://www.w3.org/2000/svg";
+      svg.replaceChildren();
+      const grid = document.createElementNS(ns, "path");
+      grid.setAttribute("d", "M42 30 L42 198 M160 30 L160 198 M278 30 L278 198 M396 30 L396 198 M514 30 L514 198 M632 30 L632 198 M36 58 L684 58 M36 110 L684 110 M36 162 L684 162");
+      grid.setAttribute("stroke", "#e5ebf2");
+      grid.setAttribute("stroke-width", "1");
+      grid.setAttribute("fill", "none");
+      svg.appendChild(grid);
+      const path = document.createElementNS(ns, "path");
+      path.setAttribute("d", "M42 150 L106 132 L170 138 L234 116 L298 124 L362 92 L426 108 L490 76 L554 86 L618 64 L680 72");
+      path.setAttribute("stroke", "#276b74");
+      path.setAttribute("stroke-width", "3");
+      path.setAttribute("fill", "none");
+      path.setAttribute("stroke-linecap", "round");
+      path.setAttribute("stroke-linejoin", "round");
+      svg.appendChild(path);
+      const label = document.createElementNS(ns, "text");
+      label.textContent = asset.label + " " + timeframeLabel;
+      label.setAttribute("x", "42");
+      label.setAttribute("y", "42");
+      label.setAttribute("fill", "#425466");
+      label.setAttribute("font-size", "13");
+      label.setAttribute("font-weight", "900");
+      svg.appendChild(label);
+      const pending = document.createElementNS(ns, "text");
+      pending.textContent = asset.source === "yahoo" ? "loading source" : "private source unavailable";
+      pending.setAttribute("x", "42");
+      pending.setAttribute("y", "190");
+      pending.setAttribute("fill", "#66727f");
+      pending.setAttribute("font-size", "12");
+      pending.setAttribute("font-weight", "800");
+      svg.appendChild(pending);
+    }}
+
+    function investmentYahooUrl(asset, timeframe) {{
+      const symbol = encodeURIComponent(asset.yahooSymbol || asset.symbol);
+      return "https://query2.finance.yahoo.com/v8/finance/chart/" + symbol + "?range=" + timeframe.range + "&interval=" + timeframe.interval + "&includePrePost=false";
+    }}
+
+    function investmentRowsFromYahoo(payload) {{
+      const result = (((payload || {{}}).chart || {{}}).result || [])[0] || {{}};
+      const timestamps = result.timestamp || [];
+      const quote = (((result.indicators || {{}}).quote || [])[0]) || {{}};
+      const opens = quote.open || [];
+      const highs = quote.high || [];
+      const lows = quote.low || [];
+      const closes = quote.close || [];
+      const volumes = quote.volume || [];
+      return timestamps
+        .map((timestamp, index) => ({{
+          time: Number(timestamp) * 1000,
+          open: Number(opens[index]),
+          high: Number(highs[index]),
+          low: Number(lows[index]),
+          close: Number(closes[index]),
+          volume: Number(volumes[index] || 0),
+        }}))
+        .filter((row) => Number.isFinite(row.time) && Number.isFinite(row.close) && Number.isFinite(row.high) && Number.isFinite(row.low));
+    }}
+
+    function investmentAggregateRows(rows, hours) {{
+      const bucketMs = Number(hours || 0) * 60 * 60 * 1000;
+      if (!bucketMs || rows.length < 2) {{
+        return rows;
+      }}
+      const buckets = new Map();
+      rows.forEach((row) => {{
+        const key = Math.floor(row.time / bucketMs) * bucketMs;
+        const bucket = buckets.get(key) || {{
+          time: key,
+          open: row.open,
+          high: row.high,
+          low: row.low,
+          close: row.close,
+          volume: 0,
+        }};
+        bucket.high = Math.max(bucket.high, row.high);
+        bucket.low = Math.min(bucket.low, row.low);
+        bucket.close = row.close;
+        bucket.volume += row.volume || 0;
+        buckets.set(key, bucket);
+      }});
+      return [...buckets.values()].sort((left, right) => left.time - right.time);
+    }}
+
+    function drawInvestmentChart(rows, asset, timeframe) {{
+      const svg = document.getElementById(investmentChartId(asset.key, timeframe));
+      const status = document.getElementById(investmentStatusId(asset.key, timeframe));
+      if (!svg) {{
+        return;
+      }}
+      if (!rows.length) {{
+        drawInvestmentPlaceholder(svg, asset, timeframe);
+        if (status) {{
+          status.textContent = "No market data returned";
+        }}
+        return;
+      }}
+      const ns = "http://www.w3.org/2000/svg";
+      svg.replaceChildren();
+      const width = 720;
+      const height = 230;
+      const leftPad = 44;
+      const rightPad = 20;
+      const topPad = 24;
+      const bottomPad = 32;
+      const chartWidth = width - leftPad - rightPad;
+      const chartHeight = height - topPad - bottomPad;
+      const prices = rows.flatMap((row) => [row.high, row.low, row.open, row.close].map((value) => Number(value)).filter((value) => Number.isFinite(value)));
+      let minPrice = Math.min(...prices);
+      let maxPrice = Math.max(...prices);
+      if (minPrice === maxPrice) {{
+        minPrice *= 0.995;
+        maxPrice *= 1.005;
+      }}
+      const pad = (maxPrice - minPrice) * 0.08;
+      minPrice -= pad;
+      maxPrice += pad;
+      const step = chartWidth / Math.max(1, rows.length);
+      const bodyWidth = Math.max(2, Math.min(10, step * 0.62));
+      const x = (index) => leftPad + step * index + step / 2;
+      const y = (value) => topPad + (1 - (value - minPrice) / Math.max(0.0000001, maxPrice - minPrice)) * chartHeight;
+      [0, 0.25, 0.5, 0.75, 1].forEach((ratio) => {{
+        const grid = document.createElementNS(ns, "path");
+        const yPos = topPad + chartHeight * ratio;
+        grid.setAttribute("d", "M" + leftPad + " " + yPos.toFixed(1) + " L" + (width - rightPad) + " " + yPos.toFixed(1));
+        grid.setAttribute("stroke", "#e5ebf2");
+        grid.setAttribute("stroke-width", "1");
+        grid.setAttribute("fill", "none");
+        svg.appendChild(grid);
+      }});
+      rows.forEach((row, index) => {{
+        const open = Number.isFinite(Number(row.open)) ? Number(row.open) : Number(row.close);
+        const high = Number.isFinite(Number(row.high)) ? Number(row.high) : Number(row.close);
+        const low = Number.isFinite(Number(row.low)) ? Number(row.low) : Number(row.close);
+        const close = Number(row.close);
+        const up = close >= open;
+        const color = up ? "#147a46" : "#b42318";
+        const candleX = x(index);
+        const wick = document.createElementNS(ns, "line");
+        wick.setAttribute("x1", candleX.toFixed(1));
+        wick.setAttribute("x2", candleX.toFixed(1));
+        wick.setAttribute("y1", y(high).toFixed(1));
+        wick.setAttribute("y2", y(low).toFixed(1));
+        wick.setAttribute("stroke", color);
+        wick.setAttribute("stroke-width", "1.5");
+        wick.setAttribute("stroke-linecap", "round");
+        wick.setAttribute("class", "investment-candle-wick");
+        svg.appendChild(wick);
+
+        const bodyTop = Math.min(y(open), y(close));
+        const bodyHeight = Math.max(2, Math.abs(y(open) - y(close)));
+        const body = document.createElementNS(ns, "rect");
+        body.setAttribute("x", (candleX - bodyWidth / 2).toFixed(1));
+        body.setAttribute("y", bodyTop.toFixed(1));
+        body.setAttribute("width", bodyWidth.toFixed(1));
+        body.setAttribute("height", bodyHeight.toFixed(1));
+        body.setAttribute("rx", "1.5");
+        body.setAttribute("fill", color);
+        body.setAttribute("opacity", up ? "0.92" : "0.82");
+        body.setAttribute("class", "investment-candle-body");
+        svg.appendChild(body);
+      }});
+      const latest = rows[rows.length - 1];
+      const first = rows[0];
+      const change = first.close ? ((latest.close - first.close) / first.close) * 100 : null;
+      const label = document.createElementNS(ns, "text");
+      label.textContent = asset.label + " " + timeframe.label + " " + formatMarketPrice(latest.close);
+      label.setAttribute("x", String(leftPad));
+      label.setAttribute("y", "18");
+      label.setAttribute("fill", "#425466");
+      label.setAttribute("font-size", "13");
+      label.setAttribute("font-weight", "900");
+      svg.appendChild(label);
+      if (status) {{
+        status.textContent = asset.note + " · latest " + formatMarketPrice(latest.close) + " · change " + formatMarketSignedPercent(change) + " · " + new Date(latest.time).toLocaleString();
+      }}
+    }}
+
+    async function refreshInvestmentChart(asset, timeframe) {{
+      const status = document.getElementById(investmentStatusId(asset.key, timeframe));
+      if (asset.source !== "yahoo") {{
+        if (status) {{
+          status.textContent = "Private market source unavailable";
+        }}
+        return;
+      }}
+      try {{
+        if (status) {{
+          status.textContent = "Loading " + asset.symbol + " from Yahoo Finance";
+        }}
+        const payload = await fetchMarketJson(investmentYahooUrl(asset, timeframe));
+        let rows = investmentRowsFromYahoo(payload);
+        if (timeframe.aggregateHours) {{
+          rows = investmentAggregateRows(rows, timeframe.aggregateHours);
+        }}
+        drawInvestmentChart(rows, asset, timeframe);
+      }} catch (error) {{
+        drawInvestmentPlaceholder(document.getElementById(investmentChartId(asset.key, timeframe)), asset, timeframe);
+        if (status) {{
+          status.textContent = "Market data unavailable: " + marketErrorDetail(error);
+        }}
+      }}
+    }}
+
+    function hydrateInvestmentWatchlist() {{
+      investmentAssets.forEach((asset) => {{
+        investmentTimeframes.forEach((timeframe) => {{
+          const status = document.getElementById(investmentStatusId(asset.key, timeframe));
+          const data = (((investmentPreloadedData || {{}})[asset.key] || {{}}).timeframes || {{}})[timeframe.label];
+          if (asset.source !== "yahoo") {{
+            if (status) {{
+              status.textContent = "Private market source unavailable";
+            }}
+            return;
+          }}
+          if (data && data.ok && Array.isArray(data.rows) && data.rows.length) {{
+            drawInvestmentChart(data.rows, asset, timeframe);
+            return;
+          }}
+          drawInvestmentPlaceholder(document.getElementById(investmentChartId(asset.key, timeframe)), asset, timeframe);
+          if (status) {{
+            status.textContent = "Preloaded market data unavailable" + (data && data.error ? ": " + data.error : "");
+          }}
+        }});
+      }});
+    }}
+
+    async function refreshInvestmentWatchlist() {{
+      hydrateInvestmentWatchlist();
+    }}
+
+    function activateInvestmentAsset(target) {{
+      const selected = target || (investmentAssets[0] || {{ key: "" }}).key;
+      document.querySelectorAll("[data-investment-target]").forEach((button) => {{
+        button.classList.toggle("active", button.getAttribute("data-investment-target") === selected);
+      }});
+      document.querySelectorAll("[data-investment-panel]").forEach((panel) => {{
+        panel.classList.toggle("active", panel.getAttribute("data-investment-panel") === selected);
+      }});
+    }}
+
+    function renderInvestmentWatchlist() {{
+      const tabContainer = document.getElementById("investment-asset-tabs");
+      const panelContainer = document.getElementById("investment-chart-panels");
+      if (!tabContainer || !panelContainer) {{
+        return;
+      }}
+      tabContainer.replaceChildren();
+      panelContainer.replaceChildren();
+      investmentAssets.forEach((asset, assetIndex) => {{
+        const button = document.createElement("button");
+        button.className = "subtab-button" + (assetIndex === 0 ? " active" : "");
+        button.type = "button";
+        button.setAttribute("data-investment-target", asset.key);
+        button.textContent = asset.label;
+        button.addEventListener("click", () => {{
+          activateInvestmentAsset(asset.key);
+          storeDashboardSelection(statusActiveInvestmentKey, asset.key);
+        }});
+        tabContainer.appendChild(button);
+
+        const panel = document.createElement("section");
+        panel.className = "investment-asset-panel" + (assetIndex === 0 ? " active" : "");
+        panel.setAttribute("data-investment-panel", asset.key);
+
+        const note = document.createElement("div");
+        note.className = "investment-source-note";
+        note.textContent = asset.symbol + " · " + asset.note;
+        panel.appendChild(note);
+
+        const grid = document.createElement("div");
+        grid.className = "investment-card-grid";
+        investmentTimeframes.forEach((timeframe) => {{
+          const card = document.createElement("section");
+          card.className = "investment-card";
+          const head = document.createElement("div");
+          head.className = "market-chart-head";
+          const title = document.createElement("h2");
+          title.textContent = asset.label + " " + timeframe.label;
+          const status = document.createElement("div");
+          status.id = investmentStatusId(asset.key, timeframe);
+          status.className = "market-status";
+          status.textContent = asset.source === "yahoo" ? "Loading market data" : "Private market source unavailable";
+          head.appendChild(title);
+          head.appendChild(status);
+          card.appendChild(head);
+          const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+          svg.setAttribute("id", investmentChartId(asset.key, timeframe));
+          svg.setAttribute("class", "market-chart");
+          svg.setAttribute("viewBox", "0 0 720 230");
+          svg.setAttribute("role", "img");
+          svg.setAttribute("aria-label", asset.label + " " + timeframe.label + " investment chart");
+          card.appendChild(svg);
+          grid.appendChild(card);
+          drawInvestmentPlaceholder(svg, asset, timeframe);
+        }});
+        panel.appendChild(grid);
+        panelContainer.appendChild(panel);
+      }});
+    }}
+
+    const marketIndicatorSections = {{
+      rsi: new Set([]),
+      trend: new Set(["macd", "ema", "sma", "vwap"]),
+      bollinger: new Set(["bb"]),
+      volatility: new Set(["donchian", "atr", "adx"]),
+      momentum: new Set(["stoch", "cci", "williams", "roc", "momentum"]),
+      volume: new Set(["obv", "mfi", "volume"]),
+      relative: new Set(["relative"]),
+    }};
+    const marketIndicatorPanelTargets = new Set(["rsi", "trend", "volatility", "momentum", "volume-flow"]);
+
+    function indicatorPresetForMarketTarget(target) {{
+      if (target === "volume-flow") {{
+        return "volume";
+      }}
+      return marketIndicatorSections[target] ? target : "";
+    }}
+
+    function activateMarketSection(target) {{
+      const selected = target || "price";
+      document.querySelectorAll("[data-market-target]").forEach((button) => {{
+        button.classList.toggle("active", button.getAttribute("data-market-target") === selected);
+      }});
+      document.querySelectorAll("[data-market-panel]").forEach((panel) => {{
+        const panelTarget = panel.getAttribute("data-market-panel");
+        const visible = panelTarget === selected || (panelTarget === "indicators" && marketIndicatorPanelTargets.has(selected));
+        panel.classList.toggle("active", visible);
+      }});
+      const indicatorPreset = indicatorPresetForMarketTarget(selected);
+      if (indicatorPreset) {{
+        activateIndicatorSection(indicatorPreset);
+      }}
+    }}
 
     function storeDashboardSelection(key, value) {{
       if (!value || !window.localStorage) {{
@@ -7230,10 +9563,20 @@ def write_status_page(
         "data-tab-target",
         hashTarget || loadDashboardSelection(statusActiveTabKey),
       );
-      const timeframeTarget = validDashboardTarget(
-        "[data-timeframe-target]",
-        "data-timeframe-target",
-        loadDashboardSelection(statusActiveTimeframeKey),
+      const marketTarget = validDashboardTarget(
+        "[data-market-target]",
+        "data-market-target",
+        loadDashboardSelection(statusActiveMarketKey),
+      );
+      const indicatorTarget = validDashboardTarget(
+        "[data-indicator-target]",
+        "data-indicator-target",
+        loadDashboardSelection(statusActiveIndicatorKey),
+      );
+      const investmentTarget = validDashboardTarget(
+        "[data-investment-target]",
+        "data-investment-target",
+        loadDashboardSelection(statusActiveInvestmentKey),
       );
       const liquidationTarget = validDashboardTarget(
         "[data-liquidation-target]",
@@ -7243,8 +9586,14 @@ def write_status_page(
       if (tabTarget) {{
         activateDashboardGroup(".tab-button", ".tab-panel", "data-tab-target", "id", tabTarget);
       }}
-      if (timeframeTarget) {{
-        activateDashboardGroup("[data-timeframe-target]", "[data-timeframe-panel]", "data-timeframe-target", "data-timeframe-panel", timeframeTarget);
+      if (marketTarget) {{
+        activateMarketSection(marketTarget);
+      }}
+      if (indicatorTarget) {{
+        activateIndicatorSection(indicatorTarget);
+      }}
+      if (investmentTarget) {{
+        activateInvestmentAsset(investmentTarget);
       }}
       if (liquidationTarget) {{
         activateDashboardGroup("[data-liquidation-target]", "[data-liquidation-panel]", "data-liquidation-target", "data-liquidation-panel", liquidationTarget);
@@ -7262,11 +9611,31 @@ def write_status_page(
       }});
     }});
 
-    document.querySelectorAll("[data-timeframe-target]").forEach((button) => {{
+    document.querySelectorAll("[data-market-target]").forEach((button) => {{
       button.addEventListener("click", () => {{
-        const target = button.getAttribute("data-timeframe-target");
-        activateDashboardGroup("[data-timeframe-target]", "[data-timeframe-panel]", "data-timeframe-target", "data-timeframe-panel", target);
-        storeDashboardSelection(statusActiveTimeframeKey, target);
+        const target = button.getAttribute("data-market-target");
+        activateMarketSection(target);
+        storeDashboardSelection(statusActiveMarketKey, target);
+      }});
+    }});
+
+    function activateIndicatorSection(target) {{
+      const selected = target || "all";
+      document.querySelectorAll("[data-indicator-target]").forEach((button) => {{
+        button.classList.toggle("active", button.getAttribute("data-indicator-target") === selected);
+      }});
+      document.querySelectorAll("[data-indicator-row]").forEach((row) => {{
+        const key = row.getAttribute("data-indicator-row") || "";
+        const visible = selected === "all" || Boolean((marketIndicatorSections[selected] || new Set()).has(key));
+        row.classList.toggle("indicator-row-hidden", !visible);
+      }});
+    }}
+
+    document.querySelectorAll("[data-indicator-target]").forEach((button) => {{
+      button.addEventListener("click", () => {{
+        const target = button.getAttribute("data-indicator-target");
+        activateIndicatorSection(target);
+        storeDashboardSelection(statusActiveIndicatorKey, target);
       }});
     }});
 
@@ -7278,6 +9647,7 @@ def write_status_page(
       }});
     }});
 
+    renderInvestmentWatchlist();
     restoreDashboardSelection();
 
     function bpsNumber(value) {{
@@ -7390,6 +9760,54 @@ def write_status_page(
     pollWatchtowerState();
     window.setInterval(pollWatchtowerState, 5000);
 
+    function marketVolumeSources(config) {{
+      const limit = Number(config.limit || 32);
+      return [
+        {{
+          label: "Gate",
+          color: "#2563eb",
+          parser: "gate",
+          url: "https://api.gateio.ws/api/v4/spot/candlesticks?currency_pair=KAS_USDT&interval=" + config.gate + "&limit=" + limit,
+        }},
+        {{
+          label: "MEXC",
+          color: "#16a34a",
+          parser: "mexc",
+          url: "https://api.mexc.com/api/v3/klines?symbol=KASUSDT&interval=" + config.mexc + "&limit=" + limit,
+        }},
+        {{
+          label: "KuCoin",
+          color: "#7c3aed",
+          parser: "kucoin",
+          url: "https://api.kucoin.com/api/v1/market/candles?type=" + config.kucoin + "&symbol=KAS-USDT",
+        }},
+        {{
+          label: "Bybit",
+          color: "#d97706",
+          parser: "bybit",
+          url: "https://api.bybit.com/v5/market/kline?category=spot&symbol=KASUSDT&interval=" + config.bybit + "&limit=" + limit,
+        }},
+        {{
+          label: "Bitget",
+          color: "#0891b2",
+          parser: "bitget",
+          url: "https://api.bitget.com/api/v2/spot/market/candles?symbol=KASUSDT&granularity=" + config.bitget + "&limit=" + limit,
+        }},
+        {{
+          label: "Kraken",
+          color: "#be123c",
+          parser: "kraken",
+          url: "https://api.kraken.com/0/public/OHLC?pair=KASUSD&interval=" + config.kraken,
+        }},
+        {{
+          label: "HTX",
+          color: "#4b5563",
+          parser: "htx",
+          url: "https://api.huobi.pro/market/history/kline?symbol=kasusdt&period=" + config.htx + "&size=" + limit,
+        }},
+      ];
+    }}
+
     const marketConfig = {{
       tickerUrl: "https://api.bybit.com/v5/market/tickers?category=spot&symbol=KASUSDT",
       futuresTickerUrl: "https://api.bybit.com/v5/market/tickers?category=linear&symbol=KASUSDT",
@@ -7466,6 +9884,91 @@ def write_status_page(
           url: "https://api.bybit.com/v5/market/kline?category=spot&symbol=KASUSDT&interval=M",
         }},
         {{
+          label: "15m",
+          refreshKey: "bb-15m",
+          sourceKey: "spot-bb-15m",
+          sourceLabel: "Spot 15m BB",
+          includeInSignalWatch: false,
+          emaPeriod: 21,
+          limit: 139,
+          displayLimit: 120,
+          intervalMs: 15 * 60 * 1000,
+          lookbackMs: 24 * 60 * 60 * 1000,
+          chartId: "market-chart-bb-15m",
+          statusId: "market-status-bb-15m",
+          refreshMs: 60 * 1000,
+          bollinger: {{ period: 20, deviations: 2, trimLeading: true }},
+          url: "https://api.bybit.com/v5/market/kline?category=spot&symbol=KASUSDT&interval=15",
+        }},
+        {{
+          label: "4h",
+          refreshKey: "bb-4h",
+          sourceKey: "spot-bb-4h",
+          sourceLabel: "Spot 4h BB",
+          includeInSignalWatch: false,
+          emaPeriod: 12,
+          limit: 67,
+          displayLimit: 48,
+          intervalMs: 4 * 60 * 60 * 1000,
+          lookbackMs: 7 * 24 * 60 * 60 * 1000,
+          chartId: "market-chart-bb-4h",
+          statusId: "market-status-bb-4h",
+          refreshMs: 5 * 60 * 1000,
+          bollinger: {{ period: 20, deviations: 2, trimLeading: true }},
+          url: "https://api.bybit.com/v5/market/kline?category=spot&symbol=KASUSDT&interval=240",
+        }},
+        {{
+          label: "1D",
+          refreshKey: "bb-1d",
+          sourceKey: "spot-bb-1D",
+          sourceLabel: "Spot 1D BB",
+          includeInSignalWatch: false,
+          emaPeriod: 10,
+          axisMode: "day",
+          limit: 59,
+          displayLimit: 40,
+          intervalMs: 24 * 60 * 60 * 1000,
+          lookbackMonths: 1,
+          chartId: "market-chart-bb-1d",
+          statusId: "market-status-bb-1d",
+          refreshMs: 10 * 60 * 1000,
+          bollinger: {{ period: 20, deviations: 2, trimLeading: true }},
+          url: "https://api.bybit.com/v5/market/kline?category=spot&symbol=KASUSDT&interval=D",
+        }},
+        {{
+          label: "1W",
+          refreshKey: "bb-1w",
+          sourceKey: "spot-bb-1W",
+          sourceLabel: "Spot 1W BB",
+          includeInSignalWatch: false,
+          emaPeriod: 13,
+          axisMode: "month",
+          limit: 79,
+          displayLimit: 60,
+          intervalMs: 7 * 24 * 60 * 60 * 1000,
+          lookbackMs: 365 * 24 * 60 * 60 * 1000,
+          chartId: "market-chart-bb-1w",
+          statusId: "market-status-bb-1w",
+          refreshMs: 30 * 60 * 1000,
+          bollinger: {{ period: 20, deviations: 2, trimLeading: true }},
+          url: "https://api.bybit.com/v5/market/kline?category=spot&symbol=KASUSDT&interval=W",
+        }},
+        {{
+          label: "1M",
+          refreshKey: "bb-1m",
+          sourceKey: "spot-bb-1M",
+          sourceLabel: "Spot 1M BB",
+          includeInSignalWatch: false,
+          emaPeriod: 6,
+          axisMode: "year",
+          limit: 1000,
+          chartId: "market-chart-bb-1m",
+          statusId: "market-status-bb-1m",
+          refreshMs: 60 * 60 * 1000,
+          bollinger: {{ period: 20, deviations: 2, trimLeading: true }},
+          url: "https://api.bybit.com/v5/market/kline?category=spot&symbol=KASUSDT&interval=M",
+        }},
+        {{
           label: "All",
           emaPeriod: 30,
           axisMode: "month",
@@ -7475,7 +9978,7 @@ def write_status_page(
           trendId: "market-trend-all",
           rsiId: "market-rsi-all",
           refreshMs: 60 * 60 * 1000,
-          bollinger: {{ period: 20, deviations: 2 }},
+          bollinger: {{ period: 20, deviations: 2, trimLeading: true }},
           url: "https://api.bybit.com/v5/market/kline?category=spot&symbol=KASUSDT&interval=D",
         }},
       ],
@@ -7580,57 +10083,63 @@ def write_status_page(
           ],
         }},
       ],
-      volume: {{
-        chartId: "market-volume-chart",
-        statusId: "market-volume-status",
-        legendId: "market-volume-legend",
-        limit: 32,
-        refreshMs: 10 * 60 * 1000,
-        sources: [
-          {{
-            label: "Gate",
-            color: "#2563eb",
-            parser: "gate",
-            url: "https://api.gateio.ws/api/v4/spot/candlesticks?currency_pair=KAS_USDT&interval=1d&limit=32",
-          }},
-          {{
-            label: "MEXC",
-            color: "#16a34a",
-            parser: "mexc",
-            url: "https://api.mexc.com/api/v3/klines?symbol=KASUSDT&interval=1d&limit=32",
-          }},
-          {{
-            label: "KuCoin",
-            color: "#7c3aed",
-            parser: "kucoin",
-            url: "https://api.kucoin.com/api/v1/market/candles?type=1day&symbol=KAS-USDT",
-          }},
-          {{
-            label: "Bybit",
-            color: "#d97706",
-            parser: "bybit",
-            url: "https://api.bybit.com/v5/market/kline?category=spot&symbol=KASUSDT&interval=D&limit=32",
-          }},
-          {{
-            label: "Bitget",
-            color: "#0891b2",
-            parser: "bitget",
-            url: "https://api.bitget.com/api/v2/spot/market/candles?symbol=KASUSDT&granularity=1day&limit=32",
-          }},
-          {{
-            label: "Kraken",
-            color: "#be123c",
-            parser: "kraken",
-            url: "https://api.kraken.com/0/public/OHLC?pair=KASUSD&interval=1440",
-          }},
-          {{
-            label: "HTX",
-            color: "#4b5563",
-            parser: "htx",
-            url: "https://api.huobi.pro/market/history/kline?symbol=kasusdt&period=1day&size=32",
-          }},
-        ],
-      }},
+      volume: [
+        {{
+          label: "15m",
+          chartId: "market-volume-chart-15m",
+          statusId: "market-volume-status-15m",
+          legendId: "market-volume-legend-15m",
+          limit: 96,
+          bucketMs: 15 * 60 * 1000,
+          axisMode: "time",
+          refreshMs: 60 * 1000,
+          sources: marketVolumeSources({{ gate: "15m", mexc: "15m", kucoin: "15min", bybit: "15", bitget: "15min", kraken: "15", htx: "15min", limit: 96 }}),
+        }},
+        {{
+          label: "4h",
+          chartId: "market-volume-chart-4h",
+          statusId: "market-volume-status-4h",
+          legendId: "market-volume-legend-4h",
+          limit: 48,
+          bucketMs: 4 * 60 * 60 * 1000,
+          axisMode: "day",
+          refreshMs: 5 * 60 * 1000,
+          sources: marketVolumeSources({{ gate: "4h", mexc: "4h", kucoin: "4hour", bybit: "240", bitget: "4h", kraken: "240", htx: "4hour", limit: 48 }}),
+        }},
+        {{
+          label: "1D",
+          chartId: "market-volume-chart",
+          statusId: "market-volume-status",
+          legendId: "market-volume-legend",
+          limit: 32,
+          bucketMode: "day",
+          axisMode: "day",
+          refreshMs: 10 * 60 * 1000,
+          sources: marketVolumeSources({{ gate: "1d", mexc: "1d", kucoin: "1day", bybit: "D", bitget: "1day", kraken: "1440", htx: "1day", limit: 32 }}),
+        }},
+        {{
+          label: "1W",
+          chartId: "market-volume-chart-1w",
+          statusId: "market-volume-status-1w",
+          legendId: "market-volume-legend-1w",
+          limit: 60,
+          bucketMs: 7 * 24 * 60 * 60 * 1000,
+          axisMode: "month",
+          refreshMs: 30 * 60 * 1000,
+          sources: marketVolumeSources({{ gate: "7d", mexc: "1w", kucoin: "1week", bybit: "W", bitget: "1week", kraken: "10080", htx: "1week", limit: 60 }}),
+        }},
+        {{
+          label: "1M",
+          chartId: "market-volume-chart-1m",
+          statusId: "market-volume-status-1m",
+          legendId: "market-volume-legend-1m",
+          limit: 1000,
+          bucketMode: "month",
+          axisMode: "year",
+          refreshMs: 60 * 60 * 1000,
+          sources: marketVolumeSources({{ gate: "30d", mexc: "1M", kucoin: "1month", bybit: "M", bitget: "1M", kraken: "21600", htx: "1mon", limit: 1000 }}),
+        }},
+      ],
       microstructure: {{
         statusId: "market-microstructure-status",
         refreshMs: 30 * 1000,
@@ -7698,7 +10207,11 @@ def write_status_page(
       ["cross-1D", "KAS/BTC cross 1D"],
       ["cross-1W", "KAS/BTC cross 1W"],
       ["cross-1M", "KAS/BTC cross 1M"],
-      ["volume", "Exchange volume"],
+      ["volume-15m", "Exchange volume 15m"],
+      ["volume-4h", "Exchange volume 4h"],
+      ["volume-1D", "Exchange volume 1D"],
+      ["volume-1W", "Exchange volume 1W"],
+      ["volume-1M", "Exchange volume 1M"],
       ["orderbook", "Order book"],
       ["recent-trades", "Recent trades"],
       ["futures-positioning", "Futures positioning"],
@@ -8026,16 +10539,26 @@ def write_status_page(
       return Math.floor(now / intervalMs) * intervalMs;
     }}
 
+    function marketBollingerWarmupMs(config) {{
+      const intervalMs = Number(config.intervalMs || 0);
+      const period = Number(((config || {{}}).bollinger || {{}}).period || 0);
+      if (!Number.isFinite(intervalMs) || intervalMs <= 0 || !Number.isFinite(period) || period <= 1) {{
+        return 0;
+      }}
+      return (period - 1) * intervalMs;
+    }}
+
     function marketRangeStartMs(endMs, config) {{
+      const warmupMs = marketBollingerWarmupMs(config);
       const lookbackMonths = Number(config.lookbackMonths || 0);
       if (Number.isFinite(lookbackMonths) && lookbackMonths > 0) {{
         const start = new Date(endMs);
         start.setMonth(start.getMonth() - lookbackMonths);
-        return start.getTime();
+        return start.getTime() - warmupMs;
       }}
       const lookbackMs = Number(config.lookbackMs || 0);
       if (Number.isFinite(lookbackMs) && lookbackMs > 0) {{
-        return endMs - lookbackMs;
+        return endMs - lookbackMs - warmupMs;
       }}
       return null;
     }}
@@ -8578,7 +11101,221 @@ def write_status_page(
       element.className = "market-rsi-badge" + (state.tone ? " " + state.tone : "");
     }}
 
-    function marketRsiCard(id, value, state, updatedAt) {{
+    function marketIndicatorChartColor(tone) {{
+      if (tone === "up") {{
+        return "#147a46";
+      }}
+      if (tone === "down") {{
+        return "#b42318";
+      }}
+      if (tone === "warn" || tone === "hot") {{
+        return "#d97706";
+      }}
+      if (tone === "cool") {{
+        return "#276b74";
+      }}
+      return "#66727f";
+    }}
+
+    function marketIndicatorSparkline(container, values, tone) {{
+      if (!container) {{
+        return;
+      }}
+      const ns = "http://www.w3.org/2000/svg";
+      let svg = container.querySelector("svg.market-indicator-sparkline");
+      if (!svg) {{
+        svg = document.createElementNS(ns, "svg");
+        svg.setAttribute("class", "market-indicator-sparkline");
+        svg.setAttribute("viewBox", "0 0 160 42");
+        svg.setAttribute("preserveAspectRatio", "none");
+        svg.setAttribute("aria-hidden", "true");
+        container.appendChild(svg);
+      }}
+      svg.replaceChildren();
+      const cleanValues = (values || [])
+        .map((value) => Number(value))
+        .filter((value) => Number.isFinite(value))
+        .slice(-48);
+      const baseline = document.createElementNS(ns, "path");
+      baseline.setAttribute("d", "M4 22 L156 22");
+      baseline.setAttribute("stroke", "#d9e1e8");
+      baseline.setAttribute("stroke-width", "1");
+      baseline.setAttribute("stroke-dasharray", "3 4");
+      baseline.setAttribute("fill", "none");
+      svg.appendChild(baseline);
+      if (cleanValues.length < 2) {{
+        return;
+      }}
+      let minValue = Math.min(...cleanValues);
+      let maxValue = Math.max(...cleanValues);
+      if (minValue === maxValue) {{
+        minValue -= 1;
+        maxValue += 1;
+      }}
+      const span = maxValue - minValue;
+      const x = (index) => 4 + (index / Math.max(1, cleanValues.length - 1)) * 152;
+      const y = (value) => 36 - ((value - minValue) / span) * 30;
+      const d = cleanValues
+        .map((value, index) => (index === 0 ? "M" : "L") + x(index).toFixed(1) + " " + y(value).toFixed(1))
+        .join(" ");
+      const area = document.createElementNS(ns, "path");
+      area.setAttribute("d", d + " L156 38 L4 38 Z");
+      area.setAttribute("fill", marketIndicatorChartColor(tone));
+      area.setAttribute("opacity", "0.08");
+      svg.appendChild(area);
+      const line = document.createElementNS(ns, "path");
+      line.setAttribute("d", d);
+      line.setAttribute("fill", "none");
+      line.setAttribute("stroke", marketIndicatorChartColor(tone));
+      line.setAttribute("stroke-width", "2.2");
+      svg.appendChild(line);
+    }}
+
+    function marketRollingAverage(values, period, index) {{
+      if (index + 1 < period) {{
+        return null;
+      }}
+      const rows = values.slice(index + 1 - period, index + 1);
+      return rows.reduce((total, value) => total + value, 0) / period;
+    }}
+
+    function marketRsiSeries(candles, period) {{
+      return candles.map((_, index) => marketRsiValue(candles.slice(0, index + 1), period));
+    }}
+
+    function marketAdxSeries(candles, period) {{
+      return candles.map((_, index) => {{
+        if (index < period + 1) {{
+          return null;
+        }}
+        const rows = candles.slice(index - period, index + 1);
+        let plusDm = 0;
+        let minusDm = 0;
+        let trueRange = 0;
+        for (let rowIndex = 1; rowIndex < rows.length; rowIndex += 1) {{
+          const upMove = rows[rowIndex].high - rows[rowIndex - 1].high;
+          const downMove = rows[rowIndex - 1].low - rows[rowIndex].low;
+          plusDm += upMove > downMove && upMove > 0 ? upMove : 0;
+          minusDm += downMove > upMove && downMove > 0 ? downMove : 0;
+          trueRange += Math.max(rows[rowIndex].high - rows[rowIndex].low, Math.abs(rows[rowIndex].high - rows[rowIndex - 1].close), Math.abs(rows[rowIndex].low - rows[rowIndex - 1].close));
+        }}
+        const plusDi = trueRange ? (plusDm / trueRange) * 100 : 0;
+        const minusDi = trueRange ? (minusDm / trueRange) * 100 : 0;
+        return plusDi + minusDi ? (Math.abs(plusDi - minusDi) / (plusDi + minusDi)) * 100 : 0;
+      }});
+    }}
+
+    function marketIndicatorSeries(candles) {{
+      const closes = candles.map((candle) => candle.close);
+      const trueRanges = marketTrueRanges(candles);
+      const fast = marketEmaPoints(candles, 12);
+      const slow = marketEmaPoints(candles, 26);
+      const macdRaw = candles.map((_, index) => (fast[index] && slow[index] ? fast[index].value - slow[index].value : null));
+      const macdSignal = marketEmaPoints(macdRaw.map((value, index) => ({{ close: value || 0, time: candles[index].time }})), 9);
+      const ema20 = marketEmaPoints(candles, 20);
+      const bollinger = marketBollingerPoints(candles, 20, 2);
+      let obv = 0;
+      const obvValues = candles.map((candle, index) => {{
+        if (index > 0) {{
+          if (candle.close > candles[index - 1].close) {{
+            obv += candle.volume || 0;
+          }} else if (candle.close < candles[index - 1].close) {{
+            obv -= candle.volume || 0;
+          }}
+        }}
+        return obv;
+      }});
+      return {{
+        rsi: marketRsiSeries(candles, 14),
+        macd: macdRaw.map((value, index) => value === null || !macdSignal[index] ? null : value - macdSignal[index].value),
+        ema: candles.map((candle, index) => ema20[index] && ema20[index].value ? ((candle.close - ema20[index].value) / ema20[index].value) * 100 : null),
+        sma: closes.map((close, index) => {{
+          const average = marketRollingAverage(closes, 20, index);
+          return average ? ((close - average) / average) * 100 : null;
+        }}),
+        bb: bollinger.map((point, index) => point && point.upper !== null && point.upper !== point.lower ? ((candles[index].close - point.lower) / (point.upper - point.lower)) * 100 : null),
+        donchian: candles.map((candle, index) => {{
+          if (index + 1 < 20) {{
+            return null;
+          }}
+          const rows = candles.slice(index - 19, index + 1);
+          const high = Math.max(...rows.map((row) => row.high));
+          const low = Math.min(...rows.map((row) => row.low));
+          return high === low ? 50 : ((candle.close - low) / (high - low)) * 100;
+        }}),
+        atr: trueRanges.map((range, index) => {{
+          const average = marketRollingAverage(trueRanges, 14, index);
+          return average && candles[index].close ? (average / candles[index].close) * 100 : null;
+        }}),
+        adx: marketAdxSeries(candles, 14),
+        stoch: candles.map((candle, index) => {{
+          if (index + 1 < 14) {{
+            return null;
+          }}
+          const rows = candles.slice(index - 13, index + 1);
+          const high = Math.max(...rows.map((row) => row.high));
+          const low = Math.min(...rows.map((row) => row.low));
+          return high === low ? 50 : ((candle.close - low) / (high - low)) * 100;
+        }}),
+        cci: candles.map((_, index) => {{
+          if (index + 1 < 20) {{
+            return null;
+          }}
+          const rows = candles.slice(index - 19, index + 1);
+          const typical = rows.map((row) => (row.high + row.low + row.close) / 3);
+          const average = typical.reduce((total, value) => total + value, 0) / 20;
+          const meanDeviation = typical.reduce((total, value) => total + Math.abs(value - average), 0) / 20;
+          const latest = typical[typical.length - 1];
+          return meanDeviation ? (latest - average) / (0.015 * meanDeviation) : 0;
+        }}),
+        williams: candles.map((candle, index) => {{
+          if (index + 1 < 14) {{
+            return null;
+          }}
+          const rows = candles.slice(index - 13, index + 1);
+          const high = Math.max(...rows.map((row) => row.high));
+          const low = Math.min(...rows.map((row) => row.low));
+          return high === low ? -50 : ((high - candle.close) / (high - low)) * -100;
+        }}),
+        roc: candles.map((candle, index) => index >= 12 && candles[index - 12].close ? ((candle.close - candles[index - 12].close) / candles[index - 12].close) * 100 : null),
+        momentum: candles.map((candle, index) => index >= 10 ? candle.close - candles[index - 10].close : null),
+        obv: obvValues,
+        mfi: candles.map((_, index) => {{
+          if (index < 14) {{
+            return null;
+          }}
+          let positive = 0;
+          let negative = 0;
+          for (let rowIndex = index - 13; rowIndex <= index; rowIndex += 1) {{
+            const typical = (candles[rowIndex].high + candles[rowIndex].low + candles[rowIndex].close) / 3;
+            const previousTypical = (candles[rowIndex - 1].high + candles[rowIndex - 1].low + candles[rowIndex - 1].close) / 3;
+            const flow = typical * (candles[rowIndex].volume || 0);
+            if (typical >= previousTypical) {{
+              positive += flow;
+            }} else {{
+              negative += flow;
+            }}
+          }}
+          return negative ? 100 - 100 / (1 + positive / negative) : 100;
+        }}),
+        vwap: candles.map((candle, index) => {{
+          if (index + 1 < 20) {{
+            return null;
+          }}
+          const rows = candles.slice(index - 19, index + 1);
+          const volume = rows.reduce((total, row) => total + (row.volume || 0), 0);
+          const vwap = volume ? rows.reduce((total, row) => total + ((row.high + row.low + row.close) / 3) * (row.volume || 0), 0) / volume : null;
+          return vwap ? ((candle.close - vwap) / vwap) * 100 : null;
+        }}),
+        volume: candles.map((candle, index) => {{
+          const average = marketRollingAverage(candles.map((row) => row.volume || 0), 20, index);
+          return average ? (candle.volume || 0) / average : null;
+        }}),
+        relative: closes.map((close, index) => index > 0 && closes[index - 1] ? ((close - closes[index - 1]) / closes[index - 1]) * 100 : null),
+      }};
+    }}
+
+    function marketRsiCard(id, value, state, updatedAt, series) {{
       const element = document.getElementById(id);
       if (!element) {{
         return;
@@ -8595,6 +11332,7 @@ def write_status_page(
       element.title = state.detail;
       element.setAttribute("aria-label", state.text + ": " + state.detail);
       element.className = "market-indicator-card" + (state.tone ? " " + state.tone : "");
+      marketIndicatorSparkline(element, series, state.tone);
       marketRecordIndicatorAnomaly(element.getAttribute("data-indicator-card") || "unknown", "rsi", state);
     }}
 
@@ -8704,7 +11442,7 @@ def write_status_page(
       }}
     }}
 
-    function marketIndicatorRow(cardId, key, state) {{
+    function marketIndicatorRow(cardId, key, state, series) {{
       const card = document.getElementById(cardId);
       if (!card) {{
         return;
@@ -8718,28 +11456,32 @@ def write_status_page(
         value.textContent = state.text;
         value.title = state.detail;
       }}
+      const wasHidden = row.classList.contains("indicator-row-hidden");
       row.className = "market-indicator-row" + (state.tone ? " " + state.tone : "");
+      row.classList.toggle("indicator-row-hidden", wasHidden);
       row.setAttribute("aria-label", key + ": " + state.detail);
+      marketIndicatorSparkline(row, series, state.tone);
       marketRecordIndicatorAnomaly(card.getAttribute("data-indicator-card") || "unknown", key, state);
     }}
 
     function marketUpdateIndicatorRows(cardId, candles) {{
-      marketIndicatorRow(cardId, "macd", marketMacdState(candles));
-      marketIndicatorRow(cardId, "ema", marketMovingAverageState(candles, 20, "ema"));
-      marketIndicatorRow(cardId, "sma", marketMovingAverageState(candles, 20, "sma"));
-      marketIndicatorRow(cardId, "bb", marketBollingerPositionState(candles, 20, 2));
-      marketIndicatorRow(cardId, "donchian", marketDonchianState(candles, 20));
-      marketIndicatorRow(cardId, "atr", marketAtrState(candles, 14));
-      marketIndicatorRow(cardId, "adx", marketAdxState(candles, 14));
-      marketIndicatorRow(cardId, "stoch", marketStochasticState(candles, 14));
-      marketIndicatorRow(cardId, "cci", marketCciState(candles, 20));
-      marketIndicatorRow(cardId, "williams", marketWilliamsState(candles, 14));
-      marketIndicatorRow(cardId, "roc", marketRocState(candles, 12));
-      marketIndicatorRow(cardId, "momentum", marketMomentumState(candles, 10));
-      marketIndicatorRow(cardId, "obv", marketObvState(candles));
-      marketIndicatorRow(cardId, "mfi", marketMfiState(candles, 14));
-      marketIndicatorRow(cardId, "vwap", marketVwapState(candles, 20));
-      marketIndicatorRow(cardId, "volume", marketVolumeSpikeState(candles, 20));
+      const series = marketIndicatorSeries(candles);
+      marketIndicatorRow(cardId, "macd", marketMacdState(candles), series.macd);
+      marketIndicatorRow(cardId, "ema", marketMovingAverageState(candles, 20, "ema"), series.ema);
+      marketIndicatorRow(cardId, "sma", marketMovingAverageState(candles, 20, "sma"), series.sma);
+      marketIndicatorRow(cardId, "bb", marketBollingerPositionState(candles, 20, 2), series.bb);
+      marketIndicatorRow(cardId, "donchian", marketDonchianState(candles, 20), series.donchian);
+      marketIndicatorRow(cardId, "atr", marketAtrState(candles, 14), series.atr);
+      marketIndicatorRow(cardId, "adx", marketAdxState(candles, 14), series.adx);
+      marketIndicatorRow(cardId, "stoch", marketStochasticState(candles, 14), series.stoch);
+      marketIndicatorRow(cardId, "cci", marketCciState(candles, 20), series.cci);
+      marketIndicatorRow(cardId, "williams", marketWilliamsState(candles, 14), series.williams);
+      marketIndicatorRow(cardId, "roc", marketRocState(candles, 12), series.roc);
+      marketIndicatorRow(cardId, "momentum", marketMomentumState(candles, 10), series.momentum);
+      marketIndicatorRow(cardId, "obv", marketObvState(candles), series.obv);
+      marketIndicatorRow(cardId, "mfi", marketMfiState(candles, 14), series.mfi);
+      marketIndicatorRow(cardId, "vwap", marketVwapState(candles, 20), series.vwap);
+      marketIndicatorRow(cardId, "volume", marketVolumeSpikeState(candles, 20), series.volume);
     }}
 
     function marketSignalState(candles, emaPoints, rsiValue) {{
@@ -8775,7 +11517,7 @@ def write_status_page(
         return;
       }}
       list.replaceChildren();
-      marketConfig.klines.forEach((config) => {{
+      marketConfig.klines.filter((config) => config.includeInSignalWatch !== false).forEach((config) => {{
         const signal = marketSignals.get(config.label) || {{ tone: "", text: "Waiting for candles" }};
         const row = document.createElement("div");
         row.className = "market-signal-row" + (signal.tone ? " " + signal.tone : "");
@@ -8835,13 +11577,17 @@ def write_status_page(
         .join(" ");
     }}
 
-    function drawMarketCandles(rows, chartId, statusId, trendId, rsiId, labelText, emaPeriod, axisMode, bollingerConfig, rsiCardId) {{
+    function drawMarketCandles(rows, chartId, statusId, trendId, rsiId, labelText, emaPeriod, axisMode, bollingerConfig, rsiCardId, displayLimit) {{
       const svg = document.getElementById(chartId);
       if (!svg) {{
         return;
       }}
       svg.replaceChildren();
-      const candles = marketCandlesFromRows(rows);
+      const sourceCandles = marketCandlesFromRows(rows);
+      const parsedDisplayLimit = Number(displayLimit || 0);
+      let candles = Number.isFinite(parsedDisplayLimit) && parsedDisplayLimit > 0
+        ? sourceCandles.slice(-parsedDisplayLimit)
+        : sourceCandles;
       if (candles.length < 2) {{
         marketText(statusId, "Not enough candle data");
         marketTrendBadge(trendId, {{ tone: "", text: "Trend pending", detail: "Not enough candle data" }});
@@ -8851,9 +11597,24 @@ def write_status_page(
         marketSignalWatch(labelText, {{ tone: "", text: "Not enough data" }});
         return;
       }}
-      const bollingerPoints = bollingerConfig
-        ? marketBollingerPoints(candles, bollingerConfig.period, bollingerConfig.deviations)
+      const sourceBollingerPoints = bollingerConfig
+        ? marketBollingerPoints(sourceCandles, bollingerConfig.period, bollingerConfig.deviations)
         : [];
+      const bollingerByTime = new Map(sourceBollingerPoints.map((point) => [point.time, point]));
+      let bollingerPoints = bollingerConfig
+        ? candles.map((candle) => bollingerByTime.get(candle.time) || {{ time: candle.time, basis: null, upper: null, lower: null }})
+        : [];
+      if (bollingerConfig && bollingerConfig.trimLeading) {{
+        const firstBandIndex = bollingerPoints.findIndex((point) => point.upper !== null && point.lower !== null);
+        if (firstBandIndex > 0) {{
+          candles = candles.slice(firstBandIndex);
+          bollingerPoints = bollingerPoints.slice(firstBandIndex);
+        }}
+      }}
+      if (candles.length < 2) {{
+        marketText(statusId, "Not enough Bollinger data");
+        return;
+      }}
       const width = 720;
       const height = 230;
       const leftPad = 24;
@@ -9007,8 +11768,9 @@ def write_status_page(
       const latest = candles[candles.length - 1];
       const rsiValue = marketRsiValue(candles, 14);
       const rsiState = marketRsiState(candles, 14);
+      const indicatorSeries = marketIndicatorSeries(candles);
       marketRsiBadge(rsiId, rsiState);
-      marketRsiCard(rsiCardId, rsiValue, rsiState, latest.time);
+      marketRsiCard(rsiCardId, rsiValue, rsiState, latest.time, indicatorSeries.rsi);
       marketUpdateIndicatorRows(rsiCardId, candles);
       marketSignalWatch(labelText, marketSignalState(candles, emaPoints, rsiValue));
 
@@ -9199,73 +11961,97 @@ def write_status_page(
       return date.getUTCFullYear() + "-" + marketPad2(date.getUTCMonth() + 1) + "-" + marketPad2(date.getUTCDate());
     }}
 
-    function marketVolumePoint(time, volume) {{
+    function marketVolumeBucketKey(time, config) {{
+      if (config.bucketMode === "month") {{
+        const date = new Date(time);
+        return date.getUTCFullYear() + "-" + marketPad2(date.getUTCMonth() + 1);
+      }}
+      if (config.bucketMode === "day") {{
+        return marketDayKey(time);
+      }}
+      const bucketMs = Number(config.bucketMs || 0);
+      if (bucketMs > 0) {{
+        return String(Math.floor(time / bucketMs) * bucketMs);
+      }}
+      return String(time);
+    }}
+
+    function marketVolumePoint(time, volume, close) {{
       const parsedTime = marketNumber(time);
       const parsedVolume = marketNumber(volume);
       if (parsedTime === null || parsedVolume === null || parsedVolume < 0) {{
         return null;
       }}
+      const parsedClose = marketNumber(close);
       return {{
         time: parsedTime < 1000000000000 ? parsedTime * 1000 : parsedTime,
         volume: parsedVolume,
+        close: parsedClose,
       }};
     }}
 
     function marketVolumeRows(payload, parser) {{
       let rows = [];
       if (parser === "gate") {{
-        rows = Array.isArray(payload) ? payload.map((row) => marketVolumePoint(row[0], row[6])) : [];
+        rows = Array.isArray(payload) ? payload.map((row) => marketVolumePoint(row[0], row[6], row[2])) : [];
       }} else if (parser === "mexc") {{
-        rows = Array.isArray(payload) ? payload.map((row) => marketVolumePoint(row[0], row[5])) : [];
+        rows = Array.isArray(payload) ? payload.map((row) => marketVolumePoint(row[0], row[5], row[4])) : [];
       }} else if (parser === "kucoin") {{
-        rows = (((payload || {{}}).data || [])).map((row) => marketVolumePoint(row[0], row[5]));
+        rows = (((payload || {{}}).data || [])).map((row) => marketVolumePoint(row[0], row[5], row[2]));
       }} else if (parser === "bybit") {{
-        rows = ((((payload || {{}}).result || {{}}).list || [])).map((row) => marketVolumePoint(row[0], row[5]));
+        rows = ((((payload || {{}}).result || {{}}).list || [])).map((row) => marketVolumePoint(row[0], row[5], row[4]));
       }} else if (parser === "bitget") {{
-        rows = (((payload || {{}}).data || [])).map((row) => marketVolumePoint(row[0], row[5]));
+        rows = (((payload || {{}}).data || [])).map((row) => marketVolumePoint(row[0], row[5], row[4]));
       }} else if (parser === "kraken") {{
         const result = (payload || {{}}).result || {{}};
         const pairKey = Object.keys(result).find((key) => key !== "last");
-        rows = pairKey ? (result[pairKey] || []).map((row) => marketVolumePoint(row[0], row[6])) : [];
+        rows = pairKey ? (result[pairKey] || []).map((row) => marketVolumePoint(row[0], row[6], row[4])) : [];
       }} else if (parser === "htx") {{
-        rows = (((payload || {{}}).data || [])).map((row) => marketVolumePoint(row.id, row.amount));
+        rows = (((payload || {{}}).data || [])).map((row) => marketVolumePoint(row.id, row.amount, row.close));
       }}
       return rows
         .filter((row) => row !== null)
         .sort((left, right) => left.time - right.time);
     }}
 
-    function marketVolumeDataset(sourceRows, limit) {{
+    function marketVolumeDataset(sourceRows, config) {{
       const sourceLabels = sourceRows.map((item) => item.label);
       const sourceColors = new Map(sourceRows.map((item) => [item.label, item.color]));
-      const byDay = new Map();
+      const byBucket = new Map();
       sourceRows.forEach((source) => {{
         source.rows.forEach((row) => {{
-          const key = marketDayKey(row.time);
-          if (!byDay.has(key)) {{
-            byDay.set(key, {{
+          const key = marketVolumeBucketKey(row.time, config);
+          if (!byBucket.has(key)) {{
+            byBucket.set(key, {{
               key,
               time: row.time,
               volumes: new Map(),
+              prices: new Map(),
             }});
           }}
-          const day = byDay.get(key);
-          day.time = Math.min(day.time, row.time);
-          day.volumes.set(source.label, (day.volumes.get(source.label) || 0) + row.volume);
+          const bucket = byBucket.get(key);
+          bucket.time = Math.min(bucket.time, row.time);
+          bucket.volumes.set(source.label, (bucket.volumes.get(source.label) || 0) + row.volume);
+          if (row.close !== null && row.close !== undefined) {{
+            bucket.prices.set(source.label, row.close);
+          }}
         }});
       }});
-      const days = Array.from(byDay.values())
+      const limit = Number(config.limit || 32);
+      const buckets = Array.from(byBucket.values())
         .sort((left, right) => left.time - right.time)
         .slice(-limit)
-        .map((day) => {{
-          const total = sourceLabels.reduce((sum, label) => sum + (day.volumes.get(label) || 0), 0);
+        .map((bucket) => {{
+          const total = sourceLabels.reduce((sum, label) => sum + (bucket.volumes.get(label) || 0), 0);
+          const fallbackPrice = Array.from(bucket.prices.values()).find((value) => value !== null && value !== undefined);
           return {{
-            ...day,
+            ...bucket,
             total,
+            price: bucket.prices.get("Bybit") ?? fallbackPrice ?? null,
           }};
         }})
-        .filter((day) => day.total > 0);
-      return {{ days, sourceLabels, sourceColors }};
+        .filter((bucket) => bucket.total > 0);
+      return {{ buckets, sourceLabels, sourceColors }};
     }}
 
     function drawMarketVolumeChart(sourceRows, config) {{
@@ -9292,10 +12078,17 @@ def write_status_page(
         totalItem.appendChild(totalSwatch);
         totalItem.appendChild(document.createTextNode("Total"));
         legend.appendChild(totalItem);
+        const priceItem = document.createElement("span");
+        priceItem.className = "total";
+        priceItem.style.color = "#b42318";
+        const priceSwatch = document.createElement("i");
+        priceItem.appendChild(priceSwatch);
+        priceItem.appendChild(document.createTextNode("KAS/USDT"));
+        legend.appendChild(priceItem);
       }}
 
-      const dataset = marketVolumeDataset(sourceRows, Number(config.limit || 32));
-      if (dataset.days.length < 2) {{
+      const dataset = marketVolumeDataset(sourceRows, config);
+      if (dataset.buckets.length < 2) {{
         marketText(config.statusId, "Not enough exchange volume data");
         return;
       }}
@@ -9307,9 +12100,9 @@ def write_status_page(
       const bottomPad = 34;
       const chartWidth = width - leftPad - rightPad;
       const chartHeight = height - topPad - bottomPad;
-      const high = Math.max(...dataset.days.map((day) => day.total)) || 1;
+      const high = Math.max(...dataset.buckets.map((bucket) => bucket.total)) || 1;
       const y = (value) => topPad + chartHeight - (value / high) * chartHeight;
-      const step = chartWidth / dataset.days.length;
+      const step = chartWidth / dataset.buckets.length;
       const barWidth = Math.max(5, Math.min(18, step * 0.58));
       const ns = "http://www.w3.org/2000/svg";
 
@@ -9335,13 +12128,34 @@ def write_status_page(
         svg.appendChild(label);
       }});
 
-      [0, Math.floor((dataset.days.length - 1) / 2), dataset.days.length - 1].forEach((index) => {{
-        const day = dataset.days[index];
+      const priceBuckets = dataset.buckets.filter((bucket) => bucket.price !== null && bucket.price !== undefined);
+      let priceY = null;
+      if (priceBuckets.length >= 2) {{
+        const priceLow = Math.min(...priceBuckets.map((bucket) => bucket.price));
+        const priceHigh = Math.max(...priceBuckets.map((bucket) => bucket.price));
+        const priceSpan = priceHigh - priceLow || priceHigh || 1;
+        priceY = (value) => topPad + chartHeight - ((value - priceLow) / priceSpan) * chartHeight;
+        [0, 0.5, 1].forEach((ratio) => {{
+          const price = priceHigh - priceSpan * ratio;
+          const label = document.createElementNS(ns, "text");
+          label.textContent = formatMarketPrice(price);
+          label.setAttribute("x", "4");
+          label.setAttribute("y", String(topPad + chartHeight * ratio + 4));
+          label.setAttribute("fill", "#b42318");
+          label.setAttribute("font-size", "10");
+          label.setAttribute("font-weight", "800");
+          label.setAttribute("class", "market-axis-label");
+          svg.appendChild(label);
+        }});
+      }}
+
+      [0, Math.floor((dataset.buckets.length - 1) / 2), dataset.buckets.length - 1].forEach((index) => {{
+        const bucket = dataset.buckets[index];
         const label = document.createElementNS(ns, "text");
-        label.textContent = marketAxisTimeLabel(day.time, "day");
+        label.textContent = marketAxisTimeLabel(bucket.time, config.axisMode);
         label.setAttribute("x", String(leftPad + step * index + step / 2));
         label.setAttribute("y", String(height - 9));
-        label.setAttribute("text-anchor", index === 0 ? "start" : index === dataset.days.length - 1 ? "end" : "middle");
+        label.setAttribute("text-anchor", index === 0 ? "start" : index === dataset.buckets.length - 1 ? "end" : "middle");
         label.setAttribute("fill", "#66727f");
         label.setAttribute("font-size", "10");
         label.setAttribute("font-weight", "700");
@@ -9349,11 +12163,11 @@ def write_status_page(
         svg.appendChild(label);
       }});
 
-      dataset.days.forEach((day, index) => {{
+      dataset.buckets.forEach((bucket, index) => {{
         const x = leftPad + step * index + step / 2;
         let stacked = 0;
         dataset.sourceLabels.forEach((label) => {{
-          const value = day.volumes.get(label) || 0;
+          const value = bucket.volumes.get(label) || 0;
           if (value <= 0) {{
             return;
           }}
@@ -9367,7 +12181,7 @@ def write_status_page(
           rect.setAttribute("fill", dataset.sourceColors.get(label) || "#66727f");
           rect.setAttribute("opacity", "0.88");
           const title = document.createElementNS(ns, "title");
-          title.textContent = day.key + " " + label + " " + formatMarketVolume(value);
+          title.textContent = bucket.key + " " + label + " " + formatMarketVolume(value);
           rect.appendChild(title);
           svg.appendChild(rect);
           stacked = next;
@@ -9377,10 +12191,10 @@ def write_status_page(
       const totalPath = document.createElementNS(ns, "path");
       totalPath.setAttribute(
         "d",
-        dataset.days
-          .map((day, index) => {{
+        dataset.buckets
+          .map((bucket, index) => {{
             const x = leftPad + step * index + step / 2;
-            return (index === 0 ? "M" : "L") + x.toFixed(1) + " " + y(day.total).toFixed(1);
+            return (index === 0 ? "M" : "L") + x.toFixed(1) + " " + y(bucket.total).toFixed(1);
           }})
           .join(" ")
       );
@@ -9391,11 +12205,35 @@ def write_status_page(
       totalPath.setAttribute("stroke-linejoin", "round");
       svg.appendChild(totalPath);
 
-      const latest = dataset.days[dataset.days.length - 1];
+      if (priceY) {{
+        const pricePath = document.createElementNS(ns, "path");
+        pricePath.setAttribute(
+          "d",
+          dataset.buckets
+            .map((bucket, index) => {{
+              if (bucket.price === null || bucket.price === undefined) {{
+                return "";
+              }}
+              const x = leftPad + step * index + step / 2;
+              return (index === 0 ? "M" : "L") + x.toFixed(1) + " " + priceY(bucket.price).toFixed(1);
+            }})
+            .filter(Boolean)
+            .join(" ")
+        );
+        pricePath.setAttribute("fill", "none");
+        pricePath.setAttribute("stroke", "#b42318");
+        pricePath.setAttribute("stroke-width", "2.5");
+        pricePath.setAttribute("stroke-linecap", "round");
+        pricePath.setAttribute("stroke-linejoin", "round");
+        pricePath.setAttribute("class", "market-volume-price-line");
+        svg.appendChild(pricePath);
+      }}
+
+      const latest = dataset.buckets[dataset.buckets.length - 1];
       const available = sourceRows.filter((source) => source.rows.length > 0).length;
       marketText(
         config.statusId,
-        "Total " + formatMarketVolume(latest.total) + " across " + available + "/" + config.sources.length + " venues at " + marketAxisTimeLabel(latest.time, "day")
+        "Total " + formatMarketVolume(latest.total) + " / KAS " + formatMarketPrice(latest.price) + " across " + available + "/" + config.sources.length + " venues at " + marketAxisTimeLabel(latest.time, config.axisMode)
       );
     }}
 
@@ -9722,13 +12560,14 @@ def write_status_page(
     }}
 
     async function refreshMarketChart(config) {{
-      if (!marketShouldRefresh("kline:" + config.label, config.refreshMs)) {{
+      const refreshKey = config.refreshKey || config.label;
+      if (!marketShouldRefresh("kline:" + refreshKey, config.refreshMs)) {{
         return;
       }}
       try {{
         const payload = await fetchMarketJson(marketKlineUrl(config));
-        drawMarketCandles(((payload.result || {{}}).list || []), config.chartId, config.statusId, config.trendId, config.rsiId, config.label, config.emaPeriod, config.axisMode, config.bollinger, config.rsiCardId);
-        marketSourceStatus("spot-" + config.label, "Spot " + config.label, payload.fromCache ? "cached" : "ok", marketSourceDetail(payload));
+        drawMarketCandles(((payload.result || {{}}).list || []), config.chartId, config.statusId, config.trendId, config.rsiId, config.label, config.emaPeriod, config.axisMode, config.bollinger, config.rsiCardId, config.displayLimit);
+        marketSourceStatus(config.sourceKey || ("spot-" + config.label), config.sourceLabel || ("Spot " + config.label), payload.fromCache ? "cached" : "ok", marketSourceDetail(payload));
       }} catch (error) {{
         marketText(config.statusId, "KAS/USDT " + config.label + " candles unavailable");
         marketTrendBadge(config.trendId, {{ tone: "", text: "Trend pending", detail: "Market candles unavailable" }});
@@ -9736,7 +12575,7 @@ def write_status_page(
         marketRsiCard(config.rsiCardId, null, {{ tone: "", text: "Unavailable", detail: "Market candles unavailable" }}, null);
         marketIndicatorKeys.forEach((key) => marketIndicatorRow(config.rsiCardId, key, {{ tone: "", text: "unavailable", detail: "Market candles unavailable" }}));
         marketSignalWatch(config.label, {{ tone: "", text: "Unavailable" }});
-        marketSourceStatus("spot-" + config.label, "Spot " + config.label, "fail", marketErrorDetail(error));
+        marketSourceStatus(config.sourceKey || ("spot-" + config.label), config.sourceLabel || ("Spot " + config.label), "fail", marketErrorDetail(error));
       }}
     }}
 
@@ -9761,11 +12600,11 @@ def write_status_page(
       }}
     }}
 
-    async function refreshMarketVolumeChart() {{
-      if (!marketShouldRefresh("volume", marketConfig.volume.refreshMs)) {{
+    async function refreshMarketVolumeChart(config) {{
+      if (!marketShouldRefresh("volume:" + config.label, config.refreshMs)) {{
         return;
       }}
-      const sourceRows = await Promise.all(marketConfig.volume.sources.map(async (source) => {{
+      const sourceRows = await Promise.all(config.sources.map(async (source) => {{
         try {{
           const payload = await fetchMarketJson(source.url);
           return {{
@@ -9784,12 +12623,12 @@ def write_status_page(
           }};
         }}
       }}));
-      drawMarketVolumeChart(sourceRows, marketConfig.volume);
+      drawMarketVolumeChart(sourceRows, config);
       const availableSources = sourceRows.filter((source) => source.rows.length > 0).length;
       const cachedSources = sourceRows.filter((source) => source.cached).length;
       const failedSources = sourceRows.filter((source) => source.rows.length === 0);
       const failedDetail = failedSources.length ? "; failed " + failedSources.slice(0, 3).map((source) => source.label).join(", ") : "";
-      marketSourceStatus("volume", "Exchange volume", availableSources > 0 ? (cachedSources > 0 ? "cached" : "ok") : "fail", availableSources + "/" + marketConfig.volume.sources.length + " venues" + failedDetail);
+      marketSourceStatus("volume-" + config.label, "Exchange volume " + config.label, availableSources > 0 ? (cachedSources > 0 ? "cached" : "ok") : "fail", availableSources + "/" + config.sources.length + " venues" + failedDetail);
     }}
 
     async function refreshMarketMicrostructure() {{
@@ -9961,7 +12800,8 @@ def write_status_page(
       await Promise.all([
         ...marketConfig.klines.map(refreshMarketChart),
         ...marketConfig.cross.map(refreshMarketCrossChart),
-        refreshMarketVolumeChart(),
+        ...marketConfig.volume.map(refreshMarketVolumeChart),
+        refreshInvestmentWatchlist(),
         refreshMarketMicrostructure(),
         refreshFuturesPositioning(),
         refreshFuturesTrend(),
@@ -10028,6 +12868,7 @@ def alert(config: dict) -> int:
     market_metrics = build_market_metrics(market_snapshot_path)
     report = build_report(config)
     apply_stateful_checks(report, state, config)
+    apply_peer_churn_metrics(report, state)
     wallet_event = apply_wallet_change_detection(report, state, config)
     new_wallet_events = update_wallet_event_state(state, report, config)
     (report.get("wallet") or {})["events"] = list(state.get("wallet_events") or [])
@@ -10096,9 +12937,10 @@ def alert(config: dict) -> int:
             state["last_market_risk_alert_key"] = market_risk_key
     save_state(state_path, state)
     recovery_records = recent_recovery_records(config)
-    write_status_page(status_page_path, report, state, benchmark_path, recovery_records, history_db_path, market_snapshot_path)
+    investment_data = fetch_investment_market_data()
+    write_status_page(status_page_path, report, state, benchmark_path, recovery_records, history_db_path, market_snapshot_path, investment_data)
     if canvas_status_page:
-        write_status_page(Path(canvas_status_page), report, state, benchmark_path, recovery_records, history_db_path, market_snapshot_path)
+        write_status_page(Path(canvas_status_page), report, state, benchmark_path, recovery_records, history_db_path, market_snapshot_path, investment_data)
     write_stream_page(stream_page_path, report, state, benchmark_path, market_snapshot_path)
     if canvas_stream_page:
         write_stream_page(Path(canvas_stream_page), report, state, benchmark_path, market_snapshot_path)
@@ -11938,6 +14780,7 @@ def build_market_metrics(path: Path) -> dict[str, Any]:
     latest = records[-1] if records else {}
     latest_successful = successful[-1] if successful else {}
     risk_trend = market_risk_trend(records, hours=24)
+    history_metrics = market_history_metrics(records)
     return {
         "snapshots": len(records),
         "successful_snapshots": len(successful),
@@ -11946,6 +14789,8 @@ def build_market_metrics(path: Path) -> dict[str, Any]:
         "source": latest_successful.get("source") or latest.get("source") or "unknown",
         "latest_successful": latest_successful,
         "risk_trend": risk_trend,
+        "history": history_metrics,
+        "records": records,
     }
 
 
@@ -11963,6 +14808,9 @@ def format_prometheus_metrics(
     node_labels = {"node": report["node_name"]}
     grpc_metrics = report.get("grpc_metrics") or {}
     sdk_metrics = report.get("sdk_metrics") or {}
+    rpc = report.get("rpc") or {}
+    process_summary = report.get("process_summary") or {}
+    peer_churn = report.get("peer_churn") or {}
     progress = report.get("progress") or {}
     latest_processed = progress.get("latest_processed") or {}
     sync_progress = report.get("sync_progress") or {}
@@ -11981,6 +14829,7 @@ def format_prometheus_metrics(
     multi_node_metrics = multi_node_metrics or {}
     latest_market = market_metrics.get("latest_successful") or {}
     market_trend = market_metrics.get("risk_trend") or {}
+    market_history = market_metrics.get("history") or {}
     market_labels = {**node_labels, "source": market_metrics.get("source", "unknown")}
     severity_values = {"ok": 0, "warn": 1, "critical": 2}
     lines = [
@@ -12138,6 +14987,13 @@ def format_prometheus_metrics(
         )
 
     add_prometheus_metric(lines, "kaspa_watchtower_peer_count", grpc_metrics.get("peer_count"), node_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_peer_min_ping_ms", grpc_metrics.get("peer_min_ping_ms"), node_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_peer_p95_ping_ms", grpc_metrics.get("peer_p95_ping_ms"), node_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_peer_churn_available", bool(peer_churn.get("available")), node_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_peer_churn_count", peer_churn.get("churn_count"), node_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_peer_churn_added", peer_churn.get("added"), node_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_peer_churn_removed", peer_churn.get("removed"), node_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_peer_churn_ratio", peer_churn.get("churn_ratio"), node_labels)
     add_prometheus_metric(
         lines,
         "kaspa_watchtower_outbound_peer_count",
@@ -12237,6 +15093,9 @@ def format_prometheus_metrics(
     )
     add_prometheus_metric(lines, "kaspa_watchtower_mempool_size", grpc_metrics.get("mempool_size"), node_labels)
     add_prometheus_metric(lines, "kaspa_watchtower_tip_count", grpc_metrics.get("tip_count"), node_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_rpc_tcp_up", bool(rpc.get("ok")), node_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_grpc_error_responses", grpc_metrics.get("error_count"), node_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_grpc_timeout", bool(grpc_metrics.get("timeout")), node_labels)
     sdk_labels = {
         **node_labels,
         "endpoint": sdk_metrics.get("endpoint") or "unknown",
@@ -12448,6 +15307,24 @@ def format_prometheus_metrics(
     process = grpc_metrics.get("process") or {}
     add_prometheus_metric(
         lines,
+        "kaspa_watchtower_kaspad_processes",
+        process_summary.get("count"),
+        node_labels,
+    )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_kaspad_oldest_uptime_seconds",
+        process_summary.get("oldest_uptime_seconds"),
+        node_labels,
+    )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_kaspad_youngest_uptime_seconds",
+        process_summary.get("youngest_uptime_seconds"),
+        node_labels,
+    )
+    add_prometheus_metric(
+        lines,
         "kaspa_watchtower_process_resident_set_gib",
         process.get("resident_set_gib"),
         node_labels,
@@ -12633,6 +15510,46 @@ def format_prometheus_metrics(
         iso_timestamp_seconds(market_metrics.get("last_checked_at")),
         market_labels,
     )
+    dashboard = market_dashboard_metrics(
+        latest_market,
+        market_metrics.get("records") or [],
+        grpc_metrics=grpc_metrics,
+    )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_market_dashboard_available_metrics",
+        dashboard.get("available_metrics"),
+        market_labels,
+    )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_market_dashboard_total_metrics",
+        dashboard.get("total_metrics"),
+        market_labels,
+    )
+    for signal, count in (dashboard.get("signal_counts") or {}).items():
+        add_prometheus_metric(
+            lines,
+            "kaspa_watchtower_market_dashboard_signal_count",
+            count,
+            {**market_labels, "signal": str(signal)},
+        )
+    for metric in dashboard.get("metrics") or []:
+        metric_labels = {
+            **market_labels,
+            "section": metric.get("section", "unknown"),
+            "metric": metric.get("metric", "unknown"),
+            "label": metric.get("label", "unknown"),
+            "status": metric.get("status", "unknown"),
+            "metric_source": metric.get("source", "unknown"),
+        }
+        add_prometheus_metric(lines, "kaspa_watchtower_market_dashboard_metric_available", metric.get("available"), metric_labels)
+        add_prometheus_metric(lines, "kaspa_watchtower_market_dashboard_metric_status_value", metric.get("status_value"), metric_labels)
+        add_prometheus_metric(lines, "kaspa_watchtower_market_dashboard_metric_value", metric.get("value"), metric_labels)
+        add_prometheus_metric(lines, "kaspa_watchtower_market_dashboard_metric_7d_prior", metric.get("value_7d_prior"), metric_labels)
+        add_prometheus_metric(lines, "kaspa_watchtower_market_dashboard_metric_30d_prior", metric.get("value_30d_prior"), metric_labels)
+        add_prometheus_metric(lines, "kaspa_watchtower_market_dashboard_metric_30d_change_percent", metric.get("change_30d_percent"), metric_labels)
+        add_prometheus_metric(lines, "kaspa_watchtower_market_dashboard_metric_percentile", metric.get("percentile"), metric_labels)
     add_prometheus_metric(
         lines,
         "kaspa_watchtower_market_spot_price_usdt",
@@ -12649,6 +15566,36 @@ def format_prometheus_metrics(
         lines,
         "kaspa_watchtower_market_spot_volume_24h_kas",
         latest_market.get("spot_volume_24h"),
+        market_labels,
+    )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_market_spot_turnover_24h_usdt",
+        latest_market.get("spot_turnover_24h"),
+        market_labels,
+    )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_market_spot_high_24h_usdt",
+        latest_market.get("spot_high_24h"),
+        market_labels,
+    )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_market_spot_low_24h_usdt",
+        latest_market.get("spot_low_24h"),
+        market_labels,
+    )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_market_spot_range_24h_percent",
+        latest_market.get("spot_range_24h_pct"),
+        market_labels,
+    )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_market_spot_position_in_24h_range",
+        latest_market.get("spot_position_in_24h_range"),
         market_labels,
     )
     add_prometheus_metric(
@@ -12687,6 +15634,393 @@ def format_prometheus_metrics(
         latest_market.get("spot_price_source_errors"),
         market_labels,
     )
+    spot_median = numeric(latest_market.get("spot_price_median"))
+    for source_item in latest_market.get("spot_price_sources_detail") or []:
+        venue = str(source_item.get("source") or "unknown")
+        venue_price = numeric(source_item.get("price"))
+        venue_labels = {**market_labels, "venue": venue}
+        add_prometheus_metric(
+            lines,
+            "kaspa_watchtower_market_spot_venue_price_usdt",
+            venue_price,
+            venue_labels,
+        )
+        premium = None
+        if venue_price is not None and spot_median not in (None, 0):
+            premium = ((venue_price - spot_median) / spot_median) * 100
+        add_prometheus_metric(
+            lines,
+            "kaspa_watchtower_market_spot_venue_premium_percent",
+            premium,
+            venue_labels,
+        )
+    for book_name in ("spot", "futures"):
+        orderbook = latest_market.get(f"{book_name}_orderbook") or {}
+        book_labels = {**market_labels, "book": book_name}
+        for key, metric_suffix in (
+            ("best_bid", "best_bid_usdt"),
+            ("best_ask", "best_ask_usdt"),
+            ("mid_price", "mid_price_usdt"),
+            ("spread_pct", "spread_percent"),
+            ("bid_levels", "bid_levels"),
+            ("ask_levels", "ask_levels"),
+            ("bid_depth_0_1pct_kas", "bid_depth_0_1pct_kas"),
+            ("ask_depth_0_1pct_kas", "ask_depth_0_1pct_kas"),
+            ("bid_depth_0_1pct_usdt", "bid_depth_0_1pct_usdt"),
+            ("ask_depth_0_1pct_usdt", "ask_depth_0_1pct_usdt"),
+            ("imbalance_0_1pct", "imbalance_0_1pct"),
+            ("bid_depth_0_25pct_kas", "bid_depth_0_25pct_kas"),
+            ("ask_depth_0_25pct_kas", "ask_depth_0_25pct_kas"),
+            ("bid_depth_0_25pct_usdt", "bid_depth_0_25pct_usdt"),
+            ("ask_depth_0_25pct_usdt", "ask_depth_0_25pct_usdt"),
+            ("imbalance_0_25pct", "imbalance_0_25pct"),
+            ("bid_depth_0_5pct_kas", "bid_depth_0_5pct_kas"),
+            ("ask_depth_0_5pct_kas", "ask_depth_0_5pct_kas"),
+            ("bid_depth_0_5pct_usdt", "bid_depth_0_5pct_usdt"),
+            ("ask_depth_0_5pct_usdt", "ask_depth_0_5pct_usdt"),
+            ("imbalance_0_5pct", "imbalance_0_5pct"),
+            ("bid_depth_1_0pct_kas", "bid_depth_1pct_kas"),
+            ("ask_depth_1_0pct_kas", "ask_depth_1pct_kas"),
+            ("bid_depth_1_0pct_usdt", "bid_depth_1pct_usdt"),
+            ("ask_depth_1_0pct_usdt", "ask_depth_1pct_usdt"),
+            ("imbalance_1_0pct", "imbalance_1pct"),
+            ("bid_depth_2_0pct_kas", "bid_depth_2pct_kas"),
+            ("ask_depth_2_0pct_kas", "ask_depth_2pct_kas"),
+            ("bid_depth_2_0pct_usdt", "bid_depth_2pct_usdt"),
+            ("ask_depth_2_0pct_usdt", "ask_depth_2pct_usdt"),
+            ("imbalance_2_0pct", "imbalance_2pct"),
+            ("buy_slippage_1000_usdt_pct", "buy_slippage_1000_usdt_percent"),
+            ("sell_slippage_1000_usdt_pct", "sell_slippage_1000_usdt_percent"),
+            ("buy_slippage_5000_usdt_pct", "buy_slippage_5000_usdt_percent"),
+            ("sell_slippage_5000_usdt_pct", "sell_slippage_5000_usdt_percent"),
+            ("buy_slippage_10000_usdt_pct", "buy_slippage_10000_usdt_percent"),
+            ("sell_slippage_10000_usdt_pct", "sell_slippage_10000_usdt_percent"),
+            ("bid_depth_5_0pct_kas", "bid_depth_5pct_kas"),
+            ("ask_depth_5_0pct_kas", "ask_depth_5pct_kas"),
+            ("bid_depth_5_0pct_usdt", "bid_depth_5pct_usdt"),
+            ("ask_depth_5_0pct_usdt", "ask_depth_5pct_usdt"),
+            ("imbalance_5_0pct", "imbalance_5pct"),
+            ("bid_depth_10_0pct_kas", "bid_depth_10pct_kas"),
+            ("ask_depth_10_0pct_kas", "ask_depth_10pct_kas"),
+            ("bid_depth_10_0pct_usdt", "bid_depth_10pct_usdt"),
+            ("ask_depth_10_0pct_usdt", "ask_depth_10pct_usdt"),
+            ("imbalance_10_0pct", "imbalance_10pct"),
+            ("largest_bid_wall_price", "largest_bid_wall_price_usdt"),
+            ("largest_bid_wall_kas", "largest_bid_wall_kas"),
+            ("largest_bid_wall_usdt", "largest_bid_wall_usdt"),
+            ("largest_bid_wall_distance_pct", "largest_bid_wall_distance_percent"),
+            ("largest_ask_wall_price", "largest_ask_wall_price_usdt"),
+            ("largest_ask_wall_kas", "largest_ask_wall_kas"),
+            ("largest_ask_wall_usdt", "largest_ask_wall_usdt"),
+            ("largest_ask_wall_distance_pct", "largest_ask_wall_distance_percent"),
+        ):
+            add_prometheus_metric(
+                lines,
+                f"kaspa_watchtower_market_orderbook_{metric_suffix}",
+                orderbook.get(key),
+                book_labels,
+            )
+    for venue, orderbook in (latest_market.get("multi_venue_spot_orderbooks") or {}).items():
+        venue_labels = {**market_labels, "venue": str(venue)}
+        for key, metric_suffix in (
+            ("best_bid", "best_bid_usdt"),
+            ("best_ask", "best_ask_usdt"),
+            ("mid_price", "mid_price_usdt"),
+            ("spread_pct", "spread_percent"),
+            ("bid_levels", "bid_levels"),
+            ("ask_levels", "ask_levels"),
+            ("bid_depth_0_1pct_kas", "bid_depth_0_1pct_kas"),
+            ("ask_depth_0_1pct_kas", "ask_depth_0_1pct_kas"),
+            ("bid_depth_0_1pct_usdt", "bid_depth_0_1pct_usdt"),
+            ("ask_depth_0_1pct_usdt", "ask_depth_0_1pct_usdt"),
+            ("imbalance_0_1pct", "imbalance_0_1pct"),
+            ("bid_depth_0_25pct_kas", "bid_depth_0_25pct_kas"),
+            ("ask_depth_0_25pct_kas", "ask_depth_0_25pct_kas"),
+            ("bid_depth_0_25pct_usdt", "bid_depth_0_25pct_usdt"),
+            ("ask_depth_0_25pct_usdt", "ask_depth_0_25pct_usdt"),
+            ("imbalance_0_25pct", "imbalance_0_25pct"),
+            ("bid_depth_0_5pct_kas", "bid_depth_0_5pct_kas"),
+            ("ask_depth_0_5pct_kas", "ask_depth_0_5pct_kas"),
+            ("bid_depth_0_5pct_usdt", "bid_depth_0_5pct_usdt"),
+            ("ask_depth_0_5pct_usdt", "ask_depth_0_5pct_usdt"),
+            ("imbalance_0_5pct", "imbalance_0_5pct"),
+            ("bid_depth_1_0pct_kas", "bid_depth_1pct_kas"),
+            ("ask_depth_1_0pct_kas", "ask_depth_1pct_kas"),
+            ("bid_depth_1_0pct_usdt", "bid_depth_1pct_usdt"),
+            ("ask_depth_1_0pct_usdt", "ask_depth_1pct_usdt"),
+            ("imbalance_1_0pct", "imbalance_1pct"),
+            ("bid_depth_2_0pct_kas", "bid_depth_2pct_kas"),
+            ("ask_depth_2_0pct_kas", "ask_depth_2pct_kas"),
+            ("bid_depth_2_0pct_usdt", "bid_depth_2pct_usdt"),
+            ("ask_depth_2_0pct_usdt", "ask_depth_2pct_usdt"),
+            ("imbalance_2_0pct", "imbalance_2pct"),
+            ("buy_slippage_1000_usdt_pct", "buy_slippage_1000_usdt_percent"),
+            ("sell_slippage_1000_usdt_pct", "sell_slippage_1000_usdt_percent"),
+            ("buy_slippage_5000_usdt_pct", "buy_slippage_5000_usdt_percent"),
+            ("sell_slippage_5000_usdt_pct", "sell_slippage_5000_usdt_percent"),
+            ("buy_slippage_10000_usdt_pct", "buy_slippage_10000_usdt_percent"),
+            ("sell_slippage_10000_usdt_pct", "sell_slippage_10000_usdt_percent"),
+            ("bid_depth_5_0pct_kas", "bid_depth_5pct_kas"),
+            ("ask_depth_5_0pct_kas", "ask_depth_5pct_kas"),
+            ("bid_depth_5_0pct_usdt", "bid_depth_5pct_usdt"),
+            ("ask_depth_5_0pct_usdt", "ask_depth_5pct_usdt"),
+            ("imbalance_5_0pct", "imbalance_5pct"),
+            ("bid_depth_10_0pct_kas", "bid_depth_10pct_kas"),
+            ("ask_depth_10_0pct_kas", "ask_depth_10pct_kas"),
+            ("bid_depth_10_0pct_usdt", "bid_depth_10pct_usdt"),
+            ("ask_depth_10_0pct_usdt", "ask_depth_10pct_usdt"),
+            ("imbalance_10_0pct", "imbalance_10pct"),
+            ("largest_bid_wall_price", "largest_bid_wall_price_usdt"),
+            ("largest_bid_wall_kas", "largest_bid_wall_kas"),
+            ("largest_bid_wall_usdt", "largest_bid_wall_usdt"),
+            ("largest_bid_wall_distance_pct", "largest_bid_wall_distance_percent"),
+            ("largest_ask_wall_price", "largest_ask_wall_price_usdt"),
+            ("largest_ask_wall_kas", "largest_ask_wall_kas"),
+            ("largest_ask_wall_usdt", "largest_ask_wall_usdt"),
+            ("largest_ask_wall_distance_pct", "largest_ask_wall_distance_percent"),
+        ):
+            add_prometheus_metric(
+                lines,
+                f"kaspa_watchtower_market_spot_venue_orderbook_{metric_suffix}",
+                (orderbook or {}).get(key),
+                venue_labels,
+            )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_market_orderbook_errors",
+        latest_market.get("market_orderbook_errors", latest_market.get("spot_orderbook_errors")),
+        market_labels,
+    )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_market_optional_source_errors",
+        latest_market.get("market_optional_source_errors"),
+        market_labels,
+    )
+    add_prometheus_metric(lines, "kaspa_watchtower_market_btc_price_usdt", latest_market.get("btc_last_price"), market_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_market_btc_change_24h_ratio", latest_market.get("btc_change_24h"), market_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_market_btc_volume_24h_btc", latest_market.get("btc_volume_24h"), market_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_market_btc_turnover_24h_usdt", latest_market.get("btc_turnover_24h"), market_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_market_kas_btc_ratio", latest_market.get("kas_btc_ratio"), market_labels)
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_market_kas_relative_btc_24h_percent_points",
+        latest_market.get("kas_relative_btc_24h_percent_points"),
+        market_labels,
+    )
+    add_prometheus_metric(lines, "kaspa_watchtower_market_eth_price_usdt", latest_market.get("eth_last_price"), market_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_market_eth_change_24h_ratio", latest_market.get("eth_change_24h"), market_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_market_eth_volume_24h_eth", latest_market.get("eth_volume_24h"), market_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_market_eth_turnover_24h_usdt", latest_market.get("eth_turnover_24h"), market_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_market_kas_eth_ratio", latest_market.get("kas_eth_ratio"), market_labels)
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_market_kas_relative_eth_24h_percent_points",
+        latest_market.get("kas_relative_eth_24h_percent_points"),
+        market_labels,
+    )
+    for asset, metrics in (latest_market.get("cross_asset") or {}).items():
+        asset_labels = {**market_labels, "asset": str(asset).upper()}
+        for window in ("1h", "4h", "24h"):
+            add_prometheus_metric(
+                lines,
+                "kaspa_watchtower_market_cross_asset_correlation",
+                (metrics or {}).get(f"correlation_{window}"),
+                {**asset_labels, "window": window},
+            )
+            add_prometheus_metric(
+                lines,
+                "kaspa_watchtower_market_cross_asset_beta",
+                (metrics or {}).get(f"beta_{window}"),
+                {**asset_labels, "window": window},
+            )
+            add_prometheus_metric(
+                lines,
+                "kaspa_watchtower_market_cross_asset_relative_return_percent_points",
+                (metrics or {}).get(f"relative_return_{window}_percent_points"),
+                {**asset_labels, "window": window},
+            )
+    venue_arbitrage = latest_market.get("venue_arbitrage") or {}
+    arbitrage_labels = {
+        **market_labels,
+        "best_bid_venue": venue_arbitrage.get("best_bid_venue", "unknown"),
+        "best_ask_venue": venue_arbitrage.get("best_ask_venue", "unknown"),
+    }
+    add_prometheus_metric(lines, "kaspa_watchtower_market_venue_arbitrage_venues", venue_arbitrage.get("venues"), arbitrage_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_market_venue_arbitrage_best_bid_usdt", venue_arbitrage.get("best_bid"), arbitrage_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_market_venue_arbitrage_best_ask_usdt", venue_arbitrage.get("best_ask"), arbitrage_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_market_venue_arbitrage_spread_percent", venue_arbitrage.get("spread_percent"), arbitrage_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_market_venue_arbitrage_net_spread_percent", venue_arbitrage.get("net_spread_percent"), arbitrage_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_market_venue_arbitrage_assumed_fee_percent", venue_arbitrage.get("assumed_fee_percent"), arbitrage_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_market_coinone_kas_price_krw", latest_market.get("coinone_kas_krw"), market_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_market_coinone_kas_high_24h_krw", latest_market.get("coinone_kas_high_krw"), market_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_market_coinone_kas_low_24h_krw", latest_market.get("coinone_kas_low_krw"), market_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_market_coinone_kas_volume_24h_kas", latest_market.get("coinone_kas_volume_24h_kas"), market_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_market_coinone_kas_turnover_24h_krw", latest_market.get("coinone_kas_turnover_24h_krw"), market_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_market_coinone_kas_best_bid_krw", latest_market.get("coinone_kas_best_bid_krw"), market_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_market_coinone_kas_best_ask_krw", latest_market.get("coinone_kas_best_ask_krw"), market_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_market_coinone_kas_spread_percent", latest_market.get("coinone_kas_spread_percent"), market_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_market_coinone_usdt_krw", latest_market.get("coinone_usdt_krw"), market_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_market_coinone_kas_implied_usdt", latest_market.get("coinone_kas_implied_usdt"), market_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_market_coinone_kimchi_premium_percent", latest_market.get("coinone_kimchi_premium_percent"), market_labels)
+    trade_flow = latest_market.get("trade_flow") or {}
+    for market_name in ("spot", "futures"):
+        flow = trade_flow.get(market_name) or {}
+        flow_labels = {**market_labels, "market": market_name}
+        for key, metric_suffix in (
+            ("trades", "trades"),
+            ("buy_trades", "buy_trades"),
+            ("sell_trades", "sell_trades"),
+            ("buy_volume_kas", "buy_volume_kas"),
+            ("sell_volume_kas", "sell_volume_kas"),
+            ("buy_notional_usdt", "buy_notional_usdt"),
+            ("sell_notional_usdt", "sell_notional_usdt"),
+            ("total_volume_kas", "total_volume_kas"),
+            ("total_notional_usdt", "total_notional_usdt"),
+            ("cvd_kas", "cvd_kas"),
+            ("cvd_usdt", "cvd_usdt"),
+            ("buy_ratio", "buy_ratio"),
+            ("avg_trade_size_kas", "avg_trade_size_kas"),
+            ("largest_trade_size_kas", "largest_trade_size_kas"),
+            ("latest_trade_timestamp_seconds", "latest_trade_timestamp_seconds"),
+        ):
+            add_prometheus_metric(lines, f"kaspa_watchtower_market_trade_flow_{metric_suffix}", flow.get(key), flow_labels)
+    for venue, flow in (latest_market.get("multi_venue_spot_trade_flows") or {}).items():
+        flow_labels = {**market_labels, "venue": str(venue)}
+        for key, metric_suffix in (
+            ("trades", "trades"),
+            ("buy_trades", "buy_trades"),
+            ("sell_trades", "sell_trades"),
+            ("buy_volume_kas", "buy_volume_kas"),
+            ("sell_volume_kas", "sell_volume_kas"),
+            ("buy_notional_usdt", "buy_notional_usdt"),
+            ("sell_notional_usdt", "sell_notional_usdt"),
+            ("total_volume_kas", "total_volume_kas"),
+            ("total_notional_usdt", "total_notional_usdt"),
+            ("cvd_kas", "cvd_kas"),
+            ("cvd_usdt", "cvd_usdt"),
+            ("buy_ratio", "buy_ratio"),
+            ("avg_trade_size_kas", "avg_trade_size_kas"),
+            ("largest_trade_size_kas", "largest_trade_size_kas"),
+            ("latest_trade_timestamp_seconds", "latest_trade_timestamp_seconds"),
+        ):
+            add_prometheus_metric(
+                lines,
+                f"kaspa_watchtower_market_spot_venue_trade_flow_{metric_suffix}",
+                (flow or {}).get(key),
+                flow_labels,
+            )
+    kline = latest_market.get("kline") or {}
+    for market_name in ("spot", "futures"):
+        windows = kline.get(market_name) or {}
+        for window, metrics in windows.items():
+            kline_labels = {**market_labels, "market": market_name, "window": str(window)}
+            for key, metric_suffix in (
+                ("candles", "candles"),
+                ("latest_close", "latest_close_usdt"),
+                ("high", "high_usdt"),
+                ("low", "low_usdt"),
+                ("volume", "volume_kas"),
+                ("turnover", "turnover_usdt"),
+                ("return_percent", "return_percent"),
+                ("realized_volatility_percent", "realized_volatility_percent"),
+                ("rsi_14", "rsi_14"),
+                ("sma_9", "sma_9_usdt"),
+                ("sma_20", "sma_20_usdt"),
+                ("ema_9", "ema_9_usdt"),
+                ("ema_20", "ema_20_usdt"),
+                ("atr_14", "atr_14_usdt"),
+                ("vwap", "vwap_usdt"),
+                ("obv", "obv_kas"),
+                ("mfi_14", "mfi_14"),
+                ("macd", "macd"),
+                ("macd_signal", "macd_signal"),
+                ("macd_histogram", "macd_histogram"),
+                ("bollinger_mid", "bollinger_mid_usdt"),
+                ("bollinger_upper", "bollinger_upper_usdt"),
+                ("bollinger_lower", "bollinger_lower_usdt"),
+                ("bollinger_width_percent", "bollinger_width_percent"),
+                ("bollinger_position", "bollinger_position"),
+                ("range_percent", "range_percent"),
+                ("position_in_range", "position_in_range"),
+            ):
+                add_prometheus_metric(lines, f"kaspa_watchtower_market_kline_{metric_suffix}", metrics.get(key), kline_labels)
+    futures_series = latest_market.get("futures_series") or {}
+    account_ratio = futures_series.get("account_ratio") or {}
+    add_prometheus_metric(lines, "kaspa_watchtower_market_futures_account_buy_ratio", account_ratio.get("buy_ratio"), market_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_market_futures_account_sell_ratio", account_ratio.get("sell_ratio"), market_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_market_futures_account_long_short_ratio", account_ratio.get("long_short_ratio"), market_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_market_futures_account_net_long_ratio", account_ratio.get("net_long_ratio"), market_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_market_futures_account_ratio_timestamp_seconds", account_ratio.get("timestamp_seconds"), market_labels)
+    oi_series = futures_series.get("open_interest") or {}
+    for key, metric_suffix in (
+        ("samples", "samples"),
+        ("latest", "latest_kas"),
+        ("min", "min_kas"),
+        ("max", "max_kas"),
+        ("delta", "delta_kas"),
+        ("change_percent", "change_percent"),
+    ):
+        add_prometheus_metric(lines, f"kaspa_watchtower_market_futures_open_interest_series_{metric_suffix}", oi_series.get(key), market_labels)
+    funding_series = futures_series.get("funding") or {}
+    for key, metric_suffix in (
+        ("samples", "samples"),
+        ("latest", "latest_rate"),
+        ("min", "min_rate"),
+        ("max", "max_rate"),
+        ("avg", "avg_rate"),
+        ("positive_count", "positive_count"),
+        ("negative_count", "negative_count"),
+        ("positive_ratio", "positive_ratio"),
+    ):
+        add_prometheus_metric(lines, f"kaspa_watchtower_market_futures_funding_series_{metric_suffix}", funding_series.get(key), market_labels)
+    liquidation_proxy = futures_series.get("liquidation_proxy") or {}
+    add_prometheus_metric(lines, "kaspa_watchtower_market_liquidation_proxy_oi_delta_kas", liquidation_proxy.get("oi_delta"), market_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_market_liquidation_proxy_price_return_percent", liquidation_proxy.get("price_return_percent"), market_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_market_liquidation_proxy_long_flush_kas", liquidation_proxy.get("long_flush_proxy_kas"), market_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_market_liquidation_proxy_short_squeeze_kas", liquidation_proxy.get("short_squeeze_proxy_kas"), market_labels)
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_market_futures_last_price_usdt",
+        latest_market.get("futures_last_price"),
+        market_labels,
+    )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_market_futures_mark_price_usdt",
+        latest_market.get("futures_mark_price"),
+        market_labels,
+    )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_market_futures_index_price_usdt",
+        latest_market.get("futures_index_price"),
+        market_labels,
+    )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_market_futures_high_24h_usdt",
+        latest_market.get("futures_high_24h"),
+        market_labels,
+    )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_market_futures_low_24h_usdt",
+        latest_market.get("futures_low_24h"),
+        market_labels,
+    )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_market_futures_range_24h_percent",
+        latest_market.get("futures_range_24h_pct"),
+        market_labels,
+    )
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_market_futures_position_in_24h_range",
+        latest_market.get("futures_position_in_24h_range"),
+        market_labels,
+    )
     add_prometheus_metric(
         lines,
         "kaspa_watchtower_market_futures_basis_percent",
@@ -12703,6 +16037,23 @@ def format_prometheus_metrics(
         lines,
         "kaspa_watchtower_market_futures_funding_apr_percent",
         latest_market.get("futures_funding_apr_pct"),
+        market_labels,
+    )
+    next_funding_timestamp = None
+    next_funding_ms = numeric(latest_market.get("futures_next_funding_time"))
+    if next_funding_ms is not None:
+        next_funding_timestamp = next_funding_ms / 1000
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_market_futures_next_funding_timestamp_seconds",
+        next_funding_timestamp,
+        market_labels,
+    )
+    snapshot_timestamp = iso_timestamp_seconds(latest_market.get("checked_at"))
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_market_futures_time_to_next_funding_seconds",
+        None if next_funding_timestamp is None or snapshot_timestamp is None else next_funding_timestamp - snapshot_timestamp,
         market_labels,
     )
     add_prometheus_metric(
@@ -12731,10 +16082,102 @@ def format_prometheus_metrics(
     )
     add_prometheus_metric(
         lines,
+        "kaspa_watchtower_market_futures_turnover_24h_usdt",
+        latest_market.get("futures_turnover_24h"),
+        market_labels,
+    )
+    add_prometheus_metric(
+        lines,
         "kaspa_watchtower_market_futures_oi_volume_ratio",
         latest_market.get("futures_oi_volume_ratio"),
         market_labels,
     )
+    for venue, venue_metrics in (latest_market.get("futures_venues") or {}).items():
+        venue_labels = {**market_labels, "venue": str(venue)}
+        for key, metric_suffix in (
+            ("last_price", "last_price_usdt"),
+            ("mark_price", "mark_price_usdt"),
+            ("index_price", "index_price_usdt"),
+            ("basis_percent", "basis_percent"),
+            ("funding_rate", "funding_rate"),
+            ("funding_indicative_rate", "funding_indicative_rate"),
+            ("next_funding_timestamp_seconds", "next_funding_timestamp_seconds"),
+            ("high_24h", "high_24h_usdt"),
+            ("low_24h", "low_24h_usdt"),
+            ("change_24h_ratio", "change_24h_ratio"),
+            ("change_24h_percent", "change_24h_percent"),
+            ("change_7d_ratio", "change_7d_ratio"),
+            ("change_30d_ratio", "change_30d_ratio"),
+            ("change_90d_ratio", "change_90d_ratio"),
+            ("change_180d_ratio", "change_180d_ratio"),
+            ("change_365d_ratio", "change_365d_ratio"),
+            ("volume_24h_kas", "volume_24h_kas"),
+            ("volume_24h_contracts", "volume_24h_contracts"),
+            ("turnover_24h_usdt", "turnover_24h_usdt"),
+            ("open_interest_contracts", "open_interest_contracts"),
+            ("oi_volume_ratio", "oi_volume_ratio"),
+            ("highest_bid", "highest_bid_usdt"),
+            ("lowest_ask", "lowest_ask_usdt"),
+            ("long_users", "long_users"),
+            ("short_users", "short_users"),
+            ("long_short_user_ratio", "long_short_user_ratio"),
+            ("net_long_user_ratio", "net_long_user_ratio"),
+            ("max_leverage", "max_leverage"),
+            ("min_leverage", "min_leverage"),
+            ("maintenance_margin_rate", "maintenance_margin_rate"),
+            ("risk_limit_base", "risk_limit_base"),
+            ("risk_limit_step", "risk_limit_step"),
+            ("order_size_min", "order_size_min"),
+            ("order_size_max", "order_size_max"),
+            ("max_bid_price", "max_bid_price_usdt"),
+            ("min_ask_price", "min_ask_price_usdt"),
+            ("timestamp_seconds", "timestamp_seconds"),
+        ):
+            add_prometheus_metric(
+                lines,
+                f"kaspa_watchtower_market_futures_venue_{metric_suffix}",
+                (venue_metrics or {}).get(key),
+                venue_labels,
+            )
+    coingecko = latest_market.get("coingecko") or {}
+    for key, metric_suffix in (
+        ("market_cap_rank", "market_cap_rank"),
+        ("watchlist_portfolio_users", "watchlist_portfolio_users"),
+        ("sentiment_votes_up_percent", "sentiment_votes_up_percent"),
+        ("sentiment_votes_down_percent", "sentiment_votes_down_percent"),
+        ("market_cap_usd", "market_cap_usd"),
+        ("market_cap_btc", "market_cap_btc"),
+        ("market_cap_eth", "market_cap_eth"),
+        ("market_cap_krw", "market_cap_krw"),
+        ("fdv_usd", "fully_diluted_valuation_usd"),
+        ("fdv_market_cap_ratio", "fdv_market_cap_ratio"),
+        ("total_volume_usd", "total_volume_usd"),
+        ("total_volume_btc", "total_volume_btc"),
+        ("high_24h_usd", "high_24h_usd"),
+        ("low_24h_usd", "low_24h_usd"),
+        ("ath_usd", "ath_usd"),
+        ("ath_change_percent", "ath_change_percent"),
+        ("atl_usd", "atl_usd"),
+        ("atl_change_percent", "atl_change_percent"),
+        ("total_supply", "total_supply"),
+        ("max_supply", "max_supply"),
+        ("circulating_supply", "circulating_supply"),
+        ("circulating_supply_ratio", "circulating_supply_ratio"),
+    ):
+        add_prometheus_metric(
+            lines,
+            f"kaspa_watchtower_market_coingecko_{metric_suffix}",
+            coingecko.get(key),
+            market_labels,
+        )
+    for window in ("1h", "24h", "7d", "14d", "30d", "60d", "200d", "1y"):
+        for currency in ("usd", "btc", "eth", "krw"):
+            add_prometheus_metric(
+                lines,
+                "kaspa_watchtower_market_coingecko_price_change_percent",
+                coingecko.get(f"price_change_{window}_{currency}_percent"),
+                {**market_labels, "currency": currency, "window": window},
+            )
     add_prometheus_metric(
         lines,
         "kaspa_watchtower_market_positioning_risk_score",
@@ -12793,6 +16236,44 @@ def format_prometheus_metrics(
         market_trend.get("risk_duration_minutes"),
         market_labels,
     )
+    for key, metric_suffix in (
+        ("spot_price_delta_1h", "spot_price_delta_1h_usdt"),
+        ("spot_price_change_1h_percent", "spot_price_change_1h_percent"),
+        ("spot_price_delta_4h", "spot_price_delta_4h_usdt"),
+        ("spot_price_change_4h_percent", "spot_price_change_4h_percent"),
+        ("spot_price_delta_24h", "spot_price_delta_24h_usdt"),
+        ("spot_price_change_24h_percent", "spot_price_change_24h_percent"),
+        ("spot_realized_volatility_1h_percent", "spot_realized_volatility_1h_percent"),
+        ("spot_realized_volatility_4h_percent", "spot_realized_volatility_4h_percent"),
+        ("spot_realized_volatility_24h_percent", "spot_realized_volatility_24h_percent"),
+        ("futures_open_interest_delta_1h", "futures_open_interest_delta_1h_kas"),
+        ("futures_open_interest_change_1h_percent", "futures_open_interest_change_1h_percent"),
+        ("futures_open_interest_delta_4h", "futures_open_interest_delta_4h_kas"),
+        ("futures_open_interest_change_4h_percent", "futures_open_interest_change_4h_percent"),
+        ("futures_open_interest_delta_24h", "futures_open_interest_delta_24h_kas"),
+        ("futures_open_interest_change_24h_percent", "futures_open_interest_change_24h_percent"),
+        ("futures_volume_24h_delta_1h", "futures_volume_24h_delta_1h_kas"),
+        ("futures_volume_24h_change_1h_percent", "futures_volume_24h_change_1h_percent"),
+        ("futures_volume_24h_delta_4h", "futures_volume_24h_delta_4h_kas"),
+        ("futures_volume_24h_change_4h_percent", "futures_volume_24h_change_4h_percent"),
+        ("futures_volume_24h_delta_24h", "futures_volume_24h_delta_24h_kas"),
+        ("futures_volume_24h_change_24h_percent", "futures_volume_24h_change_24h_percent"),
+        ("futures_funding_rate_delta_1h", "futures_funding_rate_delta_1h"),
+        ("futures_funding_rate_delta_4h", "futures_funding_rate_delta_4h"),
+        ("futures_funding_rate_delta_24h", "futures_funding_rate_delta_24h"),
+        ("futures_basis_delta_1h", "futures_basis_delta_1h_percent_points"),
+        ("futures_basis_delta_4h", "futures_basis_delta_4h_percent_points"),
+        ("futures_basis_delta_24h", "futures_basis_delta_24h_percent_points"),
+        ("futures_oi_volume_ratio_delta_1h", "futures_oi_volume_ratio_delta_1h"),
+        ("futures_oi_volume_ratio_delta_4h", "futures_oi_volume_ratio_delta_4h"),
+        ("futures_oi_volume_ratio_delta_24h", "futures_oi_volume_ratio_delta_24h"),
+    ):
+        add_prometheus_metric(
+            lines,
+            f"kaspa_watchtower_market_history_{metric_suffix}",
+            market_history.get(key),
+            market_labels,
+        )
     verdict_values = {"ok": 0, "warn": 1, "critical": 2, "unknown": -1}
     multi_node_nodes = multi_node_metrics.get("nodes") or []
     risk_nodes = [item for item in multi_node_nodes if item.get("flags")]

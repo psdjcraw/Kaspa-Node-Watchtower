@@ -88,9 +88,10 @@ Last verified manually on `2026-06-08`:
 - Network tab: trend panels, severity timeline, relay intake chart, block
   processing rate chart, transaction throughput freshness state, and mempool
   10-second bar chart
-- Market tab: live KAS/USDT market watch, selectable timeframe candles, broad
-  technical-indicator cards, BTC-relative cross charts, and exchange-volume
-  chart
+- Market tab: live KAS/USDT market watch, always-visible timeframe candles,
+  market submenus for Bollinger, RSI, trend, volatility, momentum,
+  volume-flow, BTC-relative cross, exchange-volume, microstructure, and a
+  personal Watchlist
 - Futures tab: persisted 24-hour market risk history, futures positioning,
   futures trend, market source health, and selectable estimated liquidation maps
 - Ops and History tabs: triage queue, check details, command center, benchmark
@@ -115,6 +116,12 @@ Last verified manually on `2026-06-08`:
 - Market indicator cards: RSI, EMA/SMA, MACD, Bollinger, Donchian, ATR, ADX,
   stochastic, CCI, Williams %R, ROC, momentum, OBV, MFI, VWAP, volume spike,
   and BTC-relative strength for the visible KAS/USDT timeframes
+- Market Watchlist: personal investment charts for SpaceX, Tesla, S&P 500,
+  NASDAQ, KOSPI, KOSDAQ, Gold, Silver, WTI, and USD/KRW. Public Yahoo Finance
+  symbols are fetched server-side during status page generation and embedded as
+  preloaded OHLC rows, then rendered as 15m, 4h, 1D, 1W, and 1M candlestick
+  cards. SpaceX remains marked private because it has no public real-time
+  ticker.
 - Indicator anomaly summary: browser-side indicator states are normalized into
   watch, warning, and critical anomaly rows by timeframe and indicator
 - Market microstructure panel: Bybit orderbook and recent public trades provide

@@ -961,6 +961,46 @@ class WatchtowerUnitTests(unittest.TestCase):
                 "futures_open_interest_value": 7010000,
                 "futures_volume_24h": 78000000,
                 "futures_oi_volume_ratio": 2.9487,
+                "multi_venue_spot_orderbooks": {
+                    "Gate": {
+                        "best_bid": 0.0304,
+                        "best_ask": 0.0306,
+                        "spread_pct": 0.6557,
+                        "bid_depth_1_0pct_kas": 100000,
+                        "ask_depth_1_0pct_kas": 90000,
+                    }
+                },
+                "multi_venue_spot_trade_flows": {
+                    "Gate": {
+                        "trades": 3,
+                        "buy_volume_kas": 1200,
+                        "sell_volume_kas": 800,
+                        "cvd_kas": 400,
+                        "buy_ratio": 0.6,
+                    }
+                },
+                "futures_venues": {
+                    "Gate": {
+                        "last_price": 0.0304,
+                        "mark_price": 0.0303,
+                        "index_price": 0.0302,
+                        "funding_rate": 0.0001,
+                        "long_users": 240,
+                        "short_users": 200,
+                        "long_short_user_ratio": 1.2,
+                        "max_leverage": 75,
+                    }
+                },
+                "coingecko": {
+                    "market_cap_rank": 79,
+                    "market_cap_usd": 820000000,
+                    "fdv_usd": 830000000,
+                    "fdv_market_cap_ratio": 1.0122,
+                    "circulating_supply": 27400000000,
+                    "max_supply": 28700000000,
+                    "circulating_supply_ratio": 0.9547,
+                    "price_change_7d_usd_percent": -5.5,
+                },
                 "market_risk_score": 3,
                 "market_risk_level": "warning",
                 "market_risk_level_value": 1,
@@ -1034,6 +1074,11 @@ class WatchtowerUnitTests(unittest.TestCase):
         self.assertIn('kaspa_watchtower_market_futures_funding_z_score{node="test-node",source="Bybit KAS/USDT"} 1.25', metrics)
         self.assertIn("kaspa_watchtower_market_futures_open_interest_kas", metrics)
         self.assertIn("kaspa_watchtower_market_futures_oi_volume_ratio", metrics)
+        self.assertIn('kaspa_watchtower_market_spot_venue_orderbook_best_bid_usdt{node="test-node",source="Bybit KAS/USDT",venue="Gate"} 0.0304', metrics)
+        self.assertIn('kaspa_watchtower_market_spot_venue_trade_flow_cvd_kas{node="test-node",source="Bybit KAS/USDT",venue="Gate"} 400', metrics)
+        self.assertIn('kaspa_watchtower_market_futures_venue_long_short_user_ratio{node="test-node",source="Bybit KAS/USDT",venue="Gate"} 1.2', metrics)
+        self.assertIn('kaspa_watchtower_market_coingecko_market_cap_usd{node="test-node",source="Bybit KAS/USDT"} 8.2e+08', metrics)
+        self.assertIn('kaspa_watchtower_market_coingecko_price_change_percent{currency="usd",node="test-node",source="Bybit KAS/USDT",window="7d"} -5.5', metrics)
         self.assertIn('kaspa_watchtower_market_positioning_risk_score{node="test-node",source="Bybit KAS/USDT"} 3', metrics)
         self.assertIn('kaspa_watchtower_market_positioning_risk_level{level="warning",node="test-node",source="Bybit KAS/USDT"} 1', metrics)
         self.assertIn('kaspa_watchtower_market_positioning_risk_reasons{direction="long_crowded",node="test-node",reasons="funding_z_elevated,basis_elevated,spot_dispersion_elevated",source="Bybit KAS/USDT"} 3', metrics)
@@ -3165,6 +3210,99 @@ class WatchtowerUnitTests(unittest.TestCase):
         self.assertAlmostEqual(summary["median"], 0.031)
         self.assertAlmostEqual(summary["dispersion_pct"], (0.032 - 0.030) / 0.031 * 100)
 
+    def test_investment_rows_from_yahoo_and_4h_aggregation(self):
+        payload = {
+            "chart": {
+                "result": [
+                    {
+                        "timestamp": [1000, 4600, 8200, 15400],
+                        "indicators": {
+                            "quote": [
+                                {
+                                    "open": [10, 11, 12, 13],
+                                    "high": [12, 13, 14, 15],
+                                    "low": [9, 10, 11, 12],
+                                    "close": [11, 12, 13, 14],
+                                    "volume": [100, 200, 300, 400],
+                                }
+                            ]
+                        },
+                    }
+                ]
+            }
+        }
+
+        rows = watchtower.investment_rows_from_yahoo(payload)
+        aggregated = watchtower.investment_aggregate_rows(rows, 4)
+
+        self.assertEqual(len(rows), 4)
+        self.assertEqual(len(aggregated), 2)
+        self.assertEqual(aggregated[0]["open"], 10)
+        self.assertEqual(aggregated[0]["close"], 13)
+        self.assertEqual(aggregated[0]["volume"], 600)
+
+    def test_market_spot_orderbook_metrics_normalize_venue_payloads(self):
+        payload = {
+            "data": {
+                "bids": [["0.0300", "1000"], ["0.0299", "500"]],
+                "asks": [["0.0302", "800"], ["0.0303", "700"]],
+            }
+        }
+
+        metrics = watchtower.market_spot_orderbook_metrics("KuCoin", payload)
+
+        self.assertEqual(metrics["best_bid"], 0.0300)
+        self.assertEqual(metrics["best_ask"], 0.0302)
+        self.assertEqual(metrics["bid_levels"], 2)
+        self.assertEqual(metrics["ask_levels"], 2)
+        self.assertGreater(metrics["bid_depth_1_0pct_kas"], 0)
+
+    def test_market_spot_trade_rows_normalize_venue_payloads(self):
+        rows = watchtower.market_spot_trade_rows(
+            "MEXC",
+            [
+                {"price": "0.030", "qty": "100", "time": 1780000000000, "isBuyerMaker": False},
+                {"price": "0.031", "qty": "40", "time": 1780000001000, "isBuyerMaker": True},
+            ],
+        )
+
+        flow = watchtower.market_trade_flow_from_rows(rows)
+
+        self.assertEqual(flow["trades"], 2)
+        self.assertEqual(flow["buy_volume_kas"], 100)
+        self.assertEqual(flow["sell_volume_kas"], 40)
+        self.assertEqual(flow["cvd_kas"], 60)
+
+    def test_coingecko_market_metrics_extract_market_meta(self):
+        metrics = watchtower.coingecko_market_metrics(
+            {
+                "market_cap_rank": 79,
+                "watchlist_portfolio_users": 1000,
+                "sentiment_votes_up_percentage": 80,
+                "sentiment_votes_down_percentage": 20,
+                "market_data": {
+                    "market_cap": {"usd": 800, "btc": 10, "eth": 300, "krw": 1000},
+                    "fully_diluted_valuation": {"usd": 1000},
+                    "total_volume": {"usd": 50, "btc": 1},
+                    "high_24h": {"usd": 0.04},
+                    "low_24h": {"usd": 0.03},
+                    "ath": {"usd": 0.2},
+                    "ath_change_percentage": {"usd": -85},
+                    "atl": {"usd": 0.001},
+                    "atl_change_percentage": {"usd": 2900},
+                    "circulating_supply": 90,
+                    "max_supply": 100,
+                    "price_change_percentage_7d_in_currency": {"usd": -5, "btc": -2, "eth": -1, "krw": -4},
+                },
+            }
+        )
+
+        self.assertEqual(metrics["market_cap_rank"], 79)
+        self.assertEqual(metrics["market_cap_usd"], 800)
+        self.assertEqual(metrics["fdv_market_cap_ratio"], 1.25)
+        self.assertEqual(metrics["circulating_supply_ratio"], 0.9)
+        self.assertEqual(metrics["price_change_7d_usd_percent"], -5)
+
     def test_market_snapshot_item_adds_positioning_risk_metrics(self):
         snapshot = {
             "ok": True,
@@ -3516,6 +3654,52 @@ class WatchtowerUnitTests(unittest.TestCase):
         self.assertFalse(snapshot["ok"])
         self.assertIn("rate limited", snapshot["error"])
 
+    def test_prometheus_exports_kaspa_market_dashboard_metrics_from_sheet_image(self):
+        report = {
+            "node_name": "test-node",
+            "status": "ok",
+            "severity": "ok",
+            "checks": [],
+            "grpc_metrics": {
+                "network_hashes_per_second": 1_022_100_000_000_000_000,
+                "difficulty": 517_710_000_000_000_000,
+            },
+            "progress": {},
+            "disk": {},
+        }
+        market_metrics = {
+            "source": "Bybit KAS/USDT",
+            "latest_successful": {
+                "checked_at": "2026-06-21T15:00:00+09:00",
+                "source": "Bybit KAS/USDT",
+                "ok": True,
+                "spot_last_price": 0.08979,
+                "coingecko_price_chart": {
+                    "mayer_multiple": 0.8,
+                    "dma_50": 0.07705,
+                    "dma_100": 0.08823,
+                    "dma_200": 0.11180,
+                    "wma_100": 0.10957,
+                },
+            },
+            "records": [],
+            "risk_trend": {},
+            "history": {},
+        }
+
+        metrics = watchtower.format_prometheus_metrics(report, {}, {}, market_metrics)
+
+        self.assertIn("kaspa_watchtower_market_dashboard_metric_value", metrics)
+        self.assertIn('label="Hash Rate 7DMA PH/s"', metrics)
+        self.assertIn('label="MVRV Z-Score"', metrics)
+        self.assertIn('label="Mayer Multiple"', metrics)
+        self.assertIn('label="50DMA"', metrics)
+        self.assertIn('label="Realized Price"', metrics)
+        self.assertIn('metric="mayer_multiple"', metrics)
+        self.assertIn('status="bull"', metrics)
+        self.assertIn('signal="bull"', metrics)
+        self.assertIn("kaspa_watchtower_market_dashboard_total_metrics", metrics)
+
     def test_market_snapshot_item_round_trips_to_sqlite_summary(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
@@ -3766,13 +3950,39 @@ class WatchtowerUnitTests(unittest.TestCase):
             self.assertIn('id="tab-network" class="tab-panel"', html)
             self.assertIn('id="tab-ops" class="tab-panel"', html)
             self.assertIn('id="tab-history" class="tab-panel"', html)
+            self.assertIn('data-market-target="price"', html)
+            self.assertIn('data-market-target="rsi"', html)
+            self.assertIn('data-market-target="trend"', html)
+            self.assertIn('data-market-target="bollinger"', html)
+            self.assertIn('data-market-target="volatility"', html)
+            self.assertIn('data-market-target="momentum"', html)
+            self.assertIn('data-market-target="volume-flow"', html)
+            self.assertIn('data-market-target="watchlist"', html)
+            self.assertIn('data-market-target="relative"', html)
+            self.assertIn('data-market-target="volume"', html)
+            self.assertIn('data-market-target="microstructure"', html)
+            self.assertIn('data-market-panel="price"', html)
+            self.assertIn('data-market-panel="bollinger"', html)
+            self.assertIn('data-market-panel="indicators"', html)
+            self.assertIn('data-market-panel="watchlist"', html)
+            self.assertIn('data-market-panel="relative"', html)
+            self.assertIn('data-market-panel="volume"', html)
+            self.assertIn('data-market-panel="microstructure"', html)
+            self.assertIn('data-indicator-target="all"', html)
+            self.assertIn('data-indicator-target="rsi"', html)
+            self.assertIn('data-indicator-target="trend"', html)
+            self.assertIn('data-indicator-target="bollinger"', html)
+            self.assertIn('data-indicator-target="volatility"', html)
+            self.assertIn('data-indicator-target="momentum"', html)
+            self.assertIn('data-indicator-target="volume"', html)
+            self.assertIn('data-indicator-target="relative"', html)
             self.assertIn("Multi-Node History", html)
             self.assertIn("mainnet-b", html)
             self.assertIn("stale_node", html)
-            self.assertIn('data-timeframe-target="15m"', html)
-            self.assertIn('data-timeframe-panel="15m"', html)
-            self.assertIn('data-timeframe-target="all"', html)
-            self.assertIn('data-timeframe-panel="all"', html)
+            self.assertNotIn('data-timeframe-target=', html)
+            self.assertNotIn('data-timeframe-panel=', html)
+            self.assertNotIn('data-timeframe-target="all"', html)
+            self.assertNotIn('data-timeframe-panel="all"', html)
             self.assertIn('data-liquidation-target="12h"', html)
             self.assertIn('data-liquidation-panel="12h"', html)
             self.assertIn("Hashrate", html)
@@ -3800,7 +4010,46 @@ class WatchtowerUnitTests(unittest.TestCase):
             self.assertLess(html.index("KAS/USDT vs BTC/USDT 4h"), html.index("KAS/USDT vs BTC/USDT 1D"))
             self.assertLess(html.index("KAS/USDT vs BTC/USDT 1D"), html.index("KAS/USDT vs BTC/USDT 1W"))
             self.assertLess(html.index("KAS/USDT vs BTC/USDT 1W"), html.index("KAS/USDT vs BTC/USDT 1M"))
+            self.assertIn("KAS Exchange Volume 15m", html)
+            self.assertIn("KAS Exchange Volume 4h", html)
             self.assertIn("KAS Exchange Volume 1D", html)
+            self.assertIn("KAS Exchange Volume 1W", html)
+            self.assertIn("KAS Exchange Volume 1M", html)
+            self.assertIn("<h2>Watchlist</h2>", html)
+            self.assertIn('id="investment-asset-tabs"', html)
+            self.assertIn('id="investment-chart-panels"', html)
+            self.assertIn("investmentAssets", html)
+            self.assertIn('label: "SpaceX"', html)
+            self.assertIn('label: "Tesla"', html)
+            self.assertIn('label: "S&P 500"', html)
+            self.assertIn('label: "NASDAQ"', html)
+            self.assertIn('label: "KOSPI"', html)
+            self.assertIn('label: "KOSDAQ"', html)
+            self.assertIn('label: "Gold"', html)
+            self.assertIn('label: "Silver"', html)
+            self.assertIn('label: "WTI"', html)
+            self.assertIn('label: "USD/KRW"', html)
+            self.assertIn('label: "15m", range: "5d", interval: "15m"', html)
+            self.assertIn('label: "4h", range: "1mo", interval: "1h", aggregateHours: 4', html)
+            self.assertIn('yahooSymbol: "TSLA"', html)
+            self.assertIn('yahooSymbol: "^GSPC"', html)
+            self.assertIn('yahooSymbol: "^IXIC"', html)
+            self.assertIn('yahooSymbol: "^KS11"', html)
+            self.assertIn('yahooSymbol: "^KQ11"', html)
+            self.assertIn('yahooSymbol: "GC=F"', html)
+            self.assertIn('yahooSymbol: "SI=F"', html)
+            self.assertIn('yahooSymbol: "CL=F"', html)
+            self.assertIn('yahooSymbol: "KRW=X"', html)
+            self.assertIn("query2.finance.yahoo.com/v8/finance/chart", html)
+            self.assertIn("investmentRowsFromYahoo", html)
+            self.assertIn("investmentAggregateRows", html)
+            self.assertIn("investmentPreloadedData", html)
+            self.assertIn("hydrateInvestmentWatchlist", html)
+            self.assertIn("drawInvestmentChart", html)
+            self.assertIn("investment-candle-wick", html)
+            self.assertIn("investment-candle-body", html)
+            self.assertIn("refreshInvestmentChart", html)
+            self.assertIn("refreshInvestmentWatchlist()", html)
             self.assertIn("KAS/USDT Microstructure", html)
             self.assertIn('id="micro-spread"', html)
             self.assertIn('id="micro-depth-imbalance"', html)
@@ -3844,8 +4093,16 @@ class WatchtowerUnitTests(unittest.TestCase):
             self.assertIn('id="market-cross-chart-4h"', html)
             self.assertIn('id="market-cross-chart-1w"', html)
             self.assertIn('id="market-cross-chart-1m"', html)
+            self.assertIn('id="market-volume-chart-15m"', html)
+            self.assertIn('id="market-volume-chart-4h"', html)
             self.assertIn('id="market-volume-chart"', html)
+            self.assertIn('id="market-volume-chart-1w"', html)
+            self.assertIn('id="market-volume-chart-1m"', html)
+            self.assertIn('id="market-volume-legend-15m"', html)
+            self.assertIn('id="market-volume-legend-4h"', html)
             self.assertIn('id="market-volume-legend"', html)
+            self.assertIn('id="market-volume-legend-1w"', html)
+            self.assertIn('id="market-volume-legend-1m"', html)
             self.assertIn('id="futures-mark"', html)
             self.assertIn('id="futures-index"', html)
             self.assertIn('id="futures-basis"', html)
@@ -3887,8 +4144,10 @@ class WatchtowerUnitTests(unittest.TestCase):
             self.assertIn("min-height: 322px", html)
             self.assertIn("main > .panel + .panel", html)
             self.assertIn(".tab-panel:not(.active)", html)
-            self.assertIn(".timeframe-panel:not(.active)", html)
+            self.assertNotIn(".timeframe-panel:not(.active)", html)
+            self.assertIn(".market-section-panel:not(.active)", html)
             self.assertIn(".liquidation-panel:not(.active)", html)
+            self.assertIn(".market-indicator-row.indicator-row-hidden", html)
             self.assertNotIn("\n    .panel + .panel { margin-top: 14px; }", html)
             self.assertIn("activateDashboardGroup", html)
             self.assertIn("statusActiveTabKey", html)
@@ -3914,7 +4173,10 @@ class WatchtowerUnitTests(unittest.TestCase):
             self.assertIn("operator-timeline-panel", html)
             self.assertIn("window.history.replaceState", html)
             self.assertIn("kaspa-watchtower-active-tab", html)
-            self.assertIn("kaspa-watchtower-active-timeframe", html)
+            self.assertIn("kaspa-watchtower-active-market-section", html)
+            self.assertIn("kaspa-watchtower-active-indicator-section", html)
+            self.assertIn("kaspa-watchtower-active-investment-asset", html)
+            self.assertNotIn("kaspa-watchtower-active-timeframe", html)
             self.assertIn("kaspa-watchtower-active-liquidation", html)
             self.assertIn("drawMarketCrossChart", html)
             self.assertIn("marketConfig.cross.map(refreshMarketCrossChart)", html)
@@ -3923,6 +4185,7 @@ class WatchtowerUnitTests(unittest.TestCase):
             self.assertIn("drawMarketVolumeChart", html)
             self.assertIn("marketVolumeRows", html)
             self.assertIn("marketVolumeDataset", html)
+            self.assertIn("market-volume-price-line", html)
             self.assertIn("refreshMarketMicrostructure", html)
             self.assertIn("marketOrderbookRows", html)
             self.assertIn("marketRecentTradeRows", html)
@@ -3942,6 +4205,8 @@ class WatchtowerUnitTests(unittest.TestCase):
             self.assertIn("Estimated from Bybit linear OI/candles", html)
             self.assertIn("marketEmaPoints", html)
             self.assertIn("marketBollingerPoints", html)
+            self.assertIn("marketBollingerWarmupMs", html)
+            self.assertIn("sourceBollingerPoints", html)
             self.assertIn("marketPathFromPoints", html)
             self.assertIn("marketTrendState", html)
             self.assertIn("marketTrendBadge", html)
@@ -3953,8 +4218,22 @@ class WatchtowerUnitTests(unittest.TestCase):
             self.assertIn("marketRecordIndicatorAnomaly", html)
             self.assertIn("marketRenderIndicatorAnomalies", html)
             self.assertIn("marketIndicatorAnomalies", html)
+            self.assertIn("marketIndicatorSparkline", html)
+            self.assertIn("marketIndicatorSeries", html)
+            self.assertIn("market-indicator-sparkline", html)
+            self.assertIn("marketRsiSeries", html)
             self.assertIn("marketUpdateIndicatorRows", html)
             self.assertIn("marketIndicatorRow", html)
+            self.assertIn("marketIndicatorSections", html)
+            self.assertIn("activateIndicatorSection", html)
+            self.assertIn("activateMarketSection", html)
+            self.assertIn("marketIndicatorPanelTargets", html)
+            self.assertIn("renderInvestmentWatchlist", html)
+            self.assertIn("activateInvestmentAsset", html)
+            self.assertIn("drawInvestmentPlaceholder", html)
+            self.assertIn("investment-card-grid", html)
+            self.assertIn("data-investment-target", html)
+            self.assertIn("data-investment-panel", html)
             self.assertIn("marketMacdState", html)
             self.assertIn("marketMovingAverageState", html)
             self.assertIn("marketBollingerPositionState", html)
@@ -3986,6 +4265,10 @@ class WatchtowerUnitTests(unittest.TestCase):
             self.assertIn('data-indicator-row="vwap"', html)
             self.assertIn("market-indicator-card-grid", html)
             self.assertIn("market-indicator-row", html)
+            self.assertIn("market-cross-card-grid", html)
+            self.assertIn(".market-cross-card-grid {\n      display: grid;\n      grid-template-columns: repeat(2, minmax(0, 1fr));", html)
+            self.assertIn("market-volume-card-grid", html)
+            self.assertIn(".market-volume-card-grid {\n      display: grid;\n      grid-template-columns: repeat(2, minmax(0, 1fr));", html)
             self.assertIn("marketRsiState(candles, 14)", html)
             self.assertIn("marketSignalState", html)
             self.assertIn("marketSignalWatch", html)
@@ -3993,6 +4276,10 @@ class WatchtowerUnitTests(unittest.TestCase):
             self.assertIn("marketRefreshTimes", html)
             self.assertIn("marketSourceStatus", html)
             self.assertIn("marketSourceStates", html)
+            self.assertIn("marketVolumeSources", html)
+            self.assertIn("marketVolumeBucketKey", html)
+            self.assertIn('priceItem.appendChild(document.createTextNode("KAS/USDT"))', html)
+            self.assertIn("marketConfig.volume.map(refreshMarketVolumeChart)", html)
             self.assertIn("marketSourceDetail", html)
             self.assertIn("marketErrorDetail", html)
             self.assertIn("marketSourceOrder", html)
@@ -4001,6 +4288,11 @@ class WatchtowerUnitTests(unittest.TestCase):
             self.assertIn("KAS/BTC cross 1D", html)
             self.assertIn("KAS/BTC cross 1W", html)
             self.assertIn("KAS/BTC cross 1M", html)
+            self.assertIn("KAS/USDT 15m Bollinger", html)
+            self.assertIn("KAS/USDT 4h Bollinger", html)
+            self.assertIn("KAS/USDT 1D Bollinger", html)
+            self.assertIn("KAS/USDT 1W Bollinger", html)
+            self.assertIn("KAS/USDT 1M Bollinger", html)
             self.assertIn("marketRenderSourceStates", html)
             self.assertIn("waiting for refresh", html)
             self.assertIn("refreshMs: 60 * 1000", html)
@@ -4019,12 +4311,13 @@ class WatchtowerUnitTests(unittest.TestCase):
             self.assertIn("market-bollinger-line", html)
             self.assertIn("market-bollinger-fill", html)
             self.assertIn('textContent = "BB" + String(bollingerConfig.period)', html)
+            self.assertIn("candles = candles.slice(firstBandIndex)", html)
             self.assertIn("market-trend-badge", html)
             self.assertIn("market-rsi-badge", html)
             self.assertIn("market-signal-row", html)
             self.assertIn("marketKlineUrl", html)
             self.assertIn("marketAxisTimeLabel", html)
-            self.assertEqual(html.count('axisMode: "day"'), 2)
+            self.assertEqual(html.count('axisMode: "day"'), 5)
             self.assertIn('axisMode: "month"', html)
             self.assertIn('axisMode: "year"', html)
             self.assertIn("lookbackMs: 24 * 60 * 60 * 1000", html)
@@ -4032,7 +4325,15 @@ class WatchtowerUnitTests(unittest.TestCase):
             self.assertIn("lookbackMonths: 1", html)
             self.assertIn("lookbackMs: 365 * 24 * 60 * 60 * 1000", html)
             self.assertIn("limit: 1000", html)
-            self.assertIn("bollinger: { period: 20, deviations: 2 }", html)
+            self.assertIn("limit: 139", html)
+            self.assertIn("limit: 67", html)
+            self.assertIn("limit: 59", html)
+            self.assertIn("limit: 79", html)
+            self.assertIn("displayLimit: 120", html)
+            self.assertIn("displayLimit: 48", html)
+            self.assertIn("displayLimit: 40", html)
+            self.assertIn("displayLimit: 60", html)
+            self.assertIn("bollinger: { period: 20, deviations: 2, trimLeading: true }", html)
             self.assertIn("limit: 32", html)
             self.assertIn("emaPeriod: 21", html)
             self.assertIn("emaPeriod: 12", html)
