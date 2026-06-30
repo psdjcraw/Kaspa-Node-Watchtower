@@ -110,6 +110,9 @@ Last verified manually on `2026-06-08`:
 - Indexer tab: Covenant Explorer baseline with top covenant IDs, tx/UTXO/input/
   output counts, token-like and NFT-like heuristics, and latest tx IDs when the
   indexer exposes `topCovenants`
+- Indexer tab: Lane / SeqCommit Monitor baseline with active lanes, lane tx/gas,
+  SeqCommit block counts, lane proof failures, and top lane activity when the
+  indexer exposes `topLanes`
 - Indexer API contract: canonical `/api/health` and `/api/metrics` fields are
   defined in [`docs/indexer-api-spec.md`](indexer-api-spec.md)
 - Ops and History tabs: triage queue, check details, command center, benchmark

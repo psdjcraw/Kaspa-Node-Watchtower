@@ -3092,6 +3092,44 @@ def indexer_covenant_explorer_status(payload: Any) -> dict[str, Any]:
     }
 
 
+def indexer_lane_monitor_status(payload: Any) -> dict[str, Any]:
+    raw_items = find_nested_value(payload, {"topLanes", "top_lanes", "laneActivity", "lanes"})
+    if not isinstance(raw_items, list):
+        raw_items = []
+    items = []
+    for raw in raw_items[:20]:
+        if not isinstance(raw, dict):
+            continue
+        lane_key = find_nested_value(raw, {"laneKey", "lane_key", "subnetworkId", "subnetwork_id", "id"})
+        if lane_key in (None, ""):
+            continue
+        items.append(
+            {
+                "lane_key": str(lane_key),
+                "tx_count": numeric(find_nested_value(raw, {"txCount", "tx_count", "transactions"})),
+                "gas_total": numeric(find_nested_value(raw, {"gasTotal", "gas_total", "gas"})),
+                "seq_commit_block_count": numeric(find_nested_value(raw, {"seqCommitBlockCount", "seq_commit_block_count", "seqCommitBlocks"})),
+                "lane_proof_ok": truthy_metric(find_nested_value(raw, {"laneProofOk", "lane_proof_ok", "proofOk", "proof_ok"})),
+                "latest_block_hash": find_nested_value(raw, {"latestBlockHash", "latest_block_hash", "blockHash", "block_hash"}),
+                "latest_tx_id": find_nested_value(raw, {"latestTxId", "latest_tx_id", "transactionId", "transaction_id"}),
+            }
+        )
+    active_lanes = numeric(find_nested_value(payload, {"activeUserLanes", "active_user_lanes", "userLaneCount", "user_lane_count"}))
+    lane_tx_count = numeric(find_nested_value(payload, {"userLaneTxCount", "user_lane_tx_count", "laneTxCount", "lane_tx_count"}))
+    lane_gas_total = numeric(find_nested_value(payload, {"gasTotal", "gas_total", "totalGas", "total_gas"}))
+    seq_commit_blocks = numeric(find_nested_value(payload, {"seqCommitBlockCount", "seq_commit_block_count", "seqCommitBlocks"}))
+    lane_proof_failures = numeric(find_nested_value(payload, {"laneProofFailures", "lane_proof_failures", "laneProofFailureCount", "lane_proof_failure_count"}))
+    return {
+        "observed": bool(items) or any(value is not None for value in [active_lanes, lane_tx_count, lane_gas_total, seq_commit_blocks, lane_proof_failures]),
+        "active_lanes": active_lanes if active_lanes is not None else len(items) if items else None,
+        "lane_tx_count": lane_tx_count,
+        "lane_gas_total": lane_gas_total,
+        "seq_commit_block_count": seq_commit_blocks,
+        "lane_proof_failures": lane_proof_failures,
+        "items": items,
+    }
+
+
 def timestamp_age_seconds(value: Any, now: dt.datetime | None = None) -> float | None:
     if value in (None, ""):
         return None
@@ -3172,6 +3210,7 @@ def extract_indexer_metrics(payload: Any) -> dict[str, Any]:
         "fee_mass": indexer_fee_mass_status(payload),
         "toccata_activity": indexer_toccata_activity_status(payload),
         "covenant_explorer": indexer_covenant_explorer_status(payload),
+        "lane_monitor": indexer_lane_monitor_status(payload),
         "payload": payload,
     }
 
@@ -7768,6 +7807,7 @@ def indexer_watch_panel(report: dict[str, Any], state: dict[str, Any]) -> str:
     fee_mass = metrics.get("fee_mass") or {}
     toccata_activity = metrics.get("toccata_activity") or {}
     covenant_explorer = metrics.get("covenant_explorer") or {}
+    lane_monitor = metrics.get("lane_monitor") or {}
     capability_rows = "\n".join(
         html_row(
             [
@@ -7813,6 +7853,20 @@ def indexer_watch_panel(report: dict[str, Any], state: dict[str, Any]) -> str:
         )
         for item in (covenant_explorer.get("items") or [])
     ) or html_row(["No covenant activity exposed", "", "", "", "", "", "", ""])
+    lane_rows = "\n".join(
+        html_row(
+            [
+                item.get("lane_key") or "",
+                item.get("tx_count", "unknown"),
+                item.get("gas_total", "unknown"),
+                item.get("seq_commit_block_count", "unknown"),
+                "ok" if item.get("lane_proof_ok") else "unknown",
+                short_hash(item.get("latest_block_hash")) or "",
+                short_hash(item.get("latest_tx_id")) or "",
+            ]
+        )
+        for item in (lane_monitor.get("items") or [])
+    ) or html_row(["No lane activity exposed", "", "", "", "", "", ""])
     checkpoint_age = metrics.get("checkpoint_age_seconds")
     checkpoint_age_text = "unknown" if checkpoint_age is None else f"{float(checkpoint_age):.1f}s"
     return f"""
@@ -7824,6 +7878,7 @@ def indexer_watch_panel(report: dict[str, Any], state: dict[str, Any]) -> str:
       {visual_card("Fee/Mass", f"{fee_mass.get('observed', 0)}/{fee_mass.get('total', len(TOCCATA_FEE_MASS_METRICS))}", f"relay_fee_ok={fee_mass.get('relay_fee_ok', 'unknown')}", "ok" if fee_mass.get("ok") else "warn")}
       {visual_card("Tx Activity", f"{toccata_activity.get('active', 0)} active", f"observed={toccata_activity.get('observed', 0)}/{toccata_activity.get('total', len(TOCCATA_TX_ACTIVITY_METRICS))}", "neutral")}
       {visual_card("Covenants", covenant_explorer.get("covenant_id_count", "unknown"), f"tokens={covenant_explorer.get('token_candidate_count', 'unknown')} nfts={covenant_explorer.get('nft_candidate_count', 'unknown')}", "neutral")}
+      {visual_card("Lanes", lane_monitor.get("active_lanes", "unknown"), f"proof_failures={lane_monitor.get('lane_proof_failures', 'unknown')}", "warn" if numeric(lane_monitor.get("lane_proof_failures")) else "neutral")}
       {visual_card("Watch Addresses", len(targets), f"enabled={watch.get('enabled', False)}", "neutral")}
       {visual_card("Watched Events", len(events), f"new={len(watch.get('new_events') or [])}", "neutral")}
     </section>
@@ -7893,6 +7948,20 @@ def indexer_watch_panel(report: dict[str, Any], state: dict[str, Any]) -> str:
       <table>
         <thead>{html_row(["Covenant ID", "Tx", "UTXO", "Inputs", "Outputs", "Token", "NFT", "Latest Tx"], "th")}</thead>
         <tbody>{covenant_rows}</tbody>
+      </table>
+    </section>
+    <section class="panel">
+      <h2>Lane / SeqCommit Monitor</h2>
+      <div class="context-grid">
+        <div class="context-item"><div class="context-label">Active Lanes</div><div class="context-value">{html.escape(str(lane_monitor.get('active_lanes', 'unknown')))}</div></div>
+        <div class="context-item"><div class="context-label">Lane Tx</div><div class="context-value">{html.escape(str(lane_monitor.get('lane_tx_count', 'unknown')))}</div></div>
+        <div class="context-item"><div class="context-label">Lane Gas</div><div class="context-value">{html.escape(str(lane_monitor.get('lane_gas_total', 'unknown')))}</div></div>
+        <div class="context-item"><div class="context-label">SeqCommit Blocks</div><div class="context-value">{html.escape(str(lane_monitor.get('seq_commit_block_count', 'unknown')))}</div></div>
+        <div class="context-item"><div class="context-label">Proof Failures</div><div class="context-value">{html.escape(str(lane_monitor.get('lane_proof_failures', 'unknown')))}</div></div>
+      </div>
+      <table>
+        <thead>{html_row(["Lane Key", "Tx", "Gas", "SeqCommit Blocks", "Proof", "Latest Block", "Latest Tx"], "th")}</thead>
+        <tbody>{lane_rows}</tbody>
       </table>
     </section>
     <section class="layout">
@@ -15549,6 +15618,18 @@ def format_prometheus_metrics(
         add_prometheus_metric(lines, "kaspa_watchtower_indexer_covenant_output_count", item.get("output_count"), covenant_labels)
         add_prometheus_metric(lines, "kaspa_watchtower_indexer_covenant_token_like", bool(item.get("token_like")), covenant_labels)
         add_prometheus_metric(lines, "kaspa_watchtower_indexer_covenant_nft_like", bool(item.get("nft_like")), covenant_labels)
+    lane_monitor = indexer_metrics.get("lane_monitor") or {}
+    add_prometheus_metric(lines, "kaspa_watchtower_indexer_active_user_lanes", lane_monitor.get("active_lanes"), node_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_indexer_lane_tx_count", lane_monitor.get("lane_tx_count"), node_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_indexer_lane_gas_total", lane_monitor.get("lane_gas_total"), node_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_indexer_seq_commit_block_count", lane_monitor.get("seq_commit_block_count"), node_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_indexer_lane_proof_failures", lane_monitor.get("lane_proof_failures"), node_labels)
+    for item in (lane_monitor.get("items") or [])[:10]:
+        lane_labels = {**node_labels, "lane_key": item.get("lane_key", "unknown")}
+        add_prometheus_metric(lines, "kaspa_watchtower_indexer_lane_top_tx_count", item.get("tx_count"), lane_labels)
+        add_prometheus_metric(lines, "kaspa_watchtower_indexer_lane_top_gas_total", item.get("gas_total"), lane_labels)
+        add_prometheus_metric(lines, "kaspa_watchtower_indexer_lane_top_seq_commit_blocks", item.get("seq_commit_block_count"), lane_labels)
+        add_prometheus_metric(lines, "kaspa_watchtower_indexer_lane_top_proof_ok", bool(item.get("lane_proof_ok")), lane_labels)
     add_prometheus_metric(lines, "kaspa_watchtower_watch_readiness_ok", watch_readiness_ok(report), node_labels)
     add_prometheus_metric(lines, "kaspa_watchtower_indexer_watch_enabled", bool(indexer_watch.get("enabled")), node_labels)
     add_prometheus_metric(lines, "kaspa_watchtower_indexer_watch_ok", bool(indexer_watch.get("ok")), node_labels)

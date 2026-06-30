@@ -42,6 +42,9 @@ All notable changes to Kaspa Node Watchtower are tracked here.
 - Added a Covenant Explorer baseline to the Indexer tab and Prometheus output,
   covering top covenant IDs, tx/UTXO/input/output counts, token-like and
   NFT-like heuristics, and latest transaction IDs when exposed by the indexer.
+- Added a Lane / SeqCommit Monitor baseline to the Indexer tab and Prometheus
+  output, covering active lanes, lane tx/gas, SeqCommit block counts, lane proof
+  failures, and top lane activity when exposed by the indexer.
 - `watchtower.py --alert` now emits a market-risk-high alert body when a new
   critical market positioning snapshot is detected.
 

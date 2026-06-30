@@ -182,6 +182,7 @@ class WatchtowerUnitTests(unittest.TestCase):
                         "risc0TxCount": 0,
                         "tokenCandidateCount": 1,
                         "nftCandidateCount": 1,
+                        "laneProofFailures": 0,
                         "topCovenants": [
                             {
                                 "covenantId": "a" * 64,
@@ -203,6 +204,17 @@ class WatchtowerUnitTests(unittest.TestCase):
                                 "nftLike": True,
                                 "latestTxId": "d" * 64,
                             },
+                        ],
+                        "topLanes": [
+                            {
+                                "laneKey": "abcd000000000000000000000000000000000000",
+                                "txCount": 11,
+                                "gasTotal": 7500,
+                                "seqCommitBlockCount": 4,
+                                "laneProofOk": True,
+                                "latestBlockHash": "e" * 64,
+                                "latestTxId": "f" * 64,
+                            }
                         ],
                     },
                 },
@@ -228,6 +240,9 @@ class WatchtowerUnitTests(unittest.TestCase):
         self.assertEqual(status["metrics"]["covenant_explorer"]["covenant_id_count"], 2)
         self.assertEqual(status["metrics"]["covenant_explorer"]["token_candidate_count"], 1)
         self.assertEqual(status["metrics"]["covenant_explorer"]["items"][0]["tx_count"], 7)
+        self.assertTrue(status["metrics"]["lane_monitor"]["observed"])
+        self.assertEqual(status["metrics"]["lane_monitor"]["active_lanes"], 1)
+        self.assertEqual(status["metrics"]["lane_monitor"]["items"][0]["gas_total"], 7500)
 
     def test_fetch_optional_indexer_status_flags_stale_metrics(self):
         config = copy.deepcopy(watchtower.DEFAULT_CONFIG)
@@ -1032,6 +1047,25 @@ class WatchtowerUnitTests(unittest.TestCase):
                             }
                         ],
                     },
+                    "lane_monitor": {
+                        "observed": True,
+                        "active_lanes": 1,
+                        "lane_tx_count": 1,
+                        "lane_gas_total": 5000,
+                        "seq_commit_block_count": 3,
+                        "lane_proof_failures": 0,
+                        "items": [
+                            {
+                                "lane_key": "abcd000000000000000000000000000000000000",
+                                "tx_count": 11,
+                                "gas_total": 7500,
+                                "seq_commit_block_count": 4,
+                                "lane_proof_ok": True,
+                                "latest_block_hash": "e" * 64,
+                                "latest_tx_id": "f" * 64,
+                            }
+                        ],
+                    },
                 },
             },
             "indexer_watch": {
@@ -1251,6 +1285,10 @@ class WatchtowerUnitTests(unittest.TestCase):
         self.assertIn('kaspa_watchtower_indexer_covenant_token_candidates{node="test-node"} 1', metrics)
         self.assertIn('kaspa_watchtower_indexer_covenant_tx_count{covenant_id="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",node="test-node"} 7', metrics)
         self.assertIn('kaspa_watchtower_indexer_covenant_token_like{covenant_id="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",node="test-node"} 1', metrics)
+        self.assertIn('kaspa_watchtower_indexer_active_user_lanes{node="test-node"} 1', metrics)
+        self.assertIn('kaspa_watchtower_indexer_lane_proof_failures{node="test-node"} 0', metrics)
+        self.assertIn('kaspa_watchtower_indexer_lane_top_gas_total{lane_key="abcd000000000000000000000000000000000000",node="test-node"} 7500', metrics)
+        self.assertIn('kaspa_watchtower_indexer_lane_top_proof_ok{lane_key="abcd000000000000000000000000000000000000",node="test-node"} 1', metrics)
         self.assertIn('kaspa_watchtower_watch_readiness_ok{node="test-node"} 1', metrics)
         self.assertIn('kaspa_watchtower_indexer_watch_enabled{node="test-node"} 1', metrics)
         self.assertIn('kaspa_watchtower_indexer_watch_events_total{node="test-node"} 1', metrics)
@@ -4204,6 +4242,8 @@ class WatchtowerUnitTests(unittest.TestCase):
             self.assertIn("No post-Toccata tx activity metrics exposed", html)
             self.assertIn("Covenant Explorer", html)
             self.assertIn("No covenant activity exposed", html)
+            self.assertIn("Lane / SeqCommit Monitor", html)
+            self.assertIn("No lane activity exposed", html)
             self.assertIn("KAS/USDT 15m", html)
             self.assertIn("KAS/USDT 4h", html)
             self.assertIn("KAS/USDT 1D", html)

@@ -81,6 +81,7 @@ Recommended top-level response:
     "risc0TxCount": 0,
     "tokenCandidateCount": 0,
     "nftCandidateCount": 0,
+    "laneProofFailures": 0,
     "topCovenants": [
       {
         "covenantId": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
@@ -90,6 +91,17 @@ Recommended top-level response:
         "outputCount": 0,
         "tokenLike": false,
         "nftLike": false,
+        "latestTxId": null
+      }
+    ],
+    "topLanes": [
+      {
+        "laneKey": "abcd000000000000000000000000000000000000",
+        "txCount": 0,
+        "gasTotal": 0,
+        "seqCommitBlockCount": 0,
+        "laneProofOk": true,
+        "latestBlockHash": null,
         "latestTxId": null
       }
     ]
@@ -190,6 +202,30 @@ Each `topCovenants` item should use:
 
 Recommended ordering is descending `txCount`, then descending `utxoCount`.
 Limit the list to a small top-N set such as 20 items.
+
+## Lane / SeqCommit Fields
+
+These fields feed the Watchtower Lane / SeqCommit Monitor.
+
+- `activeUserLanes`: active user-lane count.
+- `userLaneTxCount`: indexed user-lane transaction count.
+- `gasTotal`: total user-lane gas.
+- `seqCommitBlockCount`: block count with post-Toccata sequencing commitment
+  activity.
+- `laneProofFailures`: failed `GetSeqCommitLaneProof` or local proof checks.
+- `topLanes`: ordered list of the most active lanes.
+
+Each `topLanes` item should use:
+
+- `laneKey`: lane key or user-lane subnetwork ID.
+- `txCount`: indexed transaction count for the lane.
+- `gasTotal`: total gas for the lane.
+- `seqCommitBlockCount`: SeqCommit block count involving the lane.
+- `laneProofOk`: boolean result from the latest lane proof check when available.
+- `latestBlockHash`: latest block hash observed for the lane, or `null`.
+- `latestTxId`: latest transaction ID observed for the lane, or `null`.
+
+Recommended ordering is descending `txCount`, then descending `gasTotal`.
 
 ## Watchtower Interpretation
 
