@@ -431,6 +431,83 @@ tests:
 
   - interval: 1m
     input_series:
+      - series: 'kaspa_watchtower_indexer_toccata_rollup_age_seconds{job="kaspa-watchtower",node="test"}'
+        values: '700+0x15'
+    alert_rule_test:
+      - eval_time: 11m
+        alertname: KaspaToccataIndexerRollupStale
+        exp_alerts:
+          - exp_labels:
+              alertname: KaspaToccataIndexerRollupStale
+              job: kaspa-watchtower
+              node: test
+              service: kaspa-watchtower
+              severity: warning
+            exp_annotations:
+              summary: "Kaspa Toccata indexer rollup is stale"
+              description: "Toccata rollup age is 700 seconds for node test."
+
+  - interval: 1m
+    input_series:
+      - series: 'kaspa_watchtower_indexer_toccata_rollup_age_seconds{job="kaspa-watchtower",node="test"}'
+        values: '60+0x15'
+    alert_rule_test:
+      - eval_time: 11m
+        alertname: KaspaToccataIndexerRollupStale
+        exp_alerts: []
+
+  - interval: 1m
+    input_series:
+      - series: 'kaspa_watchtower_toccata_active_by_daa{job="kaspa-watchtower",node="test"}'
+        values: '1+0x15'
+      - series: 'kaspa_watchtower_indexer_toccata_activity_value{job="kaspa-watchtower",node="test",label="Tx v1",metric="tx_v1_count"}'
+        values: '0+0x15'
+      - series: 'kaspa_watchtower_indexer_toccata_activity_value{job="kaspa-watchtower",node="test",label="Block v2",metric="block_v2_count"}'
+        values: '0+0x15'
+    alert_rule_test:
+      - eval_time: 11m
+        alertname: KaspaToccataPostActivationTxV1Missing
+        exp_alerts:
+          - exp_labels:
+              alertname: KaspaToccataPostActivationTxV1Missing
+              job: kaspa-watchtower
+              node: test
+              service: kaspa-watchtower
+              severity: warning
+            exp_annotations:
+              summary: "Kaspa Toccata tx v1 activity is missing after activation"
+              description: "Toccata activation DAA is reached but tx v1 activity is still zero for node test."
+      - eval_time: 11m
+        alertname: KaspaToccataPostActivationBlockV2Missing
+        exp_alerts:
+          - exp_labels:
+              alertname: KaspaToccataPostActivationBlockV2Missing
+              job: kaspa-watchtower
+              node: test
+              service: kaspa-watchtower
+              severity: warning
+            exp_annotations:
+              summary: "Kaspa Toccata block v2 activity is missing after activation"
+              description: "Toccata activation DAA is reached but block v2 activity is still zero for node test."
+
+  - interval: 1m
+    input_series:
+      - series: 'kaspa_watchtower_toccata_active_by_daa{job="kaspa-watchtower",node="test"}'
+        values: '0+0x15'
+      - series: 'kaspa_watchtower_indexer_toccata_activity_value{job="kaspa-watchtower",node="test",label="Tx v1",metric="tx_v1_count"}'
+        values: '0+0x15'
+      - series: 'kaspa_watchtower_indexer_toccata_activity_value{job="kaspa-watchtower",node="test",label="Block v2",metric="block_v2_count"}'
+        values: '0+0x15'
+    alert_rule_test:
+      - eval_time: 11m
+        alertname: KaspaToccataPostActivationTxV1Missing
+        exp_alerts: []
+      - eval_time: 11m
+        alertname: KaspaToccataPostActivationBlockV2Missing
+        exp_alerts: []
+
+  - interval: 1m
+    input_series:
       - series: 'kaspa_watchtower_sdk_subscription_enabled{job="kaspa-watchtower",node="test"}'
         values: '1+0x5'
       - series: 'kaspa_watchtower_sdk_subscription_ok{job="kaspa-watchtower",node="test"}'

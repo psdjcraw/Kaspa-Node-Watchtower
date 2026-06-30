@@ -255,6 +255,40 @@ groups:
           summary: "Kaspa watch readiness is not ready"
           description: "Watch readiness is not ready for node {{ $labels.node }}; run make discord-watch-check."
 
+      - alert: KaspaToccataIndexerRollupStale
+        expr: kaspa_watchtower_indexer_toccata_rollup_age_seconds{job="kaspa-watchtower"} > 600
+        for: 10m
+        labels:
+          severity: warning
+          service: kaspa-watchtower
+        annotations:
+          summary: "Kaspa Toccata indexer rollup is stale"
+          description: "Toccata rollup age is {{ $value }} seconds for node {{ $labels.node }}."
+
+      - alert: KaspaToccataPostActivationTxV1Missing
+        expr: |
+          (kaspa_watchtower_toccata_active_by_daa{job="kaspa-watchtower"} == 1)
+          and on(job,node) (kaspa_watchtower_indexer_toccata_activity_value{job="kaspa-watchtower",metric="tx_v1_count"} < 1)
+        for: 10m
+        labels:
+          severity: warning
+          service: kaspa-watchtower
+        annotations:
+          summary: "Kaspa Toccata tx v1 activity is missing after activation"
+          description: "Toccata activation DAA is reached but tx v1 activity is still zero for node {{ $labels.node }}."
+
+      - alert: KaspaToccataPostActivationBlockV2Missing
+        expr: |
+          (kaspa_watchtower_toccata_active_by_daa{job="kaspa-watchtower"} == 1)
+          and on(job,node) (kaspa_watchtower_indexer_toccata_activity_value{job="kaspa-watchtower",metric="block_v2_count"} < 1)
+        for: 10m
+        labels:
+          severity: warning
+          service: kaspa-watchtower
+        annotations:
+          summary: "Kaspa Toccata block v2 activity is missing after activation"
+          description: "Toccata activation DAA is reached but block v2 activity is still zero for node {{ $labels.node }}."
+
       - alert: KaspaSdkSubscriptionUnavailable
         expr: (kaspa_watchtower_sdk_subscription_enabled{job="kaspa-watchtower"} == 1) and on(job,node) (kaspa_watchtower_sdk_subscription_ok{job="kaspa-watchtower"} == 0)
         for: 2m

@@ -53,6 +53,8 @@ All notable changes to Kaspa Node Watchtower are tracked here.
 - Toccata indexer monitoring now documents and test-covers schema v24
   `rollupUpdatedAt` freshness for dashboards, daily reports, Prometheus, and
   stale-rollup alerts.
+- Prometheus alert rules now cover stale Toccata rollups and missing tx v1 or
+  block v2 activity after activation DAA is reached.
 - gRPC probe output now includes peer IDs, peer ping min/p95, and structured
   error counts/types, while the Prometheus file server exports its uptime,
   metrics file age, and metrics file size.
