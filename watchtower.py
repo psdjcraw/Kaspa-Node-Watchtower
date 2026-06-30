@@ -6936,6 +6936,29 @@ def visual_card(label: str, value: Any, detail: str = "", tone: str = "neutral")
 </section>"""
 
 
+def clamp_percent(value: Any) -> float:
+    parsed = numeric(value)
+    if parsed is None or not math.isfinite(parsed):
+        return 0.0
+    return max(0.0, min(100.0, parsed))
+
+
+def progress_bar(label: str, value: Any, detail: str = "", tone: str = "neutral") -> str:
+    percent = clamp_percent(value)
+    return f"""<div class="bar-block toccata-bar">
+  <div class="bar-meta"><span>{html.escape(str(label))}</span><strong>{percent:.1f}%</strong></div>
+  <div class="bar"><span class="bar-fill {html.escape(tone)}" style="--fill:{percent:.1f}%"></span></div>
+  <div class="bar-detail">{html.escape(str(detail))}</div>
+</div>"""
+
+
+def toccata_matrix_cell(label: str, value: Any, tone: str = "neutral") -> str:
+    return f"""<div class="toccata-matrix-cell {html.escape(tone)}">
+  <span>{html.escape(str(label))}</span>
+  <strong>{html.escape(str(value))}</strong>
+</div>"""
+
+
 def check_pill(check: dict[str, Any]) -> str:
     state = "ok" if check.get("ok") else "fail"
     label = "OK" if check.get("ok") else "FAIL"
@@ -7552,7 +7575,10 @@ def toccata_status_panel(report: dict[str, Any]) -> str:
     remaining_daa = toccata.get("remaining_daa")
     warnings = toccata.get("warnings") or []
     compatibility = toccata.get("compatibility") or {}
-    indexer_schema = (((report.get("indexer") or {}).get("metrics") or {}).get("toccata_schema") or {})
+    indexer_metrics = (report.get("indexer") or {}).get("metrics") or {}
+    indexer_schema = indexer_metrics.get("toccata_schema") or {}
+    fee_mass = indexer_metrics.get("toccata_fee_mass") or {}
+    activity = indexer_metrics.get("toccata_activity") or {}
     status = str(toccata.get("status") or "unknown")
     status_tone = "ok" if toccata.get("readiness_ok") else "warn" if status != "active" else "critical"
     time_left_seconds = numeric(toccata.get("seconds_until_activation_time"))
@@ -7595,6 +7621,115 @@ def toccata_status_panel(report: dict[str, Any]) -> str:
         ]
     )
     checklist = toccata.get("checks") or {}
+    checklist_values = [
+        checklist.get("process"),
+        checklist.get("rpc"),
+        checklist.get("grpc"),
+        checklist.get("synced"),
+        checklist.get("hardware_minimum"),
+    ]
+    checklist_known = [value for value in checklist_values if value is not None]
+    readiness_percent = (
+        sum(1 for value in checklist_known if value is True) / len(checklist_known) * 100
+        if checklist_known
+        else 0
+    )
+    activation_daa = numeric(toccata.get("activation_daa"))
+    current_daa_numeric = numeric(current_daa)
+    activation_percent = (
+        (current_daa_numeric / activation_daa * 100)
+        if current_daa_numeric is not None and activation_daa
+        else 0
+    )
+    core_total = numeric(indexer_schema.get("core_total")) or len(TOCCATA_INDEXER_CORE_CAPABILITIES)
+    schema_total = numeric(indexer_schema.get("total")) or len(TOCCATA_INDEXER_CAPABILITIES)
+    fee_total = numeric(fee_mass.get("total")) or len(TOCCATA_FEE_MASS_METRICS)
+    activity_total = numeric(activity.get("total")) or len(TOCCATA_TX_ACTIVITY_METRICS)
+    core_percent = (numeric(indexer_schema.get("core_supported")) or 0) / core_total * 100 if core_total else 0
+    schema_percent = (numeric(indexer_schema.get("supported")) or 0) / schema_total * 100 if schema_total else 0
+    fee_percent = (numeric(fee_mass.get("observed")) or 0) / fee_total * 100 if fee_total else 0
+    activity_percent = (numeric(activity.get("observed")) or 0) / activity_total * 100 if activity_total else 0
+    hardware_visual = "\n".join(
+        [
+            progress_bar(
+                "CPU minimum",
+                ((numeric(toccata.get("cpu_cores")) or 0) / TOCCATA_MIN_CPU_CORES) * 100,
+                f"{toccata.get('cpu_cores') or 'unknown'} cores / min {TOCCATA_MIN_CPU_CORES}",
+                "ok" if (numeric(toccata.get("cpu_cores")) or 0) >= TOCCATA_MIN_CPU_CORES else "warn",
+            ),
+            progress_bar(
+                "RAM minimum",
+                ((numeric(toccata.get("memory_gib")) or 0) / TOCCATA_MIN_RAM_GIB) * 100,
+                f"{format_gib(toccata.get('memory_gib'))} / min {TOCCATA_MIN_RAM_GIB} GiB",
+                "ok" if (numeric(toccata.get("memory_gib")) or 0) >= TOCCATA_MIN_RAM_GIB else "warn",
+            ),
+            progress_bar(
+                "Disk minimum",
+                ((numeric(toccata.get("disk_total_gib")) or 0) / TOCCATA_MIN_DISK_GIB) * 100,
+                f"{format_gib(toccata.get('disk_total_gib'))} total, {format_gib(toccata.get('disk_free_gib'))} free",
+                "ok" if toccata.get("minimum_hardware_ok") else "warn",
+            ),
+        ]
+    )
+    activity_metrics = activity.get("metrics") or {}
+    activity_values = [
+        ("Tx v1", activity_metrics.get("tx_v1_count", {}).get("numeric")),
+        ("Block v2", activity_metrics.get("block_v2_count", {}).get("numeric")),
+        ("Covenants", activity_metrics.get("covenant_id_count", {}).get("numeric")),
+        ("Lane tx", activity_metrics.get("user_lane_tx_count", {}).get("numeric")),
+        ("SeqCommit", activity_metrics.get("seq_commit_block_count", {}).get("numeric")),
+        ("ZK", activity_metrics.get("zk_precompile_tx_count", {}).get("numeric")),
+    ]
+    max_activity = max([numeric(value) or 0 for _, value in activity_values] + [1])
+    activity_bars = "\n".join(
+        progress_bar(label, ((numeric(value) or 0) / max_activity) * 100, compact_number(value), "ok" if numeric(value) else "neutral")
+        for label, value in activity_values
+    )
+    toccata_visual = f"""
+      <section class="panel toccata-visual-panel">
+        <div class="toccata-hero">
+          <div>
+            <h2>Toccata Visual Status</h2>
+            <div class="market-status">Readiness, schema coverage, and post-activation activity at a glance</div>
+          </div>
+          <div class="toccata-badge {html.escape(status_tone)}">{html.escape(status.upper())}</div>
+        </div>
+        <div class="toccata-visual-grid">
+          <section class="toccata-visual-block wide">
+            <h3>Activation Track</h3>
+            {progress_bar("DAA progress", activation_percent, f"{compact_number(current_daa)} / {compact_number(toccata.get('activation_daa'))}", "ok" if toccata.get("active_by_daa") else "warn")}
+            {progress_bar("Readiness checklist", readiness_percent, f"{sum(1 for value in checklist_known if value is True)}/{len(checklist_known) or 0} automated checks OK", "ok" if toccata.get("readiness_ok") else "warn")}
+          </section>
+          <section class="toccata-visual-block">
+            <h3>Indexer Coverage</h3>
+            {progress_bar("Core fields", core_percent, f"{indexer_schema.get('core_supported', 0)}/{indexer_schema.get('core_total', len(TOCCATA_INDEXER_CORE_CAPABILITIES))}", "ok" if indexer_schema.get("core_ok") else "warn")}
+            {progress_bar("All watchpoints", schema_percent, f"{indexer_schema.get('supported', 0)}/{indexer_schema.get('total', len(TOCCATA_INDEXER_CAPABILITIES))}", "ok" if (numeric(indexer_schema.get("missing")) or 0) == 0 else "warn")}
+          </section>
+          <section class="toccata-visual-block">
+            <h3>Metrics Coverage</h3>
+            {progress_bar("Fee / mass", fee_percent, f"{fee_mass.get('observed', 0)}/{fee_mass.get('total', len(TOCCATA_FEE_MASS_METRICS))} observed", "ok" if fee_mass.get("ok") else "warn")}
+            {progress_bar("Activity", activity_percent, f"{activity.get('observed', 0)}/{activity.get('total', len(TOCCATA_TX_ACTIVITY_METRICS))} observed", "ok" if (numeric(activity.get("observed")) or 0) else "neutral")}
+          </section>
+          <section class="toccata-visual-block">
+            <h3>Hardware</h3>
+            {hardware_visual}
+          </section>
+          <section class="toccata-visual-block wide">
+            <h3>Activity Rollup</h3>
+            <div class="toccata-activity-bars">{activity_bars}</div>
+          </section>
+          <section class="toccata-visual-block">
+            <h3>State Matrix</h3>
+            <div class="toccata-matrix">
+              {toccata_matrix_cell("Activation DAA", compact_number(toccata.get("activation_daa")), "neutral")}
+              {toccata_matrix_cell("Remaining", compact_number(remaining_daa), "warn" if numeric(remaining_daa) else "ok")}
+              {toccata_matrix_cell("Relay Fee", "OK" if fee_mass.get("relay_fee_ok") else fee_mass.get("relay_fee_ok", "unknown"), "ok" if fee_mass.get("relay_fee_ok") else "warn")}
+              {toccata_matrix_cell("Schema", f"core {indexer_schema.get('core_supported', 0)}/{indexer_schema.get('core_total', len(TOCCATA_INDEXER_CORE_CAPABILITIES))}", "ok" if indexer_schema.get("core_ok") else "warn")}
+            </div>
+          </section>
+        </div>
+      </section>
+    """
     readiness_rows = "\n".join(
         html_row([label, "OK" if ok is True else "REVIEW" if ok is False else "MANUAL"])
         for label, ok in [
@@ -7629,6 +7764,7 @@ def toccata_status_panel(report: dict[str, Any]) -> str:
         </div>
         <div class="metrics-grid compact">{cards}</div>
       </section>
+      {toccata_visual}
       <section class="panel">
         <h2>Readiness Checklist</h2>
         <table><tbody>{readiness_rows}</tbody></table>
@@ -8583,6 +8719,99 @@ def write_status_page(
     }}
     .bar-fill.ok {{ background: var(--ok); }}
     .bar-fill.warn {{ background: var(--warn); }}
+    .bar-fill.neutral {{ background: var(--accent); }}
+    .bar-detail {{
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+      overflow-wrap: anywhere;
+    }}
+    .toccata-visual-panel {{
+      display: grid;
+      gap: 14px;
+    }}
+    .toccata-hero {{
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+    }}
+    .toccata-badge {{
+      min-width: 112px;
+      padding: 9px 12px;
+      border: 1px solid #d7dee8;
+      border-radius: 8px;
+      background: #f8fafc;
+      text-align: center;
+      font-size: 13px;
+      font-weight: 900;
+      letter-spacing: 0;
+    }}
+    .toccata-badge.ok {{ color: var(--ok); background: var(--ok-soft); border-color: #b9e3ca; }}
+    .toccata-badge.warn {{ color: var(--warn); background: var(--warn-soft); border-color: #f3cf8a; }}
+    .toccata-badge.critical {{ color: var(--critical); background: var(--critical-soft); border-color: #f1b8b2; }}
+    .toccata-visual-grid {{
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+    }}
+    .toccata-visual-block {{
+      display: grid;
+      gap: 10px;
+      min-width: 0;
+      padding: 12px;
+      border: 1px solid #e5ebf1;
+      border-radius: 8px;
+      background: #fbfdff;
+    }}
+    .toccata-visual-block.wide {{ grid-column: span 2; }}
+    .toccata-visual-block h3 {{
+      margin: 0;
+      color: var(--muted);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0;
+    }}
+    .toccata-bar .bar {{
+      height: 12px;
+      background: #e8eef4;
+    }}
+    .toccata-activity-bars {{
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px 14px;
+    }}
+    .toccata-matrix {{
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }}
+    .toccata-matrix-cell {{
+      display: grid;
+      gap: 4px;
+      min-height: 58px;
+      padding: 10px;
+      border: 1px solid #e5ebf1;
+      border-radius: 8px;
+      background: #fff;
+    }}
+    .toccata-matrix-cell span {{
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0;
+    }}
+    .toccata-matrix-cell strong {{
+      min-width: 0;
+      font-size: 18px;
+      font-weight: 900;
+      overflow-wrap: anywhere;
+    }}
+    .toccata-matrix-cell.ok strong {{ color: var(--ok); }}
+    .toccata-matrix-cell.warn strong {{ color: var(--warn); }}
+    .toccata-matrix-cell.critical strong {{ color: var(--critical); }}
     .visual-grid {{
       display: grid;
       grid-template-columns: repeat(8, minmax(0, 1fr));
@@ -9242,6 +9471,10 @@ def write_status_page(
       .market-title-row {{ margin-bottom: 6px; }}
       .market-status {{ text-align: left; }}
       .visual-grid {{ display: block; }}
+      .toccata-visual-grid {{ grid-template-columns: 1fr; }}
+      .toccata-visual-block.wide {{ grid-column: span 1; }}
+      .toccata-activity-bars {{ grid-template-columns: 1fr; }}
+      .toccata-matrix {{ grid-template-columns: 1fr; }}
       .badge {{ margin-top: 10px; }}
       .v-card, .panel {{ margin-bottom: 12px; }}
       .market-meta {{ grid-template-columns: 1fr; }}
