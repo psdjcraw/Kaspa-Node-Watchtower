@@ -36,6 +36,7 @@ TOCCATA_PREFERRED_RAM_GIB = 32
 TOCCATA_MIN_DISK_GIB = 640
 TOCCATA_PREFERRED_DISK_GIB = 1024
 TOCCATA_RELAY_FEE_SOMPI_PER_GRAM = 100
+TOCCATA_ROLLUP_STALE_SECONDS = 600
 TOCCATA_INDEXER_CAPABILITIES = [
     ("tx_version_1", "Tx version 1", {"tx_version_1", "txVersion1", "tx_v1", "version_1_transactions", "version1Transactions"}),
     ("storage_mass", "storageMass", {"storage_mass", "storageMass", "storage_mass_supported", "storageMassSupported"}),
@@ -1860,6 +1861,23 @@ def build_report(config: dict) -> dict[str, Any]:
             low_fee_rejections = numeric(fee_mass.get("low_fee_rejections"))
             if low_fee_rejections and low_fee_rejections > 0:
                 checks.append(Check("toccata_low_fee_rejections", False, f"low_fee_rejections={low_fee_rejections:g}"))
+            toccata_activity = metrics.get("toccata_activity") or {}
+            rollup_age = numeric(toccata_activity.get("rollup_age_seconds"))
+            if rollup_age is not None:
+                checks.append(
+                    Check(
+                        "toccata_rollup_freshness",
+                        rollup_age <= TOCCATA_ROLLUP_STALE_SECONDS,
+                        f"rollup_age={rollup_age:.1f}s threshold={TOCCATA_ROLLUP_STALE_SECONDS}s",
+                    )
+                )
+            if toccata.get("active_by_daa"):
+                tx_v1_count = nested_metric_numeric(toccata_activity, "tx_v1_count")
+                block_v2_count = nested_metric_numeric(toccata_activity, "block_v2_count")
+                if (tx_v1_count or 0) <= 0:
+                    checks.append(Check("toccata_post_activation_tx_v1", False, "activation reached but tx_v1_count=0"))
+                if (block_v2_count or 0) <= 0:
+                    checks.append(Check("toccata_post_activation_block_v2", False, "activation reached but block_v2_count=0"))
             lane_proof_failures = numeric((metrics.get("lane_monitor") or {}).get("lane_proof_failures"))
             if lane_proof_failures and lane_proof_failures > 0:
                 checks.append(Check("toccata_lane_proofs", False, f"lane_proof_failures={lane_proof_failures:g}"))
@@ -3077,6 +3095,7 @@ def indexer_toccata_activity_status(payload: Any) -> dict[str, Any]:
     metrics = {}
     observed = 0
     active = 0
+    rollup_updated_at = find_nested_value(payload, {"rollupUpdatedAt", "rollup_updated_at", "toccataRollupUpdatedAt", "toccata_rollup_updated_at"})
     for key, label, aliases in TOCCATA_TX_ACTIVITY_METRICS:
         raw = find_nested_value(payload, aliases)
         parsed = numeric(raw)
@@ -3096,6 +3115,8 @@ def indexer_toccata_activity_status(payload: Any) -> dict[str, Any]:
         "observed": observed,
         "active": active,
         "total": len(TOCCATA_TX_ACTIVITY_METRICS),
+        "rollup_updated_at": rollup_updated_at,
+        "rollup_age_seconds": timestamp_age_seconds(rollup_updated_at),
         "metrics": metrics,
     }
 
@@ -7645,6 +7666,8 @@ def toccata_status_panel(report: dict[str, Any]) -> str:
     schema_total = numeric(indexer_schema.get("total")) or len(TOCCATA_INDEXER_CAPABILITIES)
     fee_total = numeric(fee_mass.get("total")) or len(TOCCATA_FEE_MASS_METRICS)
     activity_total = numeric(activity.get("total")) or len(TOCCATA_TX_ACTIVITY_METRICS)
+    rollup_age = numeric(activity.get("rollup_age_seconds"))
+    rollup_age_text = "unknown" if rollup_age is None else format_duration_minutes(rollup_age / 60)
     core_percent = (numeric(indexer_schema.get("core_supported")) or 0) / core_total * 100 if core_total else 0
     schema_percent = (numeric(indexer_schema.get("supported")) or 0) / schema_total * 100 if schema_total else 0
     fee_percent = (numeric(fee_mass.get("observed")) or 0) / fee_total * 100 if fee_total else 0
@@ -7723,6 +7746,7 @@ def toccata_status_panel(report: dict[str, Any]) -> str:
             <div class="toccata-matrix">
               {toccata_matrix_cell("Activation DAA", compact_number(toccata.get("activation_daa")), "neutral")}
               {toccata_matrix_cell("Remaining", compact_number(remaining_daa), "warn" if numeric(remaining_daa) else "ok")}
+              {toccata_matrix_cell("Rollup Age", rollup_age_text, "ok" if rollup_age is not None and rollup_age <= TOCCATA_ROLLUP_STALE_SECONDS else "warn")}
               {toccata_matrix_cell("Relay Fee", "OK" if fee_mass.get("relay_fee_ok") else fee_mass.get("relay_fee_ok", "unknown"), "ok" if fee_mass.get("relay_fee_ok") else "warn")}
               {toccata_matrix_cell("Schema", f"core {indexer_schema.get('core_supported', 0)}/{indexer_schema.get('core_total', len(TOCCATA_INDEXER_CORE_CAPABILITIES))}", "ok" if indexer_schema.get("core_ok") else "warn")}
             </div>
@@ -15145,11 +15169,13 @@ def format_toccata_indexer_daily_summary(report: dict[str, Any]) -> str:
     block_v2 = nested_metric_numeric(activity, "block_v2_count")
     covenant_tx = nested_metric_numeric(activity, "covenant_tx_count")
     seq_commit = nested_metric_numeric(activity, "seq_commit_block_count")
+    rollup_age = numeric(activity.get("rollup_age_seconds"))
 
     parts = [
         f"core={core_supported}/{core_total}",
         f"missing={core_missing}",
         f"unknown={core_unknown}",
+        "rollup_age=unknown" if rollup_age is None else f"rollup_age={rollup_age:.0f}s",
         f"relay_fee_ok={fee_mass.get('relay_fee_ok', 'unknown')}",
         f"txV1={format_optional_number(tx_v1)}",
         f"blockV2={format_optional_number(block_v2)}",
@@ -16035,6 +16061,7 @@ def format_prometheus_metrics(
     add_prometheus_metric(lines, "kaspa_watchtower_indexer_toccata_activity_observed", toccata_activity.get("observed"), node_labels)
     add_prometheus_metric(lines, "kaspa_watchtower_indexer_toccata_activity_active", toccata_activity.get("active"), node_labels)
     add_prometheus_metric(lines, "kaspa_watchtower_indexer_toccata_activity_total", toccata_activity.get("total"), node_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_indexer_toccata_rollup_age_seconds", toccata_activity.get("rollup_age_seconds"), node_labels)
     for metric_key, metric in (toccata_activity.get("metrics") or {}).items():
         add_prometheus_metric(
             lines,
