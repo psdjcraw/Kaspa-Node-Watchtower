@@ -48,6 +48,8 @@ All notable changes to Kaspa Node Watchtower are tracked here.
 - Added a ZK / Bridge Watch baseline to the Indexer tab and Prometheus output,
   covering proof-type activity, ZK failures, bridge-lockbox-like candidates,
   locked amounts, unlock counts, and latest transaction IDs.
+- Added post-Toccata failed checks for relay fee policy drift, low-fee
+  rejections, lane proof failures, and ZK proof failures from indexer metrics.
 - `watchtower.py --alert` now emits a market-risk-high alert body when a new
   critical market positioning snapshot is detected.
 

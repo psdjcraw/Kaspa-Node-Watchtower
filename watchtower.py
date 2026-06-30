@@ -1823,6 +1823,28 @@ def build_report(config: dict) -> dict[str, Any]:
                     else f"checkpoint_age={checkpoint_age:.1f}s",
                 )
             )
+            metrics = indexer.get("metrics") or {}
+            fee_mass = metrics.get("fee_mass") or {}
+            if fee_mass.get("relay_fee_ok") is False:
+                checks.append(
+                    Check(
+                        "toccata_relay_fee_policy",
+                        False,
+                        (
+                            "relay_fee below expected "
+                            f"{fee_mass.get('expected_relay_fee_sompi_per_gram', TOCCATA_RELAY_FEE_SOMPI_PER_GRAM)} sompi/gram"
+                        ),
+                    )
+                )
+            low_fee_rejections = numeric(fee_mass.get("low_fee_rejections"))
+            if low_fee_rejections and low_fee_rejections > 0:
+                checks.append(Check("toccata_low_fee_rejections", False, f"low_fee_rejections={low_fee_rejections:g}"))
+            lane_proof_failures = numeric((metrics.get("lane_monitor") or {}).get("lane_proof_failures"))
+            if lane_proof_failures and lane_proof_failures > 0:
+                checks.append(Check("toccata_lane_proofs", False, f"lane_proof_failures={lane_proof_failures:g}"))
+            zk_failures = numeric((metrics.get("zk_bridge_watch") or {}).get("zk_failure_count"))
+            if zk_failures and zk_failures > 0:
+                checks.append(Check("toccata_zk_proofs", False, f"zk_failures={zk_failures:g}"))
 
     min_free_gb = float(thresholds.get("disk_free_gb_min", 0))
     min_free_percent = float(thresholds.get("disk_free_percent_min", 0))

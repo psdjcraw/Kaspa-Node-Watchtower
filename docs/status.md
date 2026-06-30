@@ -116,6 +116,9 @@ Last verified manually on `2026-06-08`:
 - Indexer tab: ZK / Bridge Watch baseline with proof-type activity, ZK failures,
   bridge-lockbox-like candidates, locked amounts, unlock counts, and latest tx
   IDs when the indexer exposes `topZkProofs` or `bridgeLockboxes`
+- Alert checks: post-Toccata indexer metrics now raise failed checks for relay
+  fee policy below `100` sompi/gram, low-fee rejections, lane proof failures,
+  and ZK proof failures
 - Indexer API contract: canonical `/api/health` and `/api/metrics` fields are
   defined in [`docs/indexer-api-spec.md`](indexer-api-spec.md)
 - Ops and History tabs: triage queue, check details, command center, benchmark

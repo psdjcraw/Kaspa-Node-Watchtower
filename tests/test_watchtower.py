@@ -345,7 +345,17 @@ class WatchtowerUnitTests(unittest.TestCase):
                     "lag_ok": False,
                     "checkpoint_fresh": True,
                     "detail": "lag=90s",
-                    "metrics": {"lag_seconds": 90, "checkpoint_age_seconds": 12},
+                    "metrics": {
+                        "lag_seconds": 90,
+                        "checkpoint_age_seconds": 12,
+                        "fee_mass": {
+                            "relay_fee_ok": False,
+                            "expected_relay_fee_sompi_per_gram": 100,
+                            "low_fee_rejections": 2,
+                        },
+                        "lane_monitor": {"lane_proof_failures": 1},
+                        "zk_bridge_watch": {"zk_failure_count": 3},
+                    },
                 },
             ),
         ):
@@ -355,6 +365,10 @@ class WatchtowerUnitTests(unittest.TestCase):
         self.assertIn("indexer_health", checks)
         self.assertIn("indexer_lag", checks)
         self.assertFalse(checks["indexer_lag"]["ok"])
+        self.assertFalse(checks["toccata_relay_fee_policy"]["ok"])
+        self.assertFalse(checks["toccata_low_fee_rejections"]["ok"])
+        self.assertFalse(checks["toccata_lane_proofs"]["ok"])
+        self.assertFalse(checks["toccata_zk_proofs"]["ok"])
         self.assertEqual(report["indexer"]["metrics"]["lag_seconds"], 90)
 
     def test_indexer_lookup_fetches_transaction_api(self):
