@@ -916,18 +916,22 @@ class WatchtowerUnitTests(unittest.TestCase):
             self.assertEqual(summary["block_delta"], 60)
 
     def test_toccata_readiness_tracks_activation_and_hardware(self):
-        readiness = watchtower.build_toccata_readiness(
-            {
-                "ok": True,
-                "is_synced": True,
-                "virtual_daa_score": watchtower.TOCCATA_ACTIVATION_DAA + 1,
-                "server_version": "2.0.0",
-            },
-            {},
-            {"total_gb": 1024, "free_gb": 128},
-            {"count": 1},
-            {"ok": True},
-        )
+        with (
+            mock.patch("watchtower.os.cpu_count", return_value=16),
+            mock.patch("watchtower.system_memory_gib", return_value=32.0),
+        ):
+            readiness = watchtower.build_toccata_readiness(
+                {
+                    "ok": True,
+                    "is_synced": True,
+                    "virtual_daa_score": watchtower.TOCCATA_ACTIVATION_DAA + 1,
+                    "server_version": "2.0.0",
+                },
+                {},
+                {"total_gb": 1024, "free_gb": 128},
+                {"count": 1},
+                {"ok": True},
+            )
 
         self.assertTrue(readiness["active_by_daa"])
         self.assertTrue(readiness["readiness_ok"])
