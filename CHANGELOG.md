@@ -50,6 +50,9 @@ All notable changes to Kaspa Node Watchtower are tracked here.
   locked amounts, unlock counts, and latest transaction IDs.
 - Added post-Toccata failed checks for relay fee policy drift, low-fee
   rejections, lane proof failures, and ZK proof failures from indexer metrics.
+- Toccata indexer monitoring now documents and test-covers schema v24
+  `rollupUpdatedAt` freshness for dashboards, daily reports, Prometheus, and
+  stale-rollup alerts.
 - gRPC probe output now includes peer IDs, peer ping min/p95, and structured
   error counts/types, while the Prometheus file server exports its uptime,
   metrics file age, and metrics file size.

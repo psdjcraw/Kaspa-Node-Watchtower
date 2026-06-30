@@ -109,6 +109,9 @@ Last verified manually on `2026-06-08`:
 - Indexer tab: post-Toccata tx activity table for tx v1, block v2, covenant
   inputs/outputs/UTXOs/IDs, user lanes, SeqCommit blocks, and ZK precompile
   usage when those `/api/metrics` counters are available
+- Toccata visual status: rollup freshness is rendered from schema v24
+  `rollupUpdatedAt` so stale trigger-maintained counters are visible before
+  operators trust tx v1, covenant, lane, or ZK totals
 - Indexer tab: Covenant Explorer baseline with top covenant IDs, tx/UTXO/input/
   output counts, token-like and NFT-like heuristics, and latest tx IDs when the
   indexer exposes `topCovenants`
@@ -120,7 +123,8 @@ Last verified manually on `2026-06-08`:
   IDs when the indexer exposes `topZkProofs` or `bridgeLockboxes`
 - Alert checks: post-Toccata indexer metrics now raise failed checks for relay
   fee policy below `100` sompi/gram, low-fee rejections, lane proof failures,
-  and ZK proof failures
+  ZK proof failures, stale Toccata rollups, and missing tx v1/block v2 activity
+  after activation DAA is reached
 - Indexer API contract: canonical `/api/health` and `/api/metrics` fields are
   defined in [`docs/indexer-api-spec.md`](indexer-api-spec.md)
 - Ops and History tabs: triage queue, check details, command center, benchmark

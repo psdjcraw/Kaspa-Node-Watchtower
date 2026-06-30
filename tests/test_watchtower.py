@@ -148,7 +148,7 @@ class WatchtowerUnitTests(unittest.TestCase):
                 {"status": "healthy", "version": "1.2.3"},
                 {
                     "indexer_lag_seconds": 12,
-                    "schema_version": 22,
+                    "schema_version": 24,
                     "checkpoint": {"timestamp": now.isoformat()},
                     "toccata": {
                         "txVersion1": True,
@@ -160,6 +160,7 @@ class WatchtowerUnitTests(unittest.TestCase):
                         "gas": True,
                         "getBlockRewardInfo": True,
                         "getSeqCommitLaneProof": False,
+                        "rollupUpdatedAt": int((now - dt.timedelta(seconds=30)).timestamp() * 1000),
                         "minimumRelayFeeSompiPerGram": 100,
                         "txV1Count": 4,
                         "covenantOutputCount": 2,
@@ -247,7 +248,7 @@ class WatchtowerUnitTests(unittest.TestCase):
         self.assertTrue(status["health_ok"])
         self.assertTrue(status["metrics_ok"])
         self.assertEqual(status["metrics"]["lag_seconds"], 12)
-        self.assertEqual(status["metrics"]["schema_version"], 22)
+        self.assertEqual(status["metrics"]["schema_version"], 24)
         self.assertEqual(status["metrics"]["toccata_schema"]["supported"], 8)
         self.assertEqual(status["metrics"]["toccata_schema"]["missing"], 1)
         self.assertEqual(status["metrics"]["toccata_schema"]["capabilities"]["get_seq_commit_lane_proof"]["state"], "missing")
@@ -256,6 +257,7 @@ class WatchtowerUnitTests(unittest.TestCase):
         self.assertEqual(status["metrics"]["fee_mass"]["metrics"]["storage_mass_max"]["numeric"], 1200)
         self.assertEqual(status["metrics"]["toccata_activity"]["observed"], 13)
         self.assertEqual(status["metrics"]["toccata_activity"]["active"], 12)
+        self.assertLessEqual(status["metrics"]["toccata_activity"]["rollup_age_seconds"], 60)
         self.assertEqual(status["metrics"]["toccata_activity"]["metrics"]["risc0_tx_count"]["numeric"], 0)
         self.assertTrue(status["metrics"]["covenant_explorer"]["observed"])
         self.assertEqual(status["metrics"]["covenant_explorer"]["covenant_id_count"], 2)
@@ -439,6 +441,9 @@ class WatchtowerUnitTests(unittest.TestCase):
                         },
                         "lane_monitor": {"lane_proof_failures": 1},
                         "zk_bridge_watch": {"zk_failure_count": 3},
+                        "toccata_activity": {
+                            "rollup_age_seconds": watchtower.TOCCATA_ROLLUP_STALE_SECONDS + 1,
+                        },
                     },
                 },
             ),
@@ -451,6 +456,7 @@ class WatchtowerUnitTests(unittest.TestCase):
         self.assertFalse(checks["indexer_lag"]["ok"])
         self.assertFalse(checks["toccata_relay_fee_policy"]["ok"])
         self.assertFalse(checks["toccata_low_fee_rejections"]["ok"])
+        self.assertFalse(checks["toccata_rollup_freshness"]["ok"])
         self.assertFalse(checks["toccata_lane_proofs"]["ok"])
         self.assertFalse(checks["toccata_zk_proofs"]["ok"])
         self.assertEqual(report["indexer"]["metrics"]["lag_seconds"], 90)
@@ -1169,7 +1175,7 @@ class WatchtowerUnitTests(unittest.TestCase):
                 "metrics": {
                     "lag_seconds": 12,
                     "checkpoint_age_seconds": 45,
-                    "schema_version": 22,
+                    "schema_version": 24,
                     "toccata_schema": {
                         "supported": 7,
                         "missing": 1,
@@ -1198,6 +1204,7 @@ class WatchtowerUnitTests(unittest.TestCase):
                         "observed": 13,
                         "active": 12,
                         "total": 13,
+                        "rollup_age_seconds": 45,
                         "metrics": {
                             "tx_v1_count": {"label": "Tx v1", "numeric": 4, "value": 4, "observed": True, "active": True},
                             "covenant_tx_count": {"label": "Covenant tx", "numeric": 2, "value": 2, "observed": True, "active": True},
@@ -1481,6 +1488,7 @@ class WatchtowerUnitTests(unittest.TestCase):
         self.assertIn('kaspa_watchtower_indexer_toccata_fee_mass_value{label="Max storageMass",metric="storage_mass_max",node="test-node"} 1200', metrics)
         self.assertIn('kaspa_watchtower_indexer_toccata_activity_observed{node="test-node"} 13', metrics)
         self.assertIn('kaspa_watchtower_indexer_toccata_activity_active{node="test-node"} 12', metrics)
+        self.assertIn('kaspa_watchtower_indexer_toccata_rollup_age_seconds{node="test-node"} 45', metrics)
         self.assertIn('kaspa_watchtower_indexer_toccata_activity_value{label="Covenant tx",metric="covenant_tx_count",node="test-node"} 2', metrics)
         self.assertIn('kaspa_watchtower_indexer_toccata_activity_value{label="RISC0 tx",metric="risc0_tx_count",node="test-node"} 0', metrics)
         self.assertIn('kaspa_watchtower_indexer_covenant_ids{node="test-node"} 2', metrics)
@@ -3017,6 +3025,7 @@ class WatchtowerUnitTests(unittest.TestCase):
                     },
                     "fee_mass": {"relay_fee_ok": True},
                     "toccata_activity": {
+                        "rollup_age_seconds": 45,
                         "metrics": {
                             "tx_v1_count": {"numeric": 12},
                             "block_v2_count": {"numeric": 7},
@@ -3035,6 +3044,7 @@ class WatchtowerUnitTests(unittest.TestCase):
 
         self.assertIn("core=5/5", text)
         self.assertIn("relay_fee_ok=True", text)
+        self.assertIn("rollup_age=45s", text)
         self.assertIn("txV1=12", text)
         self.assertIn("blockV2=7", text)
         self.assertIn("covenant_ids=2", text)

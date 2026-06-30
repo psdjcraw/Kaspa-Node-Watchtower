@@ -43,7 +43,7 @@ Recommended top-level response:
 ```json
 {
   "version": "0.1.0",
-  "schemaVersion": 23,
+  "schemaVersion": 24,
   "indexerLagSeconds": 0,
   "checkpoint": {
     "timestamp": "2026-06-30T16:20:00Z",
@@ -59,6 +59,7 @@ Recommended top-level response:
     "gas": true,
     "getBlockRewardInfo": true,
     "getSeqCommitLaneProof": true,
+    "rollupUpdatedAt": 1782803000796,
     "minimumRelayFeeSompiPerGram": 100,
     "txV1Count": 0,
     "blockV2Count": 0,
@@ -170,6 +171,11 @@ transactions.
 Counters are cumulative from the point where the v23 rollup schema is installed,
 or from genesis for a fresh v23 database. Use `0` for supported counters before
 post-Toccata activity appears.
+
+For schema v24 and later, expose `rollupUpdatedAt` as Unix epoch milliseconds
+for the most recent non-zero rollup counter update. Watchtower converts this to
+rollup age and raises a freshness check when the age exceeds its configured
+staleness threshold. Zero-only pre-activity datasets may leave this field `null`.
 
 ## Fee And Mass Fields
 
