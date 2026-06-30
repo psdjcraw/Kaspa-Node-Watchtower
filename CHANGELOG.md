@@ -55,6 +55,9 @@ All notable changes to Kaspa Node Watchtower are tracked here.
   metrics file age, and metrics file size.
 - SNS snapshots now include a compact mood summary derived from recent YouTube/X
   items, and the local SNS page renders that summary above the item grid.
+- Daily reports now use a compact Korean operator summary with node, incident,
+  benchmark, sync, whale, market, SQLite history, multi-node, integration, and
+  CI sections, plus an alarm wrapper that writes and summarizes the latest log.
 - `watchtower.py --alert` now emits a market-risk-high alert body when a new
   critical market positioning snapshot is detected.
 
