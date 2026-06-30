@@ -36,6 +36,9 @@ All notable changes to Kaspa Node Watchtower are tracked here.
 - Indexer status pages and Prometheus output now include post-Toccata activity
   counters for tx v1, block v2, covenant inputs/outputs/UTXOs/IDs, user lanes,
   SeqCommit blocks, and ZK precompile usage.
+- Added `docs/indexer-api-spec.md` to pin the Watchtower-facing indexer
+  `/api/health` and `/api/metrics` contract for Toccata schema, fee/mass, and
+  activity fields.
 - `watchtower.py --alert` now emits a market-risk-high alert body when a new
   critical market positioning snapshot is detected.
 

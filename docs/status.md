@@ -107,6 +107,8 @@ Last verified manually on `2026-06-08`:
 - Indexer tab: post-Toccata tx activity table for tx v1, block v2, covenant
   inputs/outputs/UTXOs/IDs, user lanes, SeqCommit blocks, and ZK precompile
   usage when those `/api/metrics` counters are available
+- Indexer API contract: canonical `/api/health` and `/api/metrics` fields are
+  defined in [`docs/indexer-api-spec.md`](indexer-api-spec.md)
 - Ops and History tabs: triage queue, check details, command center, benchmark
   trend, recovery history, and recent status history
 - Market watch source: Bybit public spot ticker and 15-minute kline endpoints,

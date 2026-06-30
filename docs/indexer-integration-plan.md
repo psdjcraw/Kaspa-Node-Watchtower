@@ -30,6 +30,10 @@ Add `simply-kaspa-indexer` as the chain data layer:
 The project should not replace `kaspad`, custody funds, sign transactions, or
 require hosted explorers for core node and indexer status.
 
+The Watchtower-facing REST contract is documented in
+[`docs/indexer-api-spec.md`](indexer-api-spec.md). New indexer producers should
+prefer the canonical camelCase field names from that spec.
+
 ## Target Architecture
 
 ```text
