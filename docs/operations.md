@@ -396,6 +396,38 @@ The local `asus-traffic-monitor` Prometheus stack has the rule file copied to
 - `KaspaWatchtowerMetricsStale`
 - `KaspaWatchtowerRecoveryUnavailable`
 - `KaspaWatchtowerRecoveryCommandFailed`
+- `KaspaMarketPositioningRiskHigh`
+- `KaspaWatchtowerMultiNodeCritical`
+- `KaspaWatchtowerMultiNodeWarning`
+- `KaspaWatchtowerMultiNodeRiskNodes`
+- `KaspaWatchtowerMultiNodeLagging`
+- `KaspaWatchtowerMultiNodeNoPeers`
+- `KaspaWatchtowerMultiNodeStale`
+- `KaspaWatchtowerMultiNodeChainLag`
+- `KaspaIndexerApiDown`
+- `KaspaIndexerMetricsUnavailable`
+- `KaspaIndexerLagHigh`
+- `KaspaIndexerCheckpointStale`
+- `KaspaIndexerWatchlistUnavailable`
+- `KaspaWatchReadinessNotReady`
+- `KaspaToccataIndexerRollupStale`
+- `KaspaToccataPostActivationTxV1Missing`
+- `KaspaToccataPostActivationBlockV2Missing`
+- `KaspaSdkSubscriptionUnavailable`
+- `KaspaSdkSubscriptionNoEvents`
+
+Toccata alert response:
+
+- `KaspaToccataIndexerRollupStale`: check `/api/metrics` for
+  `toccata.rollupUpdatedAt`, confirm the indexer is ingesting new blocks, then
+  inspect PostgreSQL trigger rollups before trusting tx v1/covenant/lane totals.
+- `KaspaToccataPostActivationTxV1Missing`: confirm local DAA is past
+  `474165565`, verify the node/indexer is running a Toccata-capable release,
+  then inspect whether schema v24 rollups are receiving version 1
+  transactions.
+- `KaspaToccataPostActivationBlockV2Missing`: confirm activation by DAA, then
+  verify block version preservation through RPC, indexer storage, and
+  `/api/metrics`.
 
 Manual recovery dry-run:
 

@@ -226,6 +226,40 @@ Check API:
 curl -fsS http://127.0.0.1:9090/api/v1/rules
 ```
 
+## Toccata Rollup Stale
+
+Check the Watchtower metric:
+
+```bash
+curl -fsG 'http://127.0.0.1:9090/api/v1/query' \
+  --data-urlencode 'query=kaspa_watchtower_indexer_toccata_rollup_age_seconds'
+```
+
+Check the indexer API contract:
+
+```bash
+curl -fsS http://127.0.0.1:3001/api/metrics | jq '.schemaVersion, .toccata.rollupUpdatedAt'
+```
+
+If `rollupUpdatedAt` is old, verify the indexer is ingesting blocks and that
+the schema v24 trigger rollups are installed before trusting Toccata activity
+counters.
+
+## Toccata Post-Activation Activity Missing
+
+Check activation and activity counters:
+
+```bash
+curl -fsG 'http://127.0.0.1:9090/api/v1/query' \
+  --data-urlencode 'query=kaspa_watchtower_toccata_active_by_daa'
+curl -fsG 'http://127.0.0.1:9090/api/v1/query' \
+  --data-urlencode 'query=kaspa_watchtower_indexer_toccata_activity_value{metric=~"tx_v1_count|block_v2_count"}'
+```
+
+If activation DAA is reached but counters stay zero, confirm the node and
+indexer are Toccata-capable, then inspect RPC/block parsing before assuming the
+network has no tx v1 or block v2 activity.
+
 ## Grafana Dashboard Has No Data
 
 Check Prometheus query:

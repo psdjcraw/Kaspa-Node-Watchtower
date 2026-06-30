@@ -125,6 +125,9 @@ Last verified manually on `2026-06-08`:
   fee policy below `100` sompi/gram, low-fee rejections, lane proof failures,
   ZK proof failures, stale Toccata rollups, and missing tx v1/block v2 activity
   after activation DAA is reached
+- Grafana dashboard: Toccata rollup freshness, activation state, and
+  post-activation activity panels are included in
+  `grafana/kaspa-watchtower.json`
 - Indexer API contract: canonical `/api/health` and `/api/metrics` fields are
   defined in [`docs/indexer-api-spec.md`](indexer-api-spec.md)
 - Ops and History tabs: triage queue, check details, command center, benchmark

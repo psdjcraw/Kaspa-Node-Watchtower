@@ -55,6 +55,9 @@ All notable changes to Kaspa Node Watchtower are tracked here.
   stale-rollup alerts.
 - Prometheus alert rules now cover stale Toccata rollups and missing tx v1 or
   block v2 activity after activation DAA is reached.
+- Grafana now includes Toccata rollup freshness, activation state, and
+  post-activation activity panels, with operations/runbook guidance for the new
+  alerts.
 - gRPC probe output now includes peer IDs, peer ping min/p95, and structured
   error counts/types, while the Prometheus file server exports its uptime,
   metrics file age, and metrics file size.
