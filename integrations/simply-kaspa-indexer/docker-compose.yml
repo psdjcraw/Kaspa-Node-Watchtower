@@ -40,7 +40,7 @@ services:
 
   kaspa_indexer:
     container_name: kaspa_watchtower_indexer
-    image: rust:1.93.1
+    image: rust:1.96.0
     working_dir: /workspace
     restart: unless-stopped
     depends_on:
