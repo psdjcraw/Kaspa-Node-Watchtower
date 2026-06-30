@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import os
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -12,6 +13,7 @@ DEFAULT_METRICS_PATH = Path(__file__).resolve().parent / "state" / "watchtower.p
 HOST = os.environ.get("KASPA_WATCHTOWER_EXPORTER_HOST", "127.0.0.1")
 PORT = int(os.environ.get("KASPA_WATCHTOWER_EXPORTER_PORT", "9660"))
 METRICS_PATH = Path(os.environ.get("KASPA_WATCHTOWER_METRICS_PATH", str(DEFAULT_METRICS_PATH)))
+START_TIME = time.time()
 
 
 class MetricsHandler(BaseHTTPRequestHandler):
@@ -37,7 +39,18 @@ class MetricsHandler(BaseHTTPRequestHandler):
             self.wfile.write(f"metrics file missing: {METRICS_PATH}\n".encode("utf-8"))
             return
 
-        data = METRICS_PATH.read_bytes()
+        stat = METRICS_PATH.stat()
+        now = time.time()
+        exporter_metrics = (
+            "\n"
+            "# TYPE kaspa_watchtower_exporter_uptime_seconds gauge\n"
+            f"kaspa_watchtower_exporter_uptime_seconds {now - START_TIME:g}\n"
+            "# TYPE kaspa_watchtower_metrics_file_age_seconds gauge\n"
+            f"kaspa_watchtower_metrics_file_age_seconds {max(0.0, now - stat.st_mtime):g}\n"
+            "# TYPE kaspa_watchtower_metrics_file_size_bytes gauge\n"
+            f"kaspa_watchtower_metrics_file_size_bytes {stat.st_size:g}\n"
+        ).encode("utf-8")
+        data = METRICS_PATH.read_bytes().rstrip() + exporter_metrics
         self.send_response(200)
         self.send_header("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
         self.send_header("Content-Length", str(len(data)))

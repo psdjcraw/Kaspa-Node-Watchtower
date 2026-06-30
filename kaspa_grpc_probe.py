@@ -17,6 +17,14 @@ import messages_pb2_grpc  # type: ignore[import-not-found]
 import rpc_pb2  # type: ignore[import-not-found]
 
 
+def _percentile(values: list[float], percentile: float) -> float | None:
+    if not values:
+        return None
+    ordered = sorted(values)
+    index = int(round((len(ordered) - 1) * percentile))
+    return ordered[max(0, min(index, len(ordered) - 1))]
+
+
 def _requests() -> list[Any]:
     return [
         messages_pb2.KaspadRequest(id=1, getInfoRequest=rpc_pb2.GetInfoRequestMessage()),
@@ -137,6 +145,16 @@ def fetch_grpc_metrics(endpoint: str, timeout: float = 5.0) -> dict[str, Any]:
         peer_infos = list(peers.infos) if peers is not None else []
         user_agents = Counter(peer.userAgent for peer in peer_infos)
         outbound_peers = sum(1 for peer in peer_infos if peer.isOutbound)
+        peer_ids = [
+            str(getattr(peer, "id", "") or getattr(peer, "address", ""))
+            for peer in peer_infos
+            if getattr(peer, "id", "") or getattr(peer, "address", "")
+        ]
+        peer_ping_ms = [
+            float(getattr(peer, "lastPingDuration", 0))
+            for peer in peer_infos
+            if float(getattr(peer, "lastPingDuration", 0)) >= 0
+        ]
 
         process_metrics = raw_metrics.processMetrics if raw_metrics is not None else None
         connection_metrics = raw_metrics.connectionMetrics if raw_metrics is not None else None
@@ -178,6 +196,9 @@ def fetch_grpc_metrics(endpoint: str, timeout: float = 5.0) -> dict[str, Any]:
                 "outbound_peer_count": outbound_peers,
                 "inbound_peer_count": len(peer_infos) - outbound_peers,
                 "peer_user_agents": dict(user_agents),
+                "peer_ids": peer_ids,
+                "peer_min_ping_ms": min(peer_ping_ms) if peer_ping_ms else None,
+                "peer_p95_ping_ms": _percentile(peer_ping_ms, 0.95),
                 "active_peers": int(getattr(connection_metrics, "activePeers", 0))
                 if connection_metrics is not None
                 else None,
@@ -211,9 +232,15 @@ def fetch_grpc_metrics(endpoint: str, timeout: float = 5.0) -> dict[str, Any]:
                 },
             }
         )
+        metrics["error_count"] = len(errors)
         return metrics
     except Exception as exc:
         metrics["error"] = str(exc)
+        if isinstance(exc, grpc.RpcError):
+            code = exc.code()
+            metrics["error_type"] = code.name if code is not None else "RPC_ERROR"
+            metrics["timeout"] = code == grpc.StatusCode.DEADLINE_EXCEEDED
+        metrics["error_count"] = 1
         return metrics
     finally:
         channel.close()

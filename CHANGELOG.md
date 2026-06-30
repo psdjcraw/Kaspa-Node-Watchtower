@@ -50,6 +50,9 @@ All notable changes to Kaspa Node Watchtower are tracked here.
   locked amounts, unlock counts, and latest transaction IDs.
 - Added post-Toccata failed checks for relay fee policy drift, low-fee
   rejections, lane proof failures, and ZK proof failures from indexer metrics.
+- gRPC probe output now includes peer IDs, peer ping min/p95, and structured
+  error counts/types, while the Prometheus file server exports its uptime,
+  metrics file age, and metrics file size.
 - `watchtower.py --alert` now emits a market-risk-high alert body when a new
   critical market positioning snapshot is detected.
 
