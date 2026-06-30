@@ -14883,6 +14883,54 @@ def format_whale_daily_report(report: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def nested_metric_numeric(status: dict[str, Any], key: str) -> float | None:
+    item = (status.get("metrics") or {}).get(key) if isinstance(status, dict) else None
+    if not isinstance(item, dict):
+        return None
+    return numeric(item.get("numeric"))
+
+
+def format_toccata_indexer_daily_summary(report: dict[str, Any]) -> str:
+    indexer = report.get("indexer") or {}
+    metrics = indexer.get("metrics") or {}
+    if not metrics:
+        return "unavailable"
+
+    schema = metrics.get("toccata_schema") or {}
+    activity = metrics.get("toccata_activity") or {}
+    fee_mass = metrics.get("fee_mass") or {}
+    covenant = metrics.get("covenant_explorer") or {}
+    lanes = metrics.get("lane_monitor") or {}
+    zk = metrics.get("zk_bridge_watch") or {}
+
+    core_total = schema.get("core_total", len(TOCCATA_INDEXER_CORE_CAPABILITIES))
+    core_supported = schema.get("core_supported", 0)
+    core_missing = schema.get("core_missing", 0)
+    core_unknown = schema.get("core_unknown", 0)
+
+    tx_v1 = nested_metric_numeric(activity, "tx_v1_count")
+    block_v2 = nested_metric_numeric(activity, "block_v2_count")
+    covenant_tx = nested_metric_numeric(activity, "covenant_tx_count")
+    seq_commit = nested_metric_numeric(activity, "seq_commit_block_count")
+
+    parts = [
+        f"core={core_supported}/{core_total}",
+        f"missing={core_missing}",
+        f"unknown={core_unknown}",
+        f"relay_fee_ok={fee_mass.get('relay_fee_ok', 'unknown')}",
+        f"txV1={format_optional_number(tx_v1)}",
+        f"blockV2={format_optional_number(block_v2)}",
+        f"covenant_ids={format_optional_number(covenant.get('covenant_id_count'))}",
+        f"covenant_tx={format_optional_number(covenant_tx)}",
+        f"lanes={format_optional_number(lanes.get('active_lanes'))}",
+        f"lane_tx={format_optional_number(lanes.get('lane_tx_count'))}",
+        f"seqcommit={format_optional_number(seq_commit)}",
+        f"zk={format_optional_number(zk.get('zk_tx_count'))}",
+        f"bridge_lockboxes={format_optional_number(zk.get('bridge_lockbox_count'))}",
+    ]
+    return ", ".join(parts)
+
+
 def format_discord_incidents(
     report: dict[str, Any],
     state: dict[str, Any],

@@ -3005,6 +3005,42 @@ class WatchtowerUnitTests(unittest.TestCase):
         self.assertIn("24h_volume=1250000.00000000 KAS", text)
         self.assertIn("link=https://explorer.example/txs/abcdef1234567890", text)
 
+    def test_format_toccata_indexer_daily_summary_includes_core_and_activity(self):
+        report = {
+            "indexer": {
+                "metrics": {
+                    "toccata_schema": {
+                        "core_supported": 5,
+                        "core_total": 5,
+                        "core_missing": 0,
+                        "core_unknown": 0,
+                    },
+                    "fee_mass": {"relay_fee_ok": True},
+                    "toccata_activity": {
+                        "metrics": {
+                            "tx_v1_count": {"numeric": 12},
+                            "block_v2_count": {"numeric": 7},
+                            "covenant_tx_count": {"numeric": 3},
+                            "seq_commit_block_count": {"numeric": 7},
+                        }
+                    },
+                    "covenant_explorer": {"covenant_id_count": 2},
+                    "lane_monitor": {"active_lanes": 1, "lane_tx_count": 5},
+                    "zk_bridge_watch": {"zk_tx_count": 0, "bridge_lockbox_count": 0},
+                }
+            }
+        }
+
+        text = watchtower.format_toccata_indexer_daily_summary(report)
+
+        self.assertIn("core=5/5", text)
+        self.assertIn("relay_fee_ok=True", text)
+        self.assertIn("txV1=12", text)
+        self.assertIn("blockV2=7", text)
+        self.assertIn("covenant_ids=2", text)
+        self.assertIn("lanes=1", text)
+        self.assertIn("seqcommit=7", text)
+
     def test_format_discord_incidents_includes_current_and_recovery(self):
         report = {
             "node_name": "kaspa-mainnet-local",

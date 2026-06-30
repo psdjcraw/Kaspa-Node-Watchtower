@@ -41,6 +41,7 @@ incident_line = first_with(lines, "- 현재 사고:")
 grpc_line = first_with(lines, "- gRPC:")
 dag_line = first_with(lines, "- DAG:")
 indexer_line = first_with(lines, "- 인덱서:")
+toccata_indexer_line = first_with(lines, "- Toccata indexer:")
 history_line = first_with(lines, "- 7일 요약:")
 multi_line = first_with(lines, "- 멀티노드:")
 integration_line = first_with(lines, "- integrations:")
@@ -58,6 +59,7 @@ for line in (
     grpc_line,
     dag_line,
     indexer_line,
+    toccata_indexer_line,
     history_line,
     multi_line,
     integration_line,

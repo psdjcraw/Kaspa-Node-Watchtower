@@ -120,6 +120,7 @@ bullet(
         f"new={len(watch.get('new_events') or [])}"
     ),
 )
+bullet("Toccata indexer", watchtower.format_toccata_indexer_daily_summary(report))
 
 section("3. 사고 / 점검")
 duration = watchtower.numeric(incident.get("duration_seconds"))
