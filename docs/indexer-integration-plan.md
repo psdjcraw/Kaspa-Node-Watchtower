@@ -78,6 +78,10 @@ Deliverables:
   covenant ID, user-lane `subnetwork_id`, gas commitments,
   `GetBlockRewardInfo`, and `GetSeqCommitLaneProof`. Missing metrics render as
   `unknown` so Watchtower can be deployed before the indexer schema catches up.
+- Normalize post-Toccata fee/mass metrics when exposed: minimum relay fee in
+  sompi/gram, tx v1 count, covenant output count, user-lane tx count, total gas,
+  max/average `storageMass`, max compute/transient mass, and low-fee rejection
+  count. The Watchtower baseline expects `100` sompi/gram after Toccata.
 - Add status page and summary sections for indexer health.
 - Add alert rules for indexer API down, chain lag, stale checkpoint, and
   PostgreSQL unavailable.

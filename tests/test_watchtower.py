@@ -160,6 +160,16 @@ class WatchtowerUnitTests(unittest.TestCase):
                         "gas": True,
                         "getBlockRewardInfo": True,
                         "getSeqCommitLaneProof": False,
+                        "minimumRelayFeeSompiPerGram": 100,
+                        "txV1Count": 4,
+                        "covenantOutputCount": 2,
+                        "userLaneTxCount": 1,
+                        "gasTotal": 5000,
+                        "storageMassMax": 1200,
+                        "storageMassAvg": 800,
+                        "computeMassMax": 700,
+                        "transientMassMax": 900,
+                        "lowFeeRejections": 0,
                     },
                 },
             ],
@@ -174,6 +184,9 @@ class WatchtowerUnitTests(unittest.TestCase):
         self.assertEqual(status["metrics"]["toccata_schema"]["supported"], 8)
         self.assertEqual(status["metrics"]["toccata_schema"]["missing"], 1)
         self.assertEqual(status["metrics"]["toccata_schema"]["capabilities"]["get_seq_commit_lane_proof"]["state"], "missing")
+        self.assertEqual(status["metrics"]["fee_mass"]["observed"], 10)
+        self.assertTrue(status["metrics"]["fee_mass"]["relay_fee_ok"])
+        self.assertEqual(status["metrics"]["fee_mass"]["metrics"]["storage_mass_max"]["numeric"], 1200)
 
     def test_fetch_optional_indexer_status_flags_stale_metrics(self):
         config = copy.deepcopy(watchtower.DEFAULT_CONFIG)
@@ -936,6 +949,19 @@ class WatchtowerUnitTests(unittest.TestCase):
                             "get_seq_commit_lane_proof": {"label": "GetSeqCommitLaneProof", "state": "missing", "value": False},
                         },
                     },
+                    "fee_mass": {
+                        "ok": True,
+                        "observed": 10,
+                        "total": 10,
+                        "expected_relay_fee_sompi_per_gram": 100,
+                        "relay_fee_ok": True,
+                        "low_fee_rejections": 0,
+                        "metrics": {
+                            "minimum_relay_fee_sompi_per_gram": {"label": "Relay fee sompi/gram", "numeric": 100, "value": 100, "observed": True},
+                            "storage_mass_max": {"label": "Max storageMass", "numeric": 1200, "value": 1200, "observed": True},
+                            "low_fee_rejections": {"label": "Low-fee rejections", "numeric": 0, "value": 0, "observed": True},
+                        },
+                    },
                 },
             },
             "indexer_watch": {
@@ -1143,6 +1169,10 @@ class WatchtowerUnitTests(unittest.TestCase):
         self.assertIn('kaspa_watchtower_indexer_toccata_schema_missing{node="test-node"} 1', metrics)
         self.assertIn('kaspa_watchtower_indexer_toccata_capability_state{capability="tx_version_1",label="Tx version 1",node="test-node"} 1', metrics)
         self.assertIn('kaspa_watchtower_indexer_toccata_capability_state{capability="get_seq_commit_lane_proof",label="GetSeqCommitLaneProof",node="test-node"} 0', metrics)
+        self.assertIn('kaspa_watchtower_indexer_toccata_fee_mass_observed{node="test-node"} 10', metrics)
+        self.assertIn('kaspa_watchtower_indexer_toccata_relay_fee_ok{node="test-node"} 1', metrics)
+        self.assertIn('kaspa_watchtower_indexer_toccata_expected_relay_fee_sompi_per_gram{node="test-node"} 100', metrics)
+        self.assertIn('kaspa_watchtower_indexer_toccata_fee_mass_value{label="Max storageMass",metric="storage_mass_max",node="test-node"} 1200', metrics)
         self.assertIn('kaspa_watchtower_watch_readiness_ok{node="test-node"} 1', metrics)
         self.assertIn('kaspa_watchtower_indexer_watch_enabled{node="test-node"} 1', metrics)
         self.assertIn('kaspa_watchtower_indexer_watch_events_total{node="test-node"} 1', metrics)
@@ -4090,6 +4120,8 @@ class WatchtowerUnitTests(unittest.TestCase):
             self.assertIn("Activation DAA", html)
             self.assertIn("Toccata Indexer Schema", html)
             self.assertIn("No Toccata schema metrics exposed", html)
+            self.assertIn("Toccata Fee/Mass Monitor", html)
+            self.assertIn("No Toccata fee/mass metrics exposed", html)
             self.assertIn("KAS/USDT 15m", html)
             self.assertIn("KAS/USDT 4h", html)
             self.assertIn("KAS/USDT 1D", html)

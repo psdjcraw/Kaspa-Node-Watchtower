@@ -35,6 +35,7 @@ TOCCATA_MIN_RAM_GIB = 16
 TOCCATA_PREFERRED_RAM_GIB = 32
 TOCCATA_MIN_DISK_GIB = 640
 TOCCATA_PREFERRED_DISK_GIB = 1024
+TOCCATA_RELAY_FEE_SOMPI_PER_GRAM = 100
 TOCCATA_INDEXER_CAPABILITIES = [
     ("tx_version_1", "Tx version 1", {"tx_version_1", "txVersion1", "tx_v1", "version_1_transactions", "version1Transactions"}),
     ("storage_mass", "storageMass", {"storage_mass", "storageMass", "storage_mass_supported", "storageMassSupported"}),
@@ -45,6 +46,18 @@ TOCCATA_INDEXER_CAPABILITIES = [
     ("gas", "Gas commitment", {"gas", "gas_supported", "gasSupported"}),
     ("get_block_reward_info", "GetBlockRewardInfo", {"get_block_reward_info", "getBlockRewardInfo", "block_reward_info", "blockRewardInfo"}),
     ("get_seq_commit_lane_proof", "GetSeqCommitLaneProof", {"get_seq_commit_lane_proof", "getSeqCommitLaneProof", "seq_commit_lane_proof", "seqCommitLaneProof"}),
+]
+TOCCATA_FEE_MASS_METRICS = [
+    ("minimum_relay_fee_sompi_per_gram", "Relay fee sompi/gram", {"minimum_relay_fee_sompi_per_gram", "minimumRelayFeeSompiPerGram", "relay_fee_sompi_per_gram", "relayFeeSompiPerGram"}),
+    ("tx_v1_count", "Tx v1 count", {"tx_v1_count", "txV1Count", "tx_version_1_count", "txVersion1Count", "version_1_transactions", "version1Transactions"}),
+    ("covenant_output_count", "Covenant outputs", {"covenant_output_count", "covenantOutputCount", "output_covenant_count", "outputCovenantCount"}),
+    ("user_lane_tx_count", "User lane tx", {"user_lane_tx_count", "userLaneTxCount", "lane_tx_count", "laneTxCount"}),
+    ("gas_total", "Gas total", {"gas_total", "gasTotal", "total_gas", "totalGas"}),
+    ("storage_mass_max", "Max storageMass", {"storage_mass_max", "storageMassMax", "max_storage_mass", "maxStorageMass"}),
+    ("storage_mass_avg", "Avg storageMass", {"storage_mass_avg", "storageMassAvg", "avg_storage_mass", "avgStorageMass"}),
+    ("compute_mass_max", "Max compute mass", {"compute_mass_max", "computeMassMax", "max_compute_mass", "maxComputeMass"}),
+    ("transient_mass_max", "Max transient mass", {"transient_mass_max", "transientMassMax", "max_transient_mass", "maxTransientMass"}),
+    ("low_fee_rejections", "Low-fee rejections", {"low_fee_rejections", "lowFeeRejections", "low_fee_rejection_count", "lowFeeRejectionCount"}),
 ]
 
 INVESTMENT_TIMEFRAMES = [
@@ -2964,6 +2977,36 @@ def indexer_toccata_schema_status(payload: Any) -> dict[str, Any]:
     }
 
 
+def indexer_fee_mass_status(payload: Any) -> dict[str, Any]:
+    metrics = {}
+    observed = 0
+    for key, label, aliases in TOCCATA_FEE_MASS_METRICS:
+        raw = find_nested_value(payload, aliases)
+        parsed = numeric(raw)
+        if raw is not None:
+            observed += 1
+        metrics[key] = {
+            "label": label,
+            "value": raw,
+            "numeric": parsed,
+            "observed": raw is not None,
+        }
+    relay_fee = metrics["minimum_relay_fee_sompi_per_gram"]["numeric"]
+    low_fee_rejections = metrics["low_fee_rejections"]["numeric"]
+    return {
+        "ok": (
+            (relay_fee is None or relay_fee >= TOCCATA_RELAY_FEE_SOMPI_PER_GRAM)
+            and (low_fee_rejections is None or low_fee_rejections <= 0)
+        ),
+        "observed": observed,
+        "total": len(TOCCATA_FEE_MASS_METRICS),
+        "expected_relay_fee_sompi_per_gram": TOCCATA_RELAY_FEE_SOMPI_PER_GRAM,
+        "relay_fee_ok": None if relay_fee is None else relay_fee >= TOCCATA_RELAY_FEE_SOMPI_PER_GRAM,
+        "low_fee_rejections": low_fee_rejections,
+        "metrics": metrics,
+    }
+
+
 def timestamp_age_seconds(value: Any, now: dt.datetime | None = None) -> float | None:
     if value in (None, ""):
         return None
@@ -3041,6 +3084,7 @@ def extract_indexer_metrics(payload: Any) -> dict[str, Any]:
         "checkpoint_age_seconds": timestamp_age_seconds(checkpoint_timestamp),
         "lag_seconds": numeric(lag_seconds),
         "toccata_schema": indexer_toccata_schema_status(payload),
+        "fee_mass": indexer_fee_mass_status(payload),
         "payload": payload,
     }
 
@@ -7634,6 +7678,7 @@ def indexer_watch_panel(report: dict[str, Any], state: dict[str, Any]) -> str:
     )
     metrics = indexer.get("metrics") or {}
     toccata_schema = metrics.get("toccata_schema") or {}
+    fee_mass = metrics.get("fee_mass") or {}
     capability_rows = "\n".join(
         html_row(
             [
@@ -7644,6 +7689,16 @@ def indexer_watch_panel(report: dict[str, Any], state: dict[str, Any]) -> str:
         )
         for key, item in (toccata_schema.get("capabilities") or {}).items()
     ) or html_row(["No Toccata schema metrics exposed", "unknown", ""])
+    fee_mass_rows = "\n".join(
+        html_row(
+            [
+                item.get("label") or key,
+                "observed" if item.get("observed") else "unknown",
+                "" if item.get("value") is None else item.get("value"),
+            ]
+        )
+        for key, item in (fee_mass.get("metrics") or {}).items()
+    ) or html_row(["No Toccata fee/mass metrics exposed", "unknown", ""])
     checkpoint_age = metrics.get("checkpoint_age_seconds")
     checkpoint_age_text = "unknown" if checkpoint_age is None else f"{float(checkpoint_age):.1f}s"
     return f"""
@@ -7652,6 +7707,7 @@ def indexer_watch_panel(report: dict[str, Any], state: dict[str, Any]) -> str:
       {visual_card("Indexer State", indexer.get("state") or "disabled", f"ok={indexer.get('ok', False)}", "neutral")}
       {visual_card("Checkpoint Age", checkpoint_age_text, f"fresh={indexer.get('checkpoint_fresh', False)}", "neutral")}
       {visual_card("Toccata Schema", f"{toccata_schema.get('supported', 0)}/{toccata_schema.get('total', len(TOCCATA_INDEXER_CAPABILITIES))}", f"missing={toccata_schema.get('missing', 0)} unknown={toccata_schema.get('unknown', 0)}", "ok" if toccata_schema.get("ok") else "warn")}
+      {visual_card("Fee/Mass", f"{fee_mass.get('observed', 0)}/{fee_mass.get('total', len(TOCCATA_FEE_MASS_METRICS))}", f"relay_fee_ok={fee_mass.get('relay_fee_ok', 'unknown')}", "ok" if fee_mass.get("ok") else "warn")}
       {visual_card("Watch Addresses", len(targets), f"enabled={watch.get('enabled', False)}", "neutral")}
       {visual_card("Watched Events", len(events), f"new={len(watch.get('new_events') or [])}", "neutral")}
     </section>
@@ -7683,6 +7739,19 @@ def indexer_watch_panel(report: dict[str, Any], state: dict[str, Any]) -> str:
       <table>
         <thead>{html_row(["Capability", "State", "Observed Value"], "th")}</thead>
         <tbody>{capability_rows}</tbody>
+      </table>
+    </section>
+    <section class="panel">
+      <h2>Toccata Fee/Mass Monitor</h2>
+      <div class="context-grid">
+        <div class="context-item"><div class="context-label">Expected Relay Fee</div><div class="context-value">{html.escape(str(fee_mass.get('expected_relay_fee_sompi_per_gram', TOCCATA_RELAY_FEE_SOMPI_PER_GRAM)))} sompi/gram</div></div>
+        <div class="context-item"><div class="context-label">Relay Fee OK</div><div class="context-value">{html.escape(str(fee_mass.get('relay_fee_ok', 'unknown')))}</div></div>
+        <div class="context-item"><div class="context-label">Low-Fee Rejections</div><div class="context-value">{html.escape(str(fee_mass.get('low_fee_rejections', 'unknown')))}</div></div>
+        <div class="context-item"><div class="context-label">Observed Metrics</div><div class="context-value">{html.escape(str(fee_mass.get('observed', 0)))}/{html.escape(str(fee_mass.get('total', len(TOCCATA_FEE_MASS_METRICS))))}</div></div>
+      </div>
+      <table>
+        <thead>{html_row(["Metric", "State", "Observed Value"], "th")}</thead>
+        <tbody>{fee_mass_rows}</tbody>
       </table>
     </section>
     <section class="layout">
@@ -15299,6 +15368,23 @@ def format_prometheus_metrics(
             "kaspa_watchtower_indexer_toccata_capability_state",
             schema_state_values.get(str(capability.get("state") or "unknown"), -1),
             {**node_labels, "capability": capability_key, "label": capability.get("label") or capability_key},
+        )
+    fee_mass = indexer_metrics.get("fee_mass") or {}
+    add_prometheus_metric(lines, "kaspa_watchtower_indexer_toccata_fee_mass_observed", fee_mass.get("observed"), node_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_indexer_toccata_fee_mass_total", fee_mass.get("total"), node_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_indexer_toccata_relay_fee_ok", fee_mass.get("relay_fee_ok"), node_labels)
+    add_prometheus_metric(
+        lines,
+        "kaspa_watchtower_indexer_toccata_expected_relay_fee_sompi_per_gram",
+        fee_mass.get("expected_relay_fee_sompi_per_gram"),
+        node_labels,
+    )
+    for metric_key, metric in (fee_mass.get("metrics") or {}).items():
+        add_prometheus_metric(
+            lines,
+            "kaspa_watchtower_indexer_toccata_fee_mass_value",
+            metric.get("numeric"),
+            {**node_labels, "metric": metric_key, "label": metric.get("label") or metric_key},
         )
     add_prometheus_metric(lines, "kaspa_watchtower_watch_readiness_ok", watch_readiness_ok(report), node_labels)
     add_prometheus_metric(lines, "kaspa_watchtower_indexer_watch_enabled", bool(indexer_watch.get("enabled")), node_labels)

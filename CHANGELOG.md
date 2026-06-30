@@ -30,6 +30,9 @@ All notable changes to Kaspa Node Watchtower are tracked here.
 - Indexer `/api/metrics` polling now normalizes post-Toccata schema capability
   signals for tx v1, `storageMass`, `computeBudget`, covenant bindings, UTXO
   covenant IDs, user lanes, gas, reward info, and lane-proof support.
+- Indexer status pages and Prometheus output now include a post-Toccata
+  fee/mass monitor for relay fee, tx v1 activity, covenant outputs, user lanes,
+  gas, storage/compute/transient mass, and low-fee rejections.
 - `watchtower.py --alert` now emits a market-risk-high alert body when a new
   critical market positioning snapshot is detected.
 

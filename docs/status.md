@@ -101,6 +101,9 @@ Last verified manually on `2026-06-08`:
 - Indexer tab: post-Toccata schema capability table from `/api/metrics`, with
   each capability marked `ok`, `missing`, or `unknown` so schema gaps are
   visible before covenant/lane activity appears on mainnet
+- Indexer tab: post-Toccata fee/mass monitor for relay fee, tx v1 activity,
+  covenant outputs, user lanes, gas, storage/compute/transient mass, and
+  low-fee rejections when those `/api/metrics` fields are available
 - Ops and History tabs: triage queue, check details, command center, benchmark
   trend, recovery history, and recent status history
 - Market watch source: Bybit public spot ticker and 15-minute kline endpoints,
