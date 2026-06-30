@@ -794,6 +794,25 @@ class WatchtowerUnitTests(unittest.TestCase):
             self.assertEqual(summary["daa_delta"], 60)
             self.assertEqual(summary["block_delta"], 60)
 
+    def test_toccata_readiness_tracks_activation_and_hardware(self):
+        readiness = watchtower.build_toccata_readiness(
+            {
+                "ok": True,
+                "is_synced": True,
+                "virtual_daa_score": watchtower.TOCCATA_ACTIVATION_DAA + 1,
+                "server_version": "2.0.0",
+            },
+            {},
+            {"total_gb": 1024, "free_gb": 128},
+            {"count": 1},
+            {"ok": True},
+        )
+
+        self.assertTrue(readiness["active_by_daa"])
+        self.assertTrue(readiness["readiness_ok"])
+        self.assertEqual(readiness["remaining_daa"], 0)
+        self.assertEqual(readiness["server_version"], "2.0.0")
+
     def test_prometheus_metrics_include_extended_grpc_values(self):
         report = {
             "node_name": "test-node",
@@ -1139,6 +1158,35 @@ class WatchtowerUnitTests(unittest.TestCase):
         self.assertIn('kaspa_watchtower_sync_active{node="test-node"} 0', metrics)
         self.assertIn('kaspa_watchtower_sync_baseline_available{node="test-node"} 0', metrics)
         self.assertIn('kaspa_watchtower_sync_daa_rate_per_hour{node="test-node"} 0', metrics)
+
+    def test_prometheus_metrics_emit_toccata_readiness(self):
+        report = {
+            "node_name": "test-node",
+            "status": "ok",
+            "severity": "ok",
+            "checks": [],
+            "grpc_metrics": {},
+            "progress": {},
+            "monitoring": {},
+            "disk": {},
+            "toccata": {
+                "activation_daa": watchtower.TOCCATA_ACTIVATION_DAA,
+                "current_daa": watchtower.TOCCATA_ACTIVATION_DAA,
+                "remaining_daa": 0,
+                "active_by_daa": True,
+                "active_by_time": True,
+                "readiness_ok": True,
+                "minimum_hardware_ok": True,
+                "preferred_hardware_ok": False,
+            },
+        }
+
+        metrics = watchtower.format_prometheus_metrics(report, {}, {}, {})
+
+        self.assertIn('kaspa_watchtower_toccata_activation_daa{node="test-node"} 4.74166e+08', metrics)
+        self.assertIn('kaspa_watchtower_toccata_remaining_daa{node="test-node"} 0', metrics)
+        self.assertIn('kaspa_watchtower_toccata_active_by_daa{node="test-node"} 1', metrics)
+        self.assertIn('kaspa_watchtower_toccata_readiness_ok{node="test-node"} 1', metrics)
 
     def test_prometheus_metrics_emit_sdk_probe_metrics(self):
         report = {
@@ -3961,11 +4009,13 @@ class WatchtowerUnitTests(unittest.TestCase):
             self.assertIn('class="status-tabs"', html)
             self.assertIn('data-tab-target="tab-market"', html)
             self.assertIn('data-tab-target="tab-futures"', html)
+            self.assertIn('data-tab-target="tab-toccata"', html)
             self.assertIn('data-tab-target="tab-network"', html)
             self.assertIn('data-tab-target="tab-ops"', html)
             self.assertIn('data-tab-target="tab-history"', html)
             self.assertIn('id="tab-market" class="tab-panel active"', html)
             self.assertIn('id="tab-futures" class="tab-panel"', html)
+            self.assertIn('id="tab-toccata" class="tab-panel"', html)
             self.assertIn('id="tab-network" class="tab-panel"', html)
             self.assertIn('id="tab-ops" class="tab-panel"', html)
             self.assertIn('id="tab-history" class="tab-panel"', html)
@@ -4007,6 +4057,9 @@ class WatchtowerUnitTests(unittest.TestCase):
             self.assertIn("Hashrate", html)
             self.assertIn("1.25 PH/s", html)
             self.assertIn("network_hashes_per_second trend", html)
+            self.assertIn("Toccata Readiness", html)
+            self.assertIn("Post-Toccata Compatibility", html)
+            self.assertIn("Activation DAA", html)
             self.assertIn("KAS/USDT 15m", html)
             self.assertIn("KAS/USDT 4h", html)
             self.assertIn("KAS/USDT 1D", html)

@@ -27,6 +27,14 @@ from typing import Any, Iterable
 
 
 VERSION = "0.8.2"
+TOCCATA_ACTIVATION_DAA = 474_165_565
+TOCCATA_ACTIVATION_UTC = dt.datetime(2026, 6, 30, 16, 15, tzinfo=dt.timezone.utc)
+TOCCATA_MIN_CPU_CORES = 8
+TOCCATA_PREFERRED_CPU_CORES = 12
+TOCCATA_MIN_RAM_GIB = 16
+TOCCATA_PREFERRED_RAM_GIB = 32
+TOCCATA_MIN_DISK_GIB = 640
+TOCCATA_PREFERRED_DISK_GIB = 1024
 
 INVESTMENT_TIMEFRAMES = [
     {"label": "15m", "range": "5d", "interval": "15m"},
@@ -390,6 +398,110 @@ def disk_usage(path: str) -> dict[str, Any]:
         "free_gb": round(free_gb, 2),
         "total_gb": round(total_gb, 2),
         "free_percent": round(free_percent, 2),
+    }
+
+
+def system_memory_gib() -> float | None:
+    try:
+        if hasattr(os, "sysconf"):
+            page_size = os.sysconf("SC_PAGE_SIZE")
+            pages = os.sysconf("SC_PHYS_PAGES")
+            return round((page_size * pages) / (1024**3), 2)
+    except (OSError, ValueError, TypeError, AttributeError):
+        return None
+    return None
+
+
+def build_toccata_readiness(
+    grpc_metrics: dict[str, Any],
+    sdk_metrics: dict[str, Any],
+    disk: dict[str, Any],
+    process_summary: dict[str, Any],
+    rpc: dict[str, Any],
+) -> dict[str, Any]:
+    current_daa = numeric(grpc_metrics.get("virtual_daa_score") or sdk_metrics.get("virtual_daa_score"))
+    remaining_daa = None if current_daa is None else max(0, TOCCATA_ACTIVATION_DAA - int(current_daa))
+    now = dt.datetime.now(dt.timezone.utc)
+    seconds_until_activation = max(0.0, (TOCCATA_ACTIVATION_UTC - now).total_seconds())
+    active_by_daa = current_daa is not None and current_daa >= TOCCATA_ACTIVATION_DAA
+    active_by_time = now >= TOCCATA_ACTIVATION_UTC
+    cpu_cores = os.cpu_count()
+    memory_gib = system_memory_gib()
+    disk_total_gib = numeric(disk.get("total_gb"))
+    disk_free_gib = numeric(disk.get("free_gb"))
+    server_version = (
+        grpc_metrics.get("server_version")
+        or sdk_metrics.get("server_version")
+        or sdk_metrics.get("serverVersion")
+        or "unknown"
+    )
+    min_hardware_ok = (
+        (cpu_cores is None or cpu_cores >= TOCCATA_MIN_CPU_CORES)
+        and (memory_gib is None or memory_gib >= TOCCATA_MIN_RAM_GIB)
+        and (disk_total_gib is None or disk_total_gib >= TOCCATA_MIN_DISK_GIB)
+    )
+    preferred_hardware_ok = (
+        (cpu_cores is None or cpu_cores >= TOCCATA_PREFERRED_CPU_CORES)
+        and (memory_gib is None or memory_gib >= TOCCATA_PREFERRED_RAM_GIB)
+        and (disk_total_gib is None or disk_total_gib >= TOCCATA_PREFERRED_DISK_GIB)
+    )
+    rpc_ok = bool(rpc.get("ok"))
+    grpc_ok = bool(grpc_metrics.get("ok"))
+    sdk_ok = bool(sdk_metrics.get("ok")) if sdk_metrics.get("enabled") else None
+    synced = grpc_metrics.get("is_synced")
+    process_ok = bool(process_summary.get("count"))
+    ready_items = {
+        "process": process_ok,
+        "rpc": rpc_ok,
+        "grpc": grpc_ok,
+        "synced": bool(synced),
+        "hardware_minimum": min_hardware_ok,
+        "disk_backup_required": True,
+    }
+    warnings = []
+    if not process_ok:
+        warnings.append("kaspad process not observed")
+    if not rpc_ok:
+        warnings.append("RPC TCP check failed")
+    if not grpc_ok:
+        warnings.append("gRPC metrics unavailable")
+    if synced is not True:
+        warnings.append("node not synced")
+    if not min_hardware_ok:
+        warnings.append("hardware below published minimum")
+    if disk_free_gib is not None and disk_free_gib < 20:
+        warnings.append("low free disk before one-way DB upgrade")
+    readiness_ok = process_ok and rpc_ok and grpc_ok and bool(synced) and min_hardware_ok
+    return {
+        "name": "Toccata",
+        "activation_daa": TOCCATA_ACTIVATION_DAA,
+        "activation_utc": TOCCATA_ACTIVATION_UTC.isoformat(),
+        "activation_kst": TOCCATA_ACTIVATION_UTC.astimezone(dt.timezone(dt.timedelta(hours=9))).isoformat(),
+        "current_daa": None if current_daa is None else int(current_daa),
+        "remaining_daa": remaining_daa,
+        "seconds_until_activation_time": round(seconds_until_activation, 1),
+        "active_by_daa": active_by_daa,
+        "active_by_time": active_by_time,
+        "status": "active" if active_by_daa else "due" if active_by_time else "pending",
+        "server_version": server_version,
+        "cpu_cores": cpu_cores,
+        "memory_gib": memory_gib,
+        "disk_total_gib": disk_total_gib,
+        "disk_free_gib": disk_free_gib,
+        "minimum_hardware_ok": min_hardware_ok,
+        "preferred_hardware_ok": preferred_hardware_ok,
+        "readiness_ok": readiness_ok,
+        "checks": ready_items,
+        "warnings": warnings,
+        "compatibility": {
+            "tx_version_1": "watch_indexer_schema",
+            "storage_mass": "watch_rpc_and_indexer",
+            "compute_budget": "watch_rpc_and_indexer",
+            "covenant_binding": "watch_rpc_and_indexer",
+            "utxo_covenant_id": "watch_rpc_and_indexer",
+            "get_block_reward_info": "probe_pending",
+            "get_seq_commit_lane_proof": "probe_pending",
+        },
     }
 
 
@@ -1574,6 +1686,7 @@ def build_report(config: dict) -> dict[str, Any]:
     mining = fetch_optional_mining_status(config)
     whale_watch = fetch_optional_whale_watch(config, grpc_endpoint)
     indexer = fetch_optional_indexer_status(config)
+    toccata = build_toccata_readiness(grpc_metrics, sdk_metrics, disk, process_summary, rpc)
 
     checks = [
         Check("process", bool(processes), "running" if processes else "not running"),
@@ -1851,6 +1964,7 @@ def build_report(config: dict) -> dict[str, Any]:
         "mining": mining,
         "whale_watch": whale_watch,
         "indexer": indexer,
+        "toccata": toccata,
         "data_dir": config.get("data_dir") or "",
         "data_dir_size": dir_size(config.get("data_dir", "")),
         "disk": disk,
@@ -7103,6 +7217,95 @@ def multi_node_history_panel(db_path: Path | None) -> str:
     """
 
 
+def toccata_status_panel(report: dict[str, Any]) -> str:
+    toccata = report.get("toccata") or {}
+    current_daa = toccata.get("current_daa")
+    remaining_daa = toccata.get("remaining_daa")
+    warnings = toccata.get("warnings") or []
+    compatibility = toccata.get("compatibility") or {}
+    status = str(toccata.get("status") or "unknown")
+    status_tone = "ok" if toccata.get("readiness_ok") else "warn" if status != "active" else "critical"
+    time_left_seconds = numeric(toccata.get("seconds_until_activation_time"))
+    if time_left_seconds == 0:
+        time_left = "active by clock"
+    elif time_left_seconds is None:
+        time_left = "unknown"
+    else:
+        time_left = format_duration_minutes(time_left_seconds / 60)
+    cards = "\n".join(
+        [
+            visual_card("Toccata", status.upper(), f"DAA {format_optional_number(toccata.get('activation_daa'))}", status_tone),
+            visual_card("Current DAA", compact_number(current_daa), f"remaining {compact_number(remaining_daa)}", "neutral"),
+            visual_card("Activation Time", time_left, str(toccata.get("activation_kst") or "unknown"), "neutral"),
+            visual_card("Node Version", toccata.get("server_version") or "unknown", "gRPC/SDK server version", "neutral"),
+            visual_card(
+                "CPU",
+                toccata.get("cpu_cores") or "unknown",
+                f"min {TOCCATA_MIN_CPU_CORES}, preferred {TOCCATA_PREFERRED_CPU_CORES}",
+                "ok" if (numeric(toccata.get("cpu_cores")) or 0) >= TOCCATA_MIN_CPU_CORES else "warn",
+            ),
+            visual_card(
+                "RAM",
+                format_gib(toccata.get("memory_gib")),
+                f"min {TOCCATA_MIN_RAM_GIB} GiB, preferred {TOCCATA_PREFERRED_RAM_GIB} GiB",
+                "ok" if (numeric(toccata.get("memory_gib")) or 0) >= TOCCATA_MIN_RAM_GIB else "warn",
+            ),
+            visual_card(
+                "Disk",
+                format_gib(toccata.get("disk_total_gib")),
+                f"free {format_gib(toccata.get('disk_free_gib'))}",
+                "ok" if toccata.get("minimum_hardware_ok") else "warn",
+            ),
+            visual_card(
+                "Readiness",
+                "ready" if toccata.get("readiness_ok") else "review",
+                "; ".join(warnings[:2]) if warnings else "core checks available",
+                status_tone,
+            ),
+        ]
+    )
+    checklist = toccata.get("checks") or {}
+    readiness_rows = "\n".join(
+        html_row([label, "OK" if ok is True else "REVIEW" if ok is False else "MANUAL"])
+        for label, ok in [
+            ("Process observed", checklist.get("process")),
+            ("RPC reachable", checklist.get("rpc")),
+            ("gRPC metrics", checklist.get("grpc")),
+            ("Node synced", checklist.get("synced")),
+            ("Minimum hardware", checklist.get("hardware_minimum")),
+            ("Datadir backup", None),
+        ]
+    )
+    compatibility_rows = "\n".join(
+        html_row([key.replace("_", " "), value])
+        for key, value in compatibility.items()
+    )
+    warning_rows = "\n".join(html_row([warning]) for warning in warnings) or html_row(["No active readiness warnings"])
+    return f"""
+    <section id="tab-toccata" class="tab-panel">
+      <section class="panel">
+        <div class="market-chart-head">
+          <h2>Toccata Readiness</h2>
+          <div class="market-status">Activation DAA {html.escape(format_optional_number(toccata.get('activation_daa')))} · post-upgrade fields watched separately from core health</div>
+        </div>
+        <div class="metrics-grid compact">{cards}</div>
+      </section>
+      <section class="panel">
+        <h2>Readiness Checklist</h2>
+        <table><tbody>{readiness_rows}</tbody></table>
+      </section>
+      <section class="panel">
+        <h2>Post-Toccata Compatibility</h2>
+        <table><tbody>{compatibility_rows}</tbody></table>
+      </section>
+      <section class="panel">
+        <h2>Warnings</h2>
+        <table><tbody>{warning_rows}</tbody></table>
+      </section>
+    </section>
+    """
+
+
 def wallet_status_panel(report: dict[str, Any], state: dict[str, Any], market_snapshot_path: Path | None = None) -> str:
     wallet = report.get("wallet") or {}
     change = wallet.get("change") or {}
@@ -7536,6 +7739,7 @@ def write_status_page(
     status_market_path = market_snapshot_path or Path(DEFAULT_CONFIG["market_snapshot_path"])
     status_market_metrics = build_market_metrics(status_market_path)
     market_risk_panel = market_risk_history_panel(status_market_metrics)
+    toccata_panel = toccata_status_panel(report)
     timeline_events = build_operator_timeline(
         report,
         state,
@@ -8571,6 +8775,7 @@ def write_status_page(
     <nav class="status-tabs" aria-label="Status dashboard sections">
       <button class="tab-button active" type="button" data-tab-target="tab-market">Market</button>
       <button class="tab-button" type="button" data-tab-target="tab-futures">Futures</button>
+      <button class="tab-button" type="button" data-tab-target="tab-toccata">Toccata</button>
       <button class="tab-button" type="button" data-tab-target="tab-network">Network</button>
       <button class="tab-button" type="button" data-tab-target="tab-wallet">Wallet</button>
       <button class="tab-button" type="button" data-tab-target="tab-mining">Mining</button>
@@ -8997,6 +9202,7 @@ def write_status_page(
       </div>
     </section>
     </section>
+    {toccata_panel}
     <section id="tab-futures" class="tab-panel">
     {market_risk_panel}
     <section class="panel futures-panel">
@@ -14934,6 +15140,7 @@ def format_prometheus_metrics(
     indexer = report.get("indexer") or {}
     indexer_metrics = indexer.get("metrics") or {}
     indexer_watch = report.get("indexer_watch") or {}
+    toccata = report.get("toccata") or {}
     incident = report.get("incident") or {}
     maintenance = report.get("maintenance") or {}
     recovery_summary = recovery_summary or {}
@@ -15008,6 +15215,14 @@ def format_prometheus_metrics(
     add_prometheus_metric(lines, "kaspa_watchtower_indexer_watch_addresses", len(indexer_watch.get("watch_addresses") or []), node_labels)
     add_prometheus_metric(lines, "kaspa_watchtower_indexer_watch_events_total", len(indexer_watch.get("events") or []), node_labels)
     add_prometheus_metric(lines, "kaspa_watchtower_indexer_watch_new_events", len(indexer_watch.get("new_events") or []), node_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_toccata_activation_daa", toccata.get("activation_daa"), node_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_toccata_current_daa", toccata.get("current_daa"), node_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_toccata_remaining_daa", toccata.get("remaining_daa"), node_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_toccata_active_by_daa", bool(toccata.get("active_by_daa")), node_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_toccata_active_by_time", bool(toccata.get("active_by_time")), node_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_toccata_readiness_ok", bool(toccata.get("readiness_ok")), node_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_toccata_minimum_hardware_ok", bool(toccata.get("minimum_hardware_ok")), node_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_toccata_preferred_hardware_ok", bool(toccata.get("preferred_hardware_ok")), node_labels)
     for address_state in indexer_watch.get("address_states") or []:
         address_labels = {
             **node_labels,

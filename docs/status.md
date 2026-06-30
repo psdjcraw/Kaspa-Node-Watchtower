@@ -94,6 +94,10 @@ Last verified manually on `2026-06-08`:
   personal Watchlist
 - Futures tab: persisted 24-hour market risk history, futures positioning,
   futures trend, market source health, and selectable estimated liquidation maps
+- Toccata tab: activation DAA countdown/readiness, server version, minimum and
+  preferred hardware checks, backup reminder, and post-Toccata RPC/indexer
+  compatibility watchpoints for tx v1, `storageMass`, `computeBudget`,
+  covenant bindings, UTXO covenant IDs, reward info, and lane proofs
 - Ops and History tabs: triage queue, check details, command center, benchmark
   trend, recovery history, and recent status history
 - Market watch source: Bybit public spot ticker and 15-minute kline endpoints,
