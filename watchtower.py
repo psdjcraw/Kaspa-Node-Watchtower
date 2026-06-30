@@ -3049,6 +3049,49 @@ def indexer_toccata_activity_status(payload: Any) -> dict[str, Any]:
     }
 
 
+def truthy_metric(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    parsed = numeric(value)
+    if parsed is not None:
+        return parsed > 0
+    return str(value or "").strip().lower() in {"true", "yes", "ok", "active", "token", "nft"}
+
+
+def indexer_covenant_explorer_status(payload: Any) -> dict[str, Any]:
+    raw_items = find_nested_value(payload, {"topCovenants", "top_covenants", "covenantActivity", "covenants"})
+    if not isinstance(raw_items, list):
+        raw_items = []
+    items = []
+    for raw in raw_items[:20]:
+        if not isinstance(raw, dict):
+            continue
+        covenant_id = find_nested_value(raw, {"covenantId", "covenant_id", "id"})
+        if covenant_id in (None, ""):
+            continue
+        item = {
+            "covenant_id": str(covenant_id),
+            "tx_count": numeric(find_nested_value(raw, {"txCount", "tx_count", "transactions"})),
+            "utxo_count": numeric(find_nested_value(raw, {"utxoCount", "utxo_count", "utxos"})),
+            "input_count": numeric(find_nested_value(raw, {"inputCount", "input_count", "inputs"})),
+            "output_count": numeric(find_nested_value(raw, {"outputCount", "output_count", "outputs"})),
+            "latest_tx_id": find_nested_value(raw, {"latestTxId", "latest_tx_id", "transactionId", "transaction_id"}),
+            "token_like": truthy_metric(find_nested_value(raw, {"tokenLike", "token_like", "fungibleCandidate", "fungible_candidate"})),
+            "nft_like": truthy_metric(find_nested_value(raw, {"nftLike", "nft_like", "nftCandidate", "nft_candidate"})),
+        }
+        items.append(item)
+    covenant_id_count = numeric(find_nested_value(payload, {"covenantIdCount", "covenant_id_count", "uniqueCovenantIds", "unique_covenant_ids"}))
+    token_candidate_count = numeric(find_nested_value(payload, {"tokenCandidateCount", "token_candidate_count", "tokenLikeCount", "token_like_count"}))
+    nft_candidate_count = numeric(find_nested_value(payload, {"nftCandidateCount", "nft_candidate_count", "nftLikeCount", "nft_like_count"}))
+    return {
+        "observed": bool(items) or covenant_id_count is not None or token_candidate_count is not None or nft_candidate_count is not None,
+        "covenant_id_count": covenant_id_count if covenant_id_count is not None else len(items) if items else None,
+        "token_candidate_count": token_candidate_count if token_candidate_count is not None else sum(1 for item in items if item["token_like"]),
+        "nft_candidate_count": nft_candidate_count if nft_candidate_count is not None else sum(1 for item in items if item["nft_like"]),
+        "items": items,
+    }
+
+
 def timestamp_age_seconds(value: Any, now: dt.datetime | None = None) -> float | None:
     if value in (None, ""):
         return None
@@ -3128,6 +3171,7 @@ def extract_indexer_metrics(payload: Any) -> dict[str, Any]:
         "toccata_schema": indexer_toccata_schema_status(payload),
         "fee_mass": indexer_fee_mass_status(payload),
         "toccata_activity": indexer_toccata_activity_status(payload),
+        "covenant_explorer": indexer_covenant_explorer_status(payload),
         "payload": payload,
     }
 
@@ -7723,6 +7767,7 @@ def indexer_watch_panel(report: dict[str, Any], state: dict[str, Any]) -> str:
     toccata_schema = metrics.get("toccata_schema") or {}
     fee_mass = metrics.get("fee_mass") or {}
     toccata_activity = metrics.get("toccata_activity") or {}
+    covenant_explorer = metrics.get("covenant_explorer") or {}
     capability_rows = "\n".join(
         html_row(
             [
@@ -7753,6 +7798,21 @@ def indexer_watch_panel(report: dict[str, Any], state: dict[str, Any]) -> str:
         )
         for key, item in (toccata_activity.get("metrics") or {}).items()
     ) or html_row(["No post-Toccata tx activity metrics exposed", "unknown", ""])
+    covenant_rows = "\n".join(
+        html_row(
+            [
+                item.get("covenant_id") or "",
+                item.get("tx_count", "unknown"),
+                item.get("utxo_count", "unknown"),
+                item.get("input_count", "unknown"),
+                item.get("output_count", "unknown"),
+                "yes" if item.get("token_like") else "no",
+                "yes" if item.get("nft_like") else "no",
+                short_hash(item.get("latest_tx_id")) or "",
+            ]
+        )
+        for item in (covenant_explorer.get("items") or [])
+    ) or html_row(["No covenant activity exposed", "", "", "", "", "", "", ""])
     checkpoint_age = metrics.get("checkpoint_age_seconds")
     checkpoint_age_text = "unknown" if checkpoint_age is None else f"{float(checkpoint_age):.1f}s"
     return f"""
@@ -7763,6 +7823,7 @@ def indexer_watch_panel(report: dict[str, Any], state: dict[str, Any]) -> str:
       {visual_card("Toccata Schema", f"{toccata_schema.get('supported', 0)}/{toccata_schema.get('total', len(TOCCATA_INDEXER_CAPABILITIES))}", f"missing={toccata_schema.get('missing', 0)} unknown={toccata_schema.get('unknown', 0)}", "ok" if toccata_schema.get("ok") else "warn")}
       {visual_card("Fee/Mass", f"{fee_mass.get('observed', 0)}/{fee_mass.get('total', len(TOCCATA_FEE_MASS_METRICS))}", f"relay_fee_ok={fee_mass.get('relay_fee_ok', 'unknown')}", "ok" if fee_mass.get("ok") else "warn")}
       {visual_card("Tx Activity", f"{toccata_activity.get('active', 0)} active", f"observed={toccata_activity.get('observed', 0)}/{toccata_activity.get('total', len(TOCCATA_TX_ACTIVITY_METRICS))}", "neutral")}
+      {visual_card("Covenants", covenant_explorer.get("covenant_id_count", "unknown"), f"tokens={covenant_explorer.get('token_candidate_count', 'unknown')} nfts={covenant_explorer.get('nft_candidate_count', 'unknown')}", "neutral")}
       {visual_card("Watch Addresses", len(targets), f"enabled={watch.get('enabled', False)}", "neutral")}
       {visual_card("Watched Events", len(events), f"new={len(watch.get('new_events') or [])}", "neutral")}
     </section>
@@ -7819,6 +7880,19 @@ def indexer_watch_panel(report: dict[str, Any], state: dict[str, Any]) -> str:
       <table>
         <thead>{html_row(["Metric", "State", "Observed Value"], "th")}</thead>
         <tbody>{activity_rows}</tbody>
+      </table>
+    </section>
+    <section class="panel">
+      <h2>Covenant Explorer</h2>
+      <div class="context-grid">
+        <div class="context-item"><div class="context-label">Covenant IDs</div><div class="context-value">{html.escape(str(covenant_explorer.get('covenant_id_count', 'unknown')))}</div></div>
+        <div class="context-item"><div class="context-label">Token Candidates</div><div class="context-value">{html.escape(str(covenant_explorer.get('token_candidate_count', 'unknown')))}</div></div>
+        <div class="context-item"><div class="context-label">NFT Candidates</div><div class="context-value">{html.escape(str(covenant_explorer.get('nft_candidate_count', 'unknown')))}</div></div>
+        <div class="context-item"><div class="context-label">Observed</div><div class="context-value">{html.escape(str(covenant_explorer.get('observed', False)))}</div></div>
+      </div>
+      <table>
+        <thead>{html_row(["Covenant ID", "Tx", "UTXO", "Inputs", "Outputs", "Token", "NFT", "Latest Tx"], "th")}</thead>
+        <tbody>{covenant_rows}</tbody>
       </table>
     </section>
     <section class="layout">
@@ -15464,6 +15538,17 @@ def format_prometheus_metrics(
             metric.get("numeric"),
             {**node_labels, "metric": metric_key, "label": metric.get("label") or metric_key},
         )
+    covenant_explorer = indexer_metrics.get("covenant_explorer") or {}
+    add_prometheus_metric(lines, "kaspa_watchtower_indexer_covenant_ids", covenant_explorer.get("covenant_id_count"), node_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_indexer_covenant_token_candidates", covenant_explorer.get("token_candidate_count"), node_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_indexer_covenant_nft_candidates", covenant_explorer.get("nft_candidate_count"), node_labels)
+    for item in (covenant_explorer.get("items") or [])[:10]:
+        covenant_labels = {**node_labels, "covenant_id": item.get("covenant_id", "unknown")}
+        add_prometheus_metric(lines, "kaspa_watchtower_indexer_covenant_tx_count", item.get("tx_count"), covenant_labels)
+        add_prometheus_metric(lines, "kaspa_watchtower_indexer_covenant_utxo_count", item.get("utxo_count"), covenant_labels)
+        add_prometheus_metric(lines, "kaspa_watchtower_indexer_covenant_output_count", item.get("output_count"), covenant_labels)
+        add_prometheus_metric(lines, "kaspa_watchtower_indexer_covenant_token_like", bool(item.get("token_like")), covenant_labels)
+        add_prometheus_metric(lines, "kaspa_watchtower_indexer_covenant_nft_like", bool(item.get("nft_like")), covenant_labels)
     add_prometheus_metric(lines, "kaspa_watchtower_watch_readiness_ok", watch_readiness_ok(report), node_labels)
     add_prometheus_metric(lines, "kaspa_watchtower_indexer_watch_enabled", bool(indexer_watch.get("enabled")), node_labels)
     add_prometheus_metric(lines, "kaspa_watchtower_indexer_watch_ok", bool(indexer_watch.get("ok")), node_labels)

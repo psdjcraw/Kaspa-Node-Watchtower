@@ -78,7 +78,21 @@ Recommended top-level response:
     "lowFeeRejections": 0,
     "zkPrecompileTxCount": 0,
     "groth16TxCount": 0,
-    "risc0TxCount": 0
+    "risc0TxCount": 0,
+    "tokenCandidateCount": 0,
+    "nftCandidateCount": 0,
+    "topCovenants": [
+      {
+        "covenantId": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        "txCount": 0,
+        "utxoCount": 0,
+        "inputCount": 0,
+        "outputCount": 0,
+        "tokenLike": false,
+        "nftLike": false,
+        "latestTxId": null
+      }
+    ]
   }
 }
 ```
@@ -152,6 +166,30 @@ The recommended window is "since indexer start or current retention window" for
 simple counters. If the indexer later exposes time-windowed counters, keep these
 canonical names for the default aggregate and add explicit suffixes such as
 `txV1Count24h`.
+
+## Covenant Explorer Fields
+
+These fields feed the Watchtower Covenant Explorer baseline. They are observer
+signals only; Watchtower does not infer an official token standard from them.
+
+- `tokenCandidateCount`: number of covenant IDs the indexer marks as
+  fungible-token-like.
+- `nftCandidateCount`: number of covenant IDs the indexer marks as NFT-like.
+- `topCovenants`: ordered list of the most active covenant IDs.
+
+Each `topCovenants` item should use:
+
+- `covenantId`: 32-byte covenant ID as hex.
+- `txCount`: indexed transaction count involving the covenant.
+- `utxoCount`: current or indexed UTXO count for the covenant.
+- `inputCount`: indexed covenant input count.
+- `outputCount`: indexed covenant output count.
+- `tokenLike`: boolean heuristic for fungible-token-like behavior.
+- `nftLike`: boolean heuristic for NFT-like behavior.
+- `latestTxId`: latest transaction ID observed for this covenant, or `null`.
+
+Recommended ordering is descending `txCount`, then descending `utxoCount`.
+Limit the list to a small top-N set such as 20 items.
 
 ## Watchtower Interpretation
 

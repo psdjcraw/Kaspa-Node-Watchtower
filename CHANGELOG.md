@@ -39,6 +39,9 @@ All notable changes to Kaspa Node Watchtower are tracked here.
 - Added `docs/indexer-api-spec.md` to pin the Watchtower-facing indexer
   `/api/health` and `/api/metrics` contract for Toccata schema, fee/mass, and
   activity fields.
+- Added a Covenant Explorer baseline to the Indexer tab and Prometheus output,
+  covering top covenant IDs, tx/UTXO/input/output counts, token-like and
+  NFT-like heuristics, and latest transaction IDs when exposed by the indexer.
 - `watchtower.py --alert` now emits a market-risk-high alert body when a new
   critical market positioning snapshot is detected.
 

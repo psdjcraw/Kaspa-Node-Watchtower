@@ -180,6 +180,30 @@ class WatchtowerUnitTests(unittest.TestCase):
                         "zkPrecompileTxCount": 1,
                         "groth16TxCount": 1,
                         "risc0TxCount": 0,
+                        "tokenCandidateCount": 1,
+                        "nftCandidateCount": 1,
+                        "topCovenants": [
+                            {
+                                "covenantId": "a" * 64,
+                                "txCount": 7,
+                                "utxoCount": 3,
+                                "inputCount": 2,
+                                "outputCount": 4,
+                                "tokenLike": True,
+                                "nftLike": False,
+                                "latestTxId": "b" * 64,
+                            },
+                            {
+                                "covenantId": "c" * 64,
+                                "txCount": 1,
+                                "utxoCount": 1,
+                                "inputCount": 1,
+                                "outputCount": 1,
+                                "tokenLike": False,
+                                "nftLike": True,
+                                "latestTxId": "d" * 64,
+                            },
+                        ],
                     },
                 },
             ],
@@ -200,6 +224,10 @@ class WatchtowerUnitTests(unittest.TestCase):
         self.assertEqual(status["metrics"]["toccata_activity"]["observed"], 13)
         self.assertEqual(status["metrics"]["toccata_activity"]["active"], 12)
         self.assertEqual(status["metrics"]["toccata_activity"]["metrics"]["risc0_tx_count"]["numeric"], 0)
+        self.assertTrue(status["metrics"]["covenant_explorer"]["observed"])
+        self.assertEqual(status["metrics"]["covenant_explorer"]["covenant_id_count"], 2)
+        self.assertEqual(status["metrics"]["covenant_explorer"]["token_candidate_count"], 1)
+        self.assertEqual(status["metrics"]["covenant_explorer"]["items"][0]["tx_count"], 7)
 
     def test_fetch_optional_indexer_status_flags_stale_metrics(self):
         config = copy.deepcopy(watchtower.DEFAULT_CONFIG)
@@ -986,6 +1014,24 @@ class WatchtowerUnitTests(unittest.TestCase):
                             "risc0_tx_count": {"label": "RISC0 tx", "numeric": 0, "value": 0, "observed": True, "active": False},
                         },
                     },
+                    "covenant_explorer": {
+                        "observed": True,
+                        "covenant_id_count": 2,
+                        "token_candidate_count": 1,
+                        "nft_candidate_count": 1,
+                        "items": [
+                            {
+                                "covenant_id": "a" * 64,
+                                "tx_count": 7,
+                                "utxo_count": 3,
+                                "input_count": 2,
+                                "output_count": 4,
+                                "latest_tx_id": "b" * 64,
+                                "token_like": True,
+                                "nft_like": False,
+                            }
+                        ],
+                    },
                 },
             },
             "indexer_watch": {
@@ -1201,6 +1247,10 @@ class WatchtowerUnitTests(unittest.TestCase):
         self.assertIn('kaspa_watchtower_indexer_toccata_activity_active{node="test-node"} 12', metrics)
         self.assertIn('kaspa_watchtower_indexer_toccata_activity_value{label="Covenant tx",metric="covenant_tx_count",node="test-node"} 2', metrics)
         self.assertIn('kaspa_watchtower_indexer_toccata_activity_value{label="RISC0 tx",metric="risc0_tx_count",node="test-node"} 0', metrics)
+        self.assertIn('kaspa_watchtower_indexer_covenant_ids{node="test-node"} 2', metrics)
+        self.assertIn('kaspa_watchtower_indexer_covenant_token_candidates{node="test-node"} 1', metrics)
+        self.assertIn('kaspa_watchtower_indexer_covenant_tx_count{covenant_id="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",node="test-node"} 7', metrics)
+        self.assertIn('kaspa_watchtower_indexer_covenant_token_like{covenant_id="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",node="test-node"} 1', metrics)
         self.assertIn('kaspa_watchtower_watch_readiness_ok{node="test-node"} 1', metrics)
         self.assertIn('kaspa_watchtower_indexer_watch_enabled{node="test-node"} 1', metrics)
         self.assertIn('kaspa_watchtower_indexer_watch_events_total{node="test-node"} 1', metrics)
@@ -4152,6 +4202,8 @@ class WatchtowerUnitTests(unittest.TestCase):
             self.assertIn("No Toccata fee/mass metrics exposed", html)
             self.assertIn("Post-Toccata Tx Activity", html)
             self.assertIn("No post-Toccata tx activity metrics exposed", html)
+            self.assertIn("Covenant Explorer", html)
+            self.assertIn("No covenant activity exposed", html)
             self.assertIn("KAS/USDT 15m", html)
             self.assertIn("KAS/USDT 4h", html)
             self.assertIn("KAS/USDT 1D", html)
