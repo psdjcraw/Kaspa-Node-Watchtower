@@ -29,6 +29,9 @@
     h2 { margin: 0; font-size: 15px; line-height: 1.28; }
     .author, .time, .metrics { color: var(--muted); font-size: 12px; line-height: 1.35; }
     .open { margin-top: auto; color: var(--kas); font-weight: 800; }
+    .mood { margin-top: 16px; border-top: 1px solid var(--line); padding-top: 14px; color: var(--text); }
+    .mood h2 { font-size: 16px; margin-bottom: 8px; }
+    .mood p { margin: 6px 0; color: var(--muted); font-size: 13px; line-height: 1.45; }
     @media (max-width: 720px) { header { display: block; } .meta { text-align: left; margin-top: 10px; } .status { grid-template-columns: 1fr; } main { padding: 10px; } }
   </style>
 </head>
@@ -43,11 +46,13 @@
   <main>
     <section class="status" id="sources"></section>
     <section class="grid" id="grid"></section>
+    <section class="mood" id="mood"></section>
   </main>
   <script>
     const metaEl = document.getElementById("meta");
     const sourcesEl = document.getElementById("sources");
     const gridEl = document.getElementById("grid");
+    const moodEl = document.getElementById("mood");
 
     function cleanText(text) {
       return String(text || "").replace(/\s+/g, " ").trim();
@@ -95,10 +100,13 @@
         sourcesEl.innerHTML = sourceCard("YouTube", payload.sources && payload.sources.youtube) + sourceCard("X", payload.sources && payload.sources.x);
         const items = Array.isArray(payload.items) ? payload.items : [];
         gridEl.innerHTML = items.length ? items.map(card).join("") : `<article><div class="body"><h2>No recent Kaspa SNS thumbnails</h2><div class="author">Run make sns-refresh.</div></div></article>`;
+        const mood = Array.isArray(payload.mood_summary) ? payload.mood_summary.slice(0, 3) : [];
+        moodEl.innerHTML = mood.length ? `<h2>Overall Mood</h2>${mood.map((line) => `<p>${cleanText(line)}</p>`).join("")}` : "";
       } catch (error) {
         metaEl.textContent = "Snapshot unavailable";
         sourcesEl.innerHTML = "";
         gridEl.innerHTML = `<article><div class="body"><h2>SNS snapshot missing</h2><div class="author">${cleanText(error.message)}</div></div></article>`;
+        moodEl.innerHTML = "";
       }
     }
     load();

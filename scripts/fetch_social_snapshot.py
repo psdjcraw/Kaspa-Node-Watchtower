@@ -16,6 +16,14 @@ from typing import Any
 
 
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+POSITIVE_RE = re.compile(
+  r"\b(bull|bullish|breakout|pump|surge|rally|moon|up|buy|long|growth|adoption|launch|upgrade)\b",
+  re.IGNORECASE,
+)
+NEGATIVE_RE = re.compile(
+  r"\b(bear|bearish|dump|crash|down|sell|short|risk|warning|scam|hack|fear|drop|problem)\b",
+  re.IGNORECASE,
+)
 
 
 def clean_detail(text: str) -> str:
@@ -65,6 +73,54 @@ def iso_from_timestamp(value: Any) -> str:
     except (TypeError, ValueError):
       return ""
     return dt.datetime.fromtimestamp(timestamp, tz=dt.timezone.utc).isoformat()
+
+
+def view_count(item: dict[str, Any]) -> int:
+    metrics = item.get("metrics") if isinstance(item.get("metrics"), dict) else {}
+    for key in ("views", "view_count", "impression_count"):
+      try:
+        value = int(float(metrics.get(key) or 0))
+      except (TypeError, ValueError):
+        value = 0
+      if value > 0:
+        return value
+    return 0
+
+
+def mood_summary(items: list[dict[str, Any]]) -> list[str]:
+    if not items:
+      return [
+        "최근 24시간 기준으로 분석할 SNS 콘텐츠가 부족합니다.",
+        "조회수 기반 관심 흐름은 아직 뚜렷하게 잡히지 않습니다.",
+        "스냅샷을 한 번 더 갱신한 뒤 방향성을 보는 편이 안전합니다.",
+      ]
+
+    positive = 0
+    negative = 0
+    total_views = sum(view_count(item) for item in items)
+    platforms = sorted({str(item.get("platform") or "sns") for item in items})
+    for item in items:
+      text = f"{item.get('title') or ''} {item.get('author') or ''}"
+      positive += len(POSITIVE_RE.findall(text))
+      negative += len(NEGATIVE_RE.findall(text))
+
+    if positive > negative:
+      tone = "긍정/상승 기대 쪽 단어가 더 많이 보입니다."
+    elif negative > positive:
+      tone = "경계/하락 리스크 쪽 표현이 더 두드러집니다."
+    else:
+      tone = "긍정과 경계가 섞인 중립적인 흐름입니다."
+
+    lead = items[0]
+    lead_title = str(lead.get("title") or "상위 콘텐츠").replace("\n", " ").strip()
+    if len(lead_title) > 70:
+      lead_title = lead_title[:67] + "..."
+
+    return [
+      f"수집 콘텐츠 합산 관심도는 {total_views:,} views이며, 주요 출처는 {', '.join(platforms)}입니다.",
+      f"가장 많이 본 콘텐츠는 '{lead_title}'입니다.",
+      tone,
+    ]
 
 
 def youtube_rows(query: str, limit: int, cutoff: dt.datetime, timeout: int) -> tuple[list[dict[str, Any]], str | None]:
@@ -175,6 +231,7 @@ def main() -> int:
     cutoff = now - dt.timedelta(hours=max(1, args.hours))
     youtube, youtube_error = youtube_rows(args.query, args.limit, cutoff, args.timeout)
     x_items, x_error = x_rows(args.x_query, args.limit, cutoff, args.timeout)
+    items = youtube + x_items
     payload = {
       "generated_at": now.isoformat(),
       "window_hours": args.hours,
@@ -183,7 +240,8 @@ def main() -> int:
         "youtube": {"ok": youtube_error is None, "error": youtube_error or "", "count": len(youtube)},
         "x": {"ok": x_error is None, "error": x_error or "", "count": len(x_items)},
       },
-      "items": youtube + x_items,
+      "items": items,
+      "mood_summary": mood_summary(items),
     }
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
