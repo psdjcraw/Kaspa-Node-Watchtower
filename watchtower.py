@@ -3130,6 +3130,63 @@ def indexer_lane_monitor_status(payload: Any) -> dict[str, Any]:
     }
 
 
+def indexer_zk_bridge_watch_status(payload: Any) -> dict[str, Any]:
+    raw_zk = find_nested_value(payload, {"topZkProofs", "top_zk_proofs", "zkProofs", "zk_proofs"})
+    if not isinstance(raw_zk, list):
+        raw_zk = []
+    zk_items = []
+    for raw in raw_zk[:20]:
+        if not isinstance(raw, dict):
+            continue
+        proof_type = find_nested_value(raw, {"proofType", "proof_type", "type", "tag"})
+        zk_items.append(
+            {
+                "proof_type": str(proof_type or "unknown"),
+                "tx_count": numeric(find_nested_value(raw, {"txCount", "tx_count", "transactions"})),
+                "failure_count": numeric(find_nested_value(raw, {"failureCount", "failure_count", "failures"})),
+                "latest_tx_id": find_nested_value(raw, {"latestTxId", "latest_tx_id", "transactionId", "transaction_id"}),
+            }
+        )
+    raw_bridges = find_nested_value(payload, {"bridgeLockboxes", "bridge_lockboxes", "bridgeCandidates", "bridge_candidates"})
+    if not isinstance(raw_bridges, list):
+        raw_bridges = []
+    bridge_items = []
+    for raw in raw_bridges[:20]:
+        if not isinstance(raw, dict):
+            continue
+        covenant_id = find_nested_value(raw, {"covenantId", "covenant_id", "id"})
+        bridge_items.append(
+            {
+                "label": str(find_nested_value(raw, {"label", "name"}) or "unlabeled"),
+                "covenant_id": None if covenant_id in (None, "") else str(covenant_id),
+                "locked_amount_sompi": numeric(find_nested_value(raw, {"lockedAmountSompi", "locked_amount_sompi", "lockedSompi"})),
+                "unlock_tx_count": numeric(find_nested_value(raw, {"unlockTxCount", "unlock_tx_count", "unlocks"})),
+                "proof_type": str(find_nested_value(raw, {"proofType", "proof_type", "type"}) or "unknown"),
+                "latest_tx_id": find_nested_value(raw, {"latestTxId", "latest_tx_id", "transactionId", "transaction_id"}),
+            }
+        )
+    zk_tx_count = numeric(find_nested_value(payload, {"zkPrecompileTxCount", "zk_precompile_tx_count", "zkTxCount", "zk_tx_count"}))
+    groth16_tx_count = numeric(find_nested_value(payload, {"groth16TxCount", "groth16_tx_count"}))
+    risc0_tx_count = numeric(find_nested_value(payload, {"risc0TxCount", "risc0_tx_count", "r0SuccinctTxCount", "r0_succinct_tx_count"}))
+    zk_failure_count = numeric(find_nested_value(payload, {"zkProofFailures", "zk_proof_failures", "zkFailureCount", "zk_failure_count"}))
+    bridge_lockbox_count = numeric(find_nested_value(payload, {"bridgeLockboxCount", "bridge_lockbox_count", "bridgeCandidateCount", "bridge_candidate_count"}))
+    bridge_unlock_count = numeric(find_nested_value(payload, {"bridgeUnlockCount", "bridge_unlock_count"}))
+    return {
+        "observed": bool(zk_items) or bool(bridge_items) or any(
+            value is not None
+            for value in [zk_tx_count, groth16_tx_count, risc0_tx_count, zk_failure_count, bridge_lockbox_count, bridge_unlock_count]
+        ),
+        "zk_tx_count": zk_tx_count,
+        "groth16_tx_count": groth16_tx_count,
+        "risc0_tx_count": risc0_tx_count,
+        "zk_failure_count": zk_failure_count,
+        "bridge_lockbox_count": bridge_lockbox_count if bridge_lockbox_count is not None else len(bridge_items) if bridge_items else None,
+        "bridge_unlock_count": bridge_unlock_count,
+        "zk_items": zk_items,
+        "bridge_items": bridge_items,
+    }
+
+
 def timestamp_age_seconds(value: Any, now: dt.datetime | None = None) -> float | None:
     if value in (None, ""):
         return None
@@ -3211,6 +3268,7 @@ def extract_indexer_metrics(payload: Any) -> dict[str, Any]:
         "toccata_activity": indexer_toccata_activity_status(payload),
         "covenant_explorer": indexer_covenant_explorer_status(payload),
         "lane_monitor": indexer_lane_monitor_status(payload),
+        "zk_bridge_watch": indexer_zk_bridge_watch_status(payload),
         "payload": payload,
     }
 
@@ -7808,6 +7866,7 @@ def indexer_watch_panel(report: dict[str, Any], state: dict[str, Any]) -> str:
     toccata_activity = metrics.get("toccata_activity") or {}
     covenant_explorer = metrics.get("covenant_explorer") or {}
     lane_monitor = metrics.get("lane_monitor") or {}
+    zk_bridge_watch = metrics.get("zk_bridge_watch") or {}
     capability_rows = "\n".join(
         html_row(
             [
@@ -7867,6 +7926,30 @@ def indexer_watch_panel(report: dict[str, Any], state: dict[str, Any]) -> str:
         )
         for item in (lane_monitor.get("items") or [])
     ) or html_row(["No lane activity exposed", "", "", "", "", "", ""])
+    zk_rows = "\n".join(
+        html_row(
+            [
+                item.get("proof_type") or "unknown",
+                item.get("tx_count", "unknown"),
+                item.get("failure_count", "unknown"),
+                short_hash(item.get("latest_tx_id")) or "",
+            ]
+        )
+        for item in (zk_bridge_watch.get("zk_items") or [])
+    ) or html_row(["No ZK proof activity exposed", "", "", ""])
+    bridge_rows = "\n".join(
+        html_row(
+            [
+                item.get("label") or "unlabeled",
+                item.get("covenant_id") or "",
+                format_kas(item.get("locked_amount_sompi")) if item.get("locked_amount_sompi") is not None else "unknown",
+                item.get("unlock_tx_count", "unknown"),
+                item.get("proof_type") or "unknown",
+                short_hash(item.get("latest_tx_id")) or "",
+            ]
+        )
+        for item in (zk_bridge_watch.get("bridge_items") or [])
+    ) or html_row(["No bridge lockbox candidates exposed", "", "", "", "", ""])
     checkpoint_age = metrics.get("checkpoint_age_seconds")
     checkpoint_age_text = "unknown" if checkpoint_age is None else f"{float(checkpoint_age):.1f}s"
     return f"""
@@ -7879,6 +7962,7 @@ def indexer_watch_panel(report: dict[str, Any], state: dict[str, Any]) -> str:
       {visual_card("Tx Activity", f"{toccata_activity.get('active', 0)} active", f"observed={toccata_activity.get('observed', 0)}/{toccata_activity.get('total', len(TOCCATA_TX_ACTIVITY_METRICS))}", "neutral")}
       {visual_card("Covenants", covenant_explorer.get("covenant_id_count", "unknown"), f"tokens={covenant_explorer.get('token_candidate_count', 'unknown')} nfts={covenant_explorer.get('nft_candidate_count', 'unknown')}", "neutral")}
       {visual_card("Lanes", lane_monitor.get("active_lanes", "unknown"), f"proof_failures={lane_monitor.get('lane_proof_failures', 'unknown')}", "warn" if numeric(lane_monitor.get("lane_proof_failures")) else "neutral")}
+      {visual_card("ZK / Bridge", zk_bridge_watch.get("zk_tx_count", "unknown"), f"bridge_lockboxes={zk_bridge_watch.get('bridge_lockbox_count', 'unknown')}", "warn" if numeric(zk_bridge_watch.get("zk_failure_count")) else "neutral")}
       {visual_card("Watch Addresses", len(targets), f"enabled={watch.get('enabled', False)}", "neutral")}
       {visual_card("Watched Events", len(events), f"new={len(watch.get('new_events') or [])}", "neutral")}
     </section>
@@ -7962,6 +8046,25 @@ def indexer_watch_panel(report: dict[str, Any], state: dict[str, Any]) -> str:
       <table>
         <thead>{html_row(["Lane Key", "Tx", "Gas", "SeqCommit Blocks", "Proof", "Latest Block", "Latest Tx"], "th")}</thead>
         <tbody>{lane_rows}</tbody>
+      </table>
+    </section>
+    <section class="panel">
+      <h2>ZK / Bridge Watch</h2>
+      <div class="context-grid">
+        <div class="context-item"><div class="context-label">ZK Tx</div><div class="context-value">{html.escape(str(zk_bridge_watch.get('zk_tx_count', 'unknown')))}</div></div>
+        <div class="context-item"><div class="context-label">Groth16 Tx</div><div class="context-value">{html.escape(str(zk_bridge_watch.get('groth16_tx_count', 'unknown')))}</div></div>
+        <div class="context-item"><div class="context-label">RISC0 Tx</div><div class="context-value">{html.escape(str(zk_bridge_watch.get('risc0_tx_count', 'unknown')))}</div></div>
+        <div class="context-item"><div class="context-label">ZK Failures</div><div class="context-value">{html.escape(str(zk_bridge_watch.get('zk_failure_count', 'unknown')))}</div></div>
+        <div class="context-item"><div class="context-label">Bridge Lockboxes</div><div class="context-value">{html.escape(str(zk_bridge_watch.get('bridge_lockbox_count', 'unknown')))}</div></div>
+        <div class="context-item"><div class="context-label">Bridge Unlocks</div><div class="context-value">{html.escape(str(zk_bridge_watch.get('bridge_unlock_count', 'unknown')))}</div></div>
+      </div>
+      <table>
+        <thead>{html_row(["Proof Type", "Tx", "Failures", "Latest Tx"], "th")}</thead>
+        <tbody>{zk_rows}</tbody>
+      </table>
+      <table>
+        <thead>{html_row(["Label", "Covenant ID", "Locked", "Unlock Tx", "Proof", "Latest Tx"], "th")}</thead>
+        <tbody>{bridge_rows}</tbody>
       </table>
     </section>
     <section class="layout">
@@ -15630,6 +15733,25 @@ def format_prometheus_metrics(
         add_prometheus_metric(lines, "kaspa_watchtower_indexer_lane_top_gas_total", item.get("gas_total"), lane_labels)
         add_prometheus_metric(lines, "kaspa_watchtower_indexer_lane_top_seq_commit_blocks", item.get("seq_commit_block_count"), lane_labels)
         add_prometheus_metric(lines, "kaspa_watchtower_indexer_lane_top_proof_ok", bool(item.get("lane_proof_ok")), lane_labels)
+    zk_bridge_watch = indexer_metrics.get("zk_bridge_watch") or {}
+    add_prometheus_metric(lines, "kaspa_watchtower_indexer_zk_tx_count", zk_bridge_watch.get("zk_tx_count"), node_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_indexer_zk_groth16_tx_count", zk_bridge_watch.get("groth16_tx_count"), node_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_indexer_zk_risc0_tx_count", zk_bridge_watch.get("risc0_tx_count"), node_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_indexer_zk_failure_count", zk_bridge_watch.get("zk_failure_count"), node_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_indexer_bridge_lockboxes", zk_bridge_watch.get("bridge_lockbox_count"), node_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_indexer_bridge_unlock_tx_count", zk_bridge_watch.get("bridge_unlock_count"), node_labels)
+    for item in (zk_bridge_watch.get("zk_items") or [])[:10]:
+        zk_labels = {**node_labels, "proof_type": item.get("proof_type", "unknown")}
+        add_prometheus_metric(lines, "kaspa_watchtower_indexer_zk_top_tx_count", item.get("tx_count"), zk_labels)
+        add_prometheus_metric(lines, "kaspa_watchtower_indexer_zk_top_failure_count", item.get("failure_count"), zk_labels)
+    for item in (zk_bridge_watch.get("bridge_items") or [])[:10]:
+        bridge_labels = {
+            **node_labels,
+            "label": item.get("label", "unlabeled"),
+            "covenant_id": item.get("covenant_id") or "unknown",
+        }
+        add_prometheus_metric(lines, "kaspa_watchtower_indexer_bridge_locked_kas", kas_from_sompi(item.get("locked_amount_sompi")), bridge_labels)
+        add_prometheus_metric(lines, "kaspa_watchtower_indexer_bridge_unlock_tx_count_by_lockbox", item.get("unlock_tx_count"), bridge_labels)
     add_prometheus_metric(lines, "kaspa_watchtower_watch_readiness_ok", watch_readiness_ok(report), node_labels)
     add_prometheus_metric(lines, "kaspa_watchtower_indexer_watch_enabled", bool(indexer_watch.get("enabled")), node_labels)
     add_prometheus_metric(lines, "kaspa_watchtower_indexer_watch_ok", bool(indexer_watch.get("ok")), node_labels)

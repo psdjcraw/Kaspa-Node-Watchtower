@@ -79,6 +79,9 @@ Recommended top-level response:
     "zkPrecompileTxCount": 0,
     "groth16TxCount": 0,
     "risc0TxCount": 0,
+    "zkProofFailures": 0,
+    "bridgeLockboxCount": 0,
+    "bridgeUnlockCount": 0,
     "tokenCandidateCount": 0,
     "nftCandidateCount": 0,
     "laneProofFailures": 0,
@@ -102,6 +105,24 @@ Recommended top-level response:
         "seqCommitBlockCount": 0,
         "laneProofOk": true,
         "latestBlockHash": null,
+        "latestTxId": null
+      }
+    ],
+    "topZkProofs": [
+      {
+        "proofType": "Groth16",
+        "txCount": 0,
+        "failureCount": 0,
+        "latestTxId": null
+      }
+    ],
+    "bridgeLockboxes": [
+      {
+        "label": "example-bridge",
+        "covenantId": null,
+        "lockedAmountSompi": 0,
+        "unlockTxCount": 0,
+        "proofType": "Groth16",
         "latestTxId": null
       }
     ]
@@ -226,6 +247,37 @@ Each `topLanes` item should use:
 - `latestTxId`: latest transaction ID observed for the lane, or `null`.
 
 Recommended ordering is descending `txCount`, then descending `gasTotal`.
+
+## ZK / Bridge Watch Fields
+
+These fields feed the Watchtower ZK / Bridge Watch baseline. They are observer
+signals only; Watchtower does not assert that a bridge protocol is safe or
+official.
+
+- `zkPrecompileTxCount`: total transactions using the ZK precompile.
+- `groth16TxCount`: Groth16 proof transaction count.
+- `risc0TxCount`: RISC0 Succinct proof transaction count.
+- `zkProofFailures`: failed ZK proof checks or rejected proof transactions.
+- `bridgeLockboxCount`: bridge-lockbox-like covenant candidate count.
+- `bridgeUnlockCount`: unlock transaction count for bridge candidates.
+- `topZkProofs`: ordered list of proof-type activity.
+- `bridgeLockboxes`: ordered list of bridge-lockbox-like covenant candidates.
+
+Each `topZkProofs` item should use:
+
+- `proofType`: `Groth16`, `RISC0`, or another indexer-known proof label.
+- `txCount`: transaction count for the proof type.
+- `failureCount`: failed or rejected proof count.
+- `latestTxId`: latest transaction ID observed for this proof type, or `null`.
+
+Each `bridgeLockboxes` item should use:
+
+- `label`: human-readable bridge candidate label if known.
+- `covenantId`: covenant ID backing the lockbox candidate, or `null`.
+- `lockedAmountSompi`: currently observed locked amount in sompi.
+- `unlockTxCount`: observed unlock transaction count.
+- `proofType`: proof type used by the candidate.
+- `latestTxId`: latest transaction ID observed for the candidate, or `null`.
 
 ## Watchtower Interpretation
 

@@ -113,6 +113,9 @@ Last verified manually on `2026-06-08`:
 - Indexer tab: Lane / SeqCommit Monitor baseline with active lanes, lane tx/gas,
   SeqCommit block counts, lane proof failures, and top lane activity when the
   indexer exposes `topLanes`
+- Indexer tab: ZK / Bridge Watch baseline with proof-type activity, ZK failures,
+  bridge-lockbox-like candidates, locked amounts, unlock counts, and latest tx
+  IDs when the indexer exposes `topZkProofs` or `bridgeLockboxes`
 - Indexer API contract: canonical `/api/health` and `/api/metrics` fields are
   defined in [`docs/indexer-api-spec.md`](indexer-api-spec.md)
 - Ops and History tabs: triage queue, check details, command center, benchmark

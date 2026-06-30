@@ -45,6 +45,9 @@ All notable changes to Kaspa Node Watchtower are tracked here.
 - Added a Lane / SeqCommit Monitor baseline to the Indexer tab and Prometheus
   output, covering active lanes, lane tx/gas, SeqCommit block counts, lane proof
   failures, and top lane activity when exposed by the indexer.
+- Added a ZK / Bridge Watch baseline to the Indexer tab and Prometheus output,
+  covering proof-type activity, ZK failures, bridge-lockbox-like candidates,
+  locked amounts, unlock counts, and latest transaction IDs.
 - `watchtower.py --alert` now emits a market-risk-high alert body when a new
   critical market positioning snapshot is detected.
 

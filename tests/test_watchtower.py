@@ -180,6 +180,9 @@ class WatchtowerUnitTests(unittest.TestCase):
                         "zkPrecompileTxCount": 1,
                         "groth16TxCount": 1,
                         "risc0TxCount": 0,
+                        "zkProofFailures": 0,
+                        "bridgeLockboxCount": 1,
+                        "bridgeUnlockCount": 0,
                         "tokenCandidateCount": 1,
                         "nftCandidateCount": 1,
                         "laneProofFailures": 0,
@@ -216,6 +219,24 @@ class WatchtowerUnitTests(unittest.TestCase):
                                 "latestTxId": "f" * 64,
                             }
                         ],
+                        "topZkProofs": [
+                            {
+                                "proofType": "Groth16",
+                                "txCount": 1,
+                                "failureCount": 0,
+                                "latestTxId": "1" * 64,
+                            }
+                        ],
+                        "bridgeLockboxes": [
+                            {
+                                "label": "test-bridge",
+                                "covenantId": "2" * 64,
+                                "lockedAmountSompi": 300_000_000,
+                                "unlockTxCount": 0,
+                                "proofType": "Groth16",
+                                "latestTxId": "3" * 64,
+                            }
+                        ],
                     },
                 },
             ],
@@ -243,6 +264,9 @@ class WatchtowerUnitTests(unittest.TestCase):
         self.assertTrue(status["metrics"]["lane_monitor"]["observed"])
         self.assertEqual(status["metrics"]["lane_monitor"]["active_lanes"], 1)
         self.assertEqual(status["metrics"]["lane_monitor"]["items"][0]["gas_total"], 7500)
+        self.assertTrue(status["metrics"]["zk_bridge_watch"]["observed"])
+        self.assertEqual(status["metrics"]["zk_bridge_watch"]["bridge_lockbox_count"], 1)
+        self.assertEqual(status["metrics"]["zk_bridge_watch"]["bridge_items"][0]["locked_amount_sompi"], 300_000_000)
 
     def test_fetch_optional_indexer_status_flags_stale_metrics(self):
         config = copy.deepcopy(watchtower.DEFAULT_CONFIG)
@@ -1066,6 +1090,33 @@ class WatchtowerUnitTests(unittest.TestCase):
                             }
                         ],
                     },
+                    "zk_bridge_watch": {
+                        "observed": True,
+                        "zk_tx_count": 1,
+                        "groth16_tx_count": 1,
+                        "risc0_tx_count": 0,
+                        "zk_failure_count": 0,
+                        "bridge_lockbox_count": 1,
+                        "bridge_unlock_count": 0,
+                        "zk_items": [
+                            {
+                                "proof_type": "Groth16",
+                                "tx_count": 1,
+                                "failure_count": 0,
+                                "latest_tx_id": "1" * 64,
+                            }
+                        ],
+                        "bridge_items": [
+                            {
+                                "label": "test-bridge",
+                                "covenant_id": "2" * 64,
+                                "locked_amount_sompi": 300_000_000,
+                                "unlock_tx_count": 0,
+                                "proof_type": "Groth16",
+                                "latest_tx_id": "3" * 64,
+                            }
+                        ],
+                    },
                 },
             },
             "indexer_watch": {
@@ -1289,6 +1340,10 @@ class WatchtowerUnitTests(unittest.TestCase):
         self.assertIn('kaspa_watchtower_indexer_lane_proof_failures{node="test-node"} 0', metrics)
         self.assertIn('kaspa_watchtower_indexer_lane_top_gas_total{lane_key="abcd000000000000000000000000000000000000",node="test-node"} 7500', metrics)
         self.assertIn('kaspa_watchtower_indexer_lane_top_proof_ok{lane_key="abcd000000000000000000000000000000000000",node="test-node"} 1', metrics)
+        self.assertIn('kaspa_watchtower_indexer_zk_tx_count{node="test-node"} 1', metrics)
+        self.assertIn('kaspa_watchtower_indexer_zk_top_tx_count{node="test-node",proof_type="Groth16"} 1', metrics)
+        self.assertIn('kaspa_watchtower_indexer_bridge_lockboxes{node="test-node"} 1', metrics)
+        self.assertIn('kaspa_watchtower_indexer_bridge_locked_kas{covenant_id="2222222222222222222222222222222222222222222222222222222222222222",label="test-bridge",node="test-node"} 3', metrics)
         self.assertIn('kaspa_watchtower_watch_readiness_ok{node="test-node"} 1', metrics)
         self.assertIn('kaspa_watchtower_indexer_watch_enabled{node="test-node"} 1', metrics)
         self.assertIn('kaspa_watchtower_indexer_watch_events_total{node="test-node"} 1', metrics)
@@ -4244,6 +4299,9 @@ class WatchtowerUnitTests(unittest.TestCase):
             self.assertIn("No covenant activity exposed", html)
             self.assertIn("Lane / SeqCommit Monitor", html)
             self.assertIn("No lane activity exposed", html)
+            self.assertIn("ZK / Bridge Watch", html)
+            self.assertIn("No ZK proof activity exposed", html)
+            self.assertIn("No bridge lockbox candidates exposed", html)
             self.assertIn("KAS/USDT 15m", html)
             self.assertIn("KAS/USDT 4h", html)
             self.assertIn("KAS/USDT 1D", html)
