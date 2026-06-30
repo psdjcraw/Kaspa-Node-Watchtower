@@ -150,6 +150,17 @@ class WatchtowerUnitTests(unittest.TestCase):
                     "indexer_lag_seconds": 12,
                     "schema_version": 22,
                     "checkpoint": {"timestamp": now.isoformat()},
+                    "toccata": {
+                        "txVersion1": True,
+                        "storageMass": True,
+                        "computeBudget": True,
+                        "covenantBinding": True,
+                        "utxoCovenantId": True,
+                        "subnetworkId": True,
+                        "gas": True,
+                        "getBlockRewardInfo": True,
+                        "getSeqCommitLaneProof": False,
+                    },
                 },
             ],
         ):
@@ -160,6 +171,9 @@ class WatchtowerUnitTests(unittest.TestCase):
         self.assertTrue(status["metrics_ok"])
         self.assertEqual(status["metrics"]["lag_seconds"], 12)
         self.assertEqual(status["metrics"]["schema_version"], 22)
+        self.assertEqual(status["metrics"]["toccata_schema"]["supported"], 8)
+        self.assertEqual(status["metrics"]["toccata_schema"]["missing"], 1)
+        self.assertEqual(status["metrics"]["toccata_schema"]["capabilities"]["get_seq_commit_lane_proof"]["state"], "missing")
 
     def test_fetch_optional_indexer_status_flags_stale_metrics(self):
         config = copy.deepcopy(watchtower.DEFAULT_CONFIG)
@@ -912,6 +926,16 @@ class WatchtowerUnitTests(unittest.TestCase):
                     "lag_seconds": 12,
                     "checkpoint_age_seconds": 45,
                     "schema_version": 22,
+                    "toccata_schema": {
+                        "supported": 7,
+                        "missing": 1,
+                        "unknown": 1,
+                        "total": 9,
+                        "capabilities": {
+                            "tx_version_1": {"label": "Tx version 1", "state": "ok", "value": True},
+                            "get_seq_commit_lane_proof": {"label": "GetSeqCommitLaneProof", "state": "missing", "value": False},
+                        },
+                    },
                 },
             },
             "indexer_watch": {
@@ -1115,6 +1139,10 @@ class WatchtowerUnitTests(unittest.TestCase):
         self.assertIn('kaspa_watchtower_indexer_syncing{node="test-node"} 0', metrics)
         self.assertIn('kaspa_watchtower_indexer_lag_seconds{node="test-node"} 12', metrics)
         self.assertIn('kaspa_watchtower_indexer_checkpoint_age_seconds{node="test-node"} 45', metrics)
+        self.assertIn('kaspa_watchtower_indexer_toccata_schema_supported{node="test-node"} 7', metrics)
+        self.assertIn('kaspa_watchtower_indexer_toccata_schema_missing{node="test-node"} 1', metrics)
+        self.assertIn('kaspa_watchtower_indexer_toccata_capability_state{capability="tx_version_1",label="Tx version 1",node="test-node"} 1', metrics)
+        self.assertIn('kaspa_watchtower_indexer_toccata_capability_state{capability="get_seq_commit_lane_proof",label="GetSeqCommitLaneProof",node="test-node"} 0', metrics)
         self.assertIn('kaspa_watchtower_watch_readiness_ok{node="test-node"} 1', metrics)
         self.assertIn('kaspa_watchtower_indexer_watch_enabled{node="test-node"} 1', metrics)
         self.assertIn('kaspa_watchtower_indexer_watch_events_total{node="test-node"} 1', metrics)
@@ -4060,6 +4088,8 @@ class WatchtowerUnitTests(unittest.TestCase):
             self.assertIn("Toccata Readiness", html)
             self.assertIn("Post-Toccata Compatibility", html)
             self.assertIn("Activation DAA", html)
+            self.assertIn("Toccata Indexer Schema", html)
+            self.assertIn("No Toccata schema metrics exposed", html)
             self.assertIn("KAS/USDT 15m", html)
             self.assertIn("KAS/USDT 4h", html)
             self.assertIn("KAS/USDT 1D", html)

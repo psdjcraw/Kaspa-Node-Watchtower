@@ -98,6 +98,9 @@ Last verified manually on `2026-06-08`:
   preferred hardware checks, backup reminder, and post-Toccata RPC/indexer
   compatibility watchpoints for tx v1, `storageMass`, `computeBudget`,
   covenant bindings, UTXO covenant IDs, reward info, and lane proofs
+- Indexer tab: post-Toccata schema capability table from `/api/metrics`, with
+  each capability marked `ok`, `missing`, or `unknown` so schema gaps are
+  visible before covenant/lane activity appears on mainnet
 - Ops and History tabs: triage queue, check details, command center, benchmark
   trend, recovery history, and recent status history
 - Market watch source: Bybit public spot ticker and 15-minute kline endpoints,

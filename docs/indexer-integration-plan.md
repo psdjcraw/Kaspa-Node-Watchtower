@@ -73,6 +73,11 @@ Deliverables:
 - Poll indexer `/api/health` and `/api/metrics`.
 - Export Prometheus metrics for indexer availability, lag, indexed block age,
   queue capacity, and PostgreSQL schema/version status when available.
+- Normalize post-Toccata capability signals from `/api/metrics` when exposed:
+  tx v1, `storageMass`, `computeBudget`, output covenant binding, UTXO
+  covenant ID, user-lane `subnetwork_id`, gas commitments,
+  `GetBlockRewardInfo`, and `GetSeqCommitLaneProof`. Missing metrics render as
+  `unknown` so Watchtower can be deployed before the indexer schema catches up.
 - Add status page and summary sections for indexer health.
 - Add alert rules for indexer API down, chain lag, stale checkpoint, and
   PostgreSQL unavailable.

@@ -35,6 +35,17 @@ TOCCATA_MIN_RAM_GIB = 16
 TOCCATA_PREFERRED_RAM_GIB = 32
 TOCCATA_MIN_DISK_GIB = 640
 TOCCATA_PREFERRED_DISK_GIB = 1024
+TOCCATA_INDEXER_CAPABILITIES = [
+    ("tx_version_1", "Tx version 1", {"tx_version_1", "txVersion1", "tx_v1", "version_1_transactions", "version1Transactions"}),
+    ("storage_mass", "storageMass", {"storage_mass", "storageMass", "storage_mass_supported", "storageMassSupported"}),
+    ("compute_budget", "computeBudget", {"compute_budget", "computeBudget", "compute_budget_supported", "computeBudgetSupported"}),
+    ("covenant_binding", "Output covenant", {"covenant", "covenant_binding", "covenantBinding", "output_covenant", "outputCovenant"}),
+    ("utxo_covenant_id", "UTXO covenant ID", {"utxo_covenant_id", "utxoCovenantId", "covenant_id", "covenantId"}),
+    ("subnetwork_id", "User lane subnetwork", {"subnetwork_id", "subnetworkId", "user_lane", "userLane", "lane"}),
+    ("gas", "Gas commitment", {"gas", "gas_supported", "gasSupported"}),
+    ("get_block_reward_info", "GetBlockRewardInfo", {"get_block_reward_info", "getBlockRewardInfo", "block_reward_info", "blockRewardInfo"}),
+    ("get_seq_commit_lane_proof", "GetSeqCommitLaneProof", {"get_seq_commit_lane_proof", "getSeqCommitLaneProof", "seq_commit_lane_proof", "seqCommitLaneProof"}),
+]
 
 INVESTMENT_TIMEFRAMES = [
     {"label": "15m", "range": "5d", "interval": "15m"},
@@ -2915,6 +2926,44 @@ def find_nested_value(value: Any, keys: set[str]) -> Any:
     return None
 
 
+def capability_state(value: Any) -> str:
+    if value is None:
+        return "unknown"
+    if isinstance(value, bool):
+        return "ok" if value else "missing"
+    parsed = numeric(value)
+    if parsed is not None:
+        return "ok" if parsed > 0 else "missing"
+    text = str(value).strip().lower()
+    if text in {"ok", "true", "yes", "supported", "enabled", "available", "ready"}:
+        return "ok"
+    if text in {"missing", "false", "no", "unsupported", "disabled", "unavailable", "not_found", "absent"}:
+        return "missing"
+    return "unknown"
+
+
+def indexer_toccata_schema_status(payload: Any) -> dict[str, Any]:
+    capabilities = {}
+    counts = {"ok": 0, "missing": 0, "unknown": 0}
+    for key, label, aliases in TOCCATA_INDEXER_CAPABILITIES:
+        raw = find_nested_value(payload, aliases)
+        state = capability_state(raw)
+        counts[state] = counts.get(state, 0) + 1
+        capabilities[key] = {
+            "label": label,
+            "state": state,
+            "value": raw,
+        }
+    return {
+        "ok": counts["missing"] == 0 and counts["unknown"] == 0,
+        "supported": counts["ok"],
+        "missing": counts["missing"],
+        "unknown": counts["unknown"],
+        "total": len(TOCCATA_INDEXER_CAPABILITIES),
+        "capabilities": capabilities,
+    }
+
+
 def timestamp_age_seconds(value: Any, now: dt.datetime | None = None) -> float | None:
     if value in (None, ""):
         return None
@@ -2991,6 +3040,7 @@ def extract_indexer_metrics(payload: Any) -> dict[str, Any]:
         "checkpoint_timestamp": checkpoint_timestamp,
         "checkpoint_age_seconds": timestamp_age_seconds(checkpoint_timestamp),
         "lag_seconds": numeric(lag_seconds),
+        "toccata_schema": indexer_toccata_schema_status(payload),
         "payload": payload,
     }
 
@@ -7223,6 +7273,7 @@ def toccata_status_panel(report: dict[str, Any]) -> str:
     remaining_daa = toccata.get("remaining_daa")
     warnings = toccata.get("warnings") or []
     compatibility = toccata.get("compatibility") or {}
+    indexer_schema = (((report.get("indexer") or {}).get("metrics") or {}).get("toccata_schema") or {})
     status = str(toccata.get("status") or "unknown")
     status_tone = "ok" if toccata.get("readiness_ok") else "warn" if status != "active" else "critical"
     time_left_seconds = numeric(toccata.get("seconds_until_activation_time"))
@@ -7276,9 +7327,18 @@ def toccata_status_panel(report: dict[str, Any]) -> str:
             ("Datadir backup", None),
         ]
     )
+    compatibility_items = list(compatibility.items())
+    if indexer_schema:
+        compatibility_items.append(
+            (
+                "indexer_schema_observed",
+                f"{indexer_schema.get('supported', 0)}/{indexer_schema.get('total', len(TOCCATA_INDEXER_CAPABILITIES))} supported; "
+                f"missing={indexer_schema.get('missing', 0)} unknown={indexer_schema.get('unknown', 0)}",
+            )
+        )
     compatibility_rows = "\n".join(
         html_row([key.replace("_", " "), value])
-        for key, value in compatibility.items()
+        for key, value in compatibility_items
     )
     warning_rows = "\n".join(html_row([warning]) for warning in warnings) or html_row(["No active readiness warnings"])
     return f"""
@@ -7573,6 +7633,17 @@ def indexer_watch_panel(report: dict[str, Any], state: dict[str, Any]) -> str:
         ]
     )
     metrics = indexer.get("metrics") or {}
+    toccata_schema = metrics.get("toccata_schema") or {}
+    capability_rows = "\n".join(
+        html_row(
+            [
+                item.get("label") or key,
+                item.get("state") or "unknown",
+                "" if item.get("value") is None else item.get("value"),
+            ]
+        )
+        for key, item in (toccata_schema.get("capabilities") or {}).items()
+    ) or html_row(["No Toccata schema metrics exposed", "unknown", ""])
     checkpoint_age = metrics.get("checkpoint_age_seconds")
     checkpoint_age_text = "unknown" if checkpoint_age is None else f"{float(checkpoint_age):.1f}s"
     return f"""
@@ -7580,6 +7651,7 @@ def indexer_watch_panel(report: dict[str, Any], state: dict[str, Any]) -> str:
     <section class="visual-grid">
       {visual_card("Indexer State", indexer.get("state") or "disabled", f"ok={indexer.get('ok', False)}", "neutral")}
       {visual_card("Checkpoint Age", checkpoint_age_text, f"fresh={indexer.get('checkpoint_fresh', False)}", "neutral")}
+      {visual_card("Toccata Schema", f"{toccata_schema.get('supported', 0)}/{toccata_schema.get('total', len(TOCCATA_INDEXER_CAPABILITIES))}", f"missing={toccata_schema.get('missing', 0)} unknown={toccata_schema.get('unknown', 0)}", "ok" if toccata_schema.get("ok") else "warn")}
       {visual_card("Watch Addresses", len(targets), f"enabled={watch.get('enabled', False)}", "neutral")}
       {visual_card("Watched Events", len(events), f"new={len(watch.get('new_events') or [])}", "neutral")}
     </section>
@@ -7605,6 +7677,13 @@ def indexer_watch_panel(report: dict[str, Any], state: dict[str, Any]) -> str:
           <div class="context-item"><div class="context-label">Detail</div><div class="context-value">{html.escape(str(watch.get('detail', 'unknown')))}</div></div>
         </div>
       </section>
+    </section>
+    <section class="panel">
+      <h2>Toccata Indexer Schema</h2>
+      <table>
+        <thead>{html_row(["Capability", "State", "Observed Value"], "th")}</thead>
+        <tbody>{capability_rows}</tbody>
+      </table>
     </section>
     <section class="layout">
       <section class="panel">
@@ -15209,6 +15288,18 @@ def format_prometheus_metrics(
     )
     add_prometheus_metric(lines, "kaspa_watchtower_indexer_health_latency_ms", indexer.get("health_latency_ms"), node_labels)
     add_prometheus_metric(lines, "kaspa_watchtower_indexer_metrics_latency_ms", indexer.get("metrics_latency_ms"), node_labels)
+    schema_state_values = {"ok": 1, "missing": 0, "unknown": -1}
+    toccata_schema = indexer_metrics.get("toccata_schema") or {}
+    add_prometheus_metric(lines, "kaspa_watchtower_indexer_toccata_schema_supported", toccata_schema.get("supported"), node_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_indexer_toccata_schema_missing", toccata_schema.get("missing"), node_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_indexer_toccata_schema_unknown", toccata_schema.get("unknown"), node_labels)
+    for capability_key, capability in (toccata_schema.get("capabilities") or {}).items():
+        add_prometheus_metric(
+            lines,
+            "kaspa_watchtower_indexer_toccata_capability_state",
+            schema_state_values.get(str(capability.get("state") or "unknown"), -1),
+            {**node_labels, "capability": capability_key, "label": capability.get("label") or capability_key},
+        )
     add_prometheus_metric(lines, "kaspa_watchtower_watch_readiness_ok", watch_readiness_ok(report), node_labels)
     add_prometheus_metric(lines, "kaspa_watchtower_indexer_watch_enabled", bool(indexer_watch.get("enabled")), node_labels)
     add_prometheus_metric(lines, "kaspa_watchtower_indexer_watch_ok", bool(indexer_watch.get("ok")), node_labels)

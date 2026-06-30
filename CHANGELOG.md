@@ -27,6 +27,9 @@ All notable changes to Kaspa Node Watchtower are tracked here.
 - Generated status pages now include a Toccata readiness tab with activation
   DAA tracking, server version, hardware checks, backup reminders, and
   post-Toccata RPC/indexer compatibility watchpoints.
+- Indexer `/api/metrics` polling now normalizes post-Toccata schema capability
+  signals for tx v1, `storageMass`, `computeBudget`, covenant bindings, UTXO
+  covenant IDs, user lanes, gas, reward info, and lane-proof support.
 - `watchtower.py --alert` now emits a market-risk-high alert body when a new
   critical market positioning snapshot is detected.
 
