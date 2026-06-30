@@ -286,6 +286,90 @@ class WatchtowerUnitTests(unittest.TestCase):
         self.assertFalse(status["lag_ok"])
         self.assertEqual(status["metrics"]["lag_seconds"], 30)
 
+    def test_extract_indexer_metrics_accepts_pr26_partial_toccata_payload(self):
+        payload = {
+            "version": "0.0.0",
+            "schemaVersion": 22,
+            "checkpoint": {"timestamp": dt.datetime.now().astimezone().isoformat(), "daaScore": 474_165_600},
+            "toccata": {
+                "txVersion1": True,
+                "storageMass": False,
+                "computeBudget": True,
+                "covenantBinding": True,
+                "utxoCovenantId": True,
+                "subnetworkId": True,
+                "gas": False,
+                "getBlockRewardInfo": False,
+                "getSeqCommitLaneProof": False,
+                "minimumRelayFeeSompiPerGram": 100,
+                "txV1Count": 12,
+                "blockV2Count": 7,
+                "covenantTxCount": 3,
+                "covenantInputCount": 2,
+                "covenantOutputCount": 4,
+                "covenantUtxoCount": 4,
+                "covenantIdCount": 2,
+                "activeUserLanes": 1,
+                "userLaneTxCount": 5,
+                "gasTotal": 0,
+                "seqCommitBlockCount": 7,
+                "storageMassMax": 0,
+                "storageMassAvg": 0,
+                "computeMassMax": 0,
+                "transientMassMax": 0,
+                "lowFeeRejections": 0,
+                "zkPrecompileTxCount": 0,
+                "groth16TxCount": 0,
+                "risc0TxCount": 0,
+                "zkProofFailures": 0,
+                "bridgeLockboxCount": 0,
+                "bridgeUnlockCount": 0,
+                "tokenCandidateCount": 0,
+                "nftCandidateCount": 1,
+                "laneProofFailures": 0,
+                "topCovenants": [
+                    {
+                        "covenantId": "a" * 64,
+                        "txCount": 3,
+                        "utxoCount": 4,
+                        "inputCount": 2,
+                        "outputCount": 4,
+                        "tokenLike": False,
+                        "nftLike": True,
+                        "latestTxId": "b" * 64,
+                    }
+                ],
+                "topLanes": [
+                    {
+                        "laneKey": "abcd",
+                        "txCount": 5,
+                        "gasTotal": 0,
+                        "seqCommitBlockCount": 0,
+                        "laneProofOk": False,
+                        "latestBlockHash": None,
+                        "latestTxId": "c" * 64,
+                    }
+                ],
+                "topZkProofs": [],
+                "bridgeLockboxes": [],
+            },
+        }
+
+        metrics = watchtower.extract_indexer_metrics(payload)
+
+        schema = metrics["toccata_schema"]
+        self.assertFalse(schema["ok"])
+        self.assertTrue(schema["core_ok"])
+        self.assertEqual(schema["supported"], 5)
+        self.assertEqual(schema["missing"], 4)
+        self.assertEqual(schema["core_supported"], 5)
+        self.assertEqual(schema["core_missing"], 0)
+        self.assertEqual(metrics["fee_mass"]["observed"], 10)
+        self.assertTrue(metrics["fee_mass"]["relay_fee_ok"])
+        self.assertEqual(metrics["toccata_activity"]["metrics"]["tx_v1_count"]["numeric"], 12)
+        self.assertEqual(metrics["covenant_explorer"]["items"][0]["covenant_id"], "a" * 64)
+        self.assertEqual(metrics["lane_monitor"]["items"][0]["lane_key"], "abcd")
+
     def test_fetch_optional_indexer_status_treats_catchup_as_syncing(self):
         config = copy.deepcopy(watchtower.DEFAULT_CONFIG)
         config["indexer"]["enabled"] = True
@@ -370,6 +454,55 @@ class WatchtowerUnitTests(unittest.TestCase):
         self.assertFalse(checks["toccata_lane_proofs"]["ok"])
         self.assertFalse(checks["toccata_zk_proofs"]["ok"])
         self.assertEqual(report["indexer"]["metrics"]["lag_seconds"], 90)
+
+    def test_build_report_flags_missing_toccata_core_schema(self):
+        config = copy.deepcopy(watchtower.DEFAULT_CONFIG)
+        config["node_name"] = "test-mainnet"
+        config["process_match"] = "kaspad"
+        config["log_path"] = "/tmp/missing-watchtower-test.log"
+        config["data_dir"] = ""
+        config["rpc_endpoint"] = ""
+        config["grpc_endpoint"] = ""
+        config["thresholds"]["require_rpc"] = False
+        config["thresholds"]["require_grpc_metrics"] = False
+        config["indexer"]["enabled"] = True
+
+        with (
+            mock.patch("watchtower.find_processes", return_value=["123 kaspad"]),
+            mock.patch("watchtower.disk_usage", return_value={"exists": False}),
+            mock.patch("watchtower.check_tcp_endpoint", return_value={"configured": False, "ok": False, "detail": "not configured"}),
+            mock.patch("watchtower.fetch_optional_grpc_metrics", return_value={"configured": False, "ok": False}),
+            mock.patch("watchtower.fetch_optional_wallet_balances", return_value={"enabled": False, "ok": True}),
+            mock.patch("watchtower.fetch_optional_mining_status", return_value={"enabled": False, "ok": True}),
+            mock.patch("watchtower.fetch_optional_whale_watch", return_value={"enabled": False, "ok": True}),
+            mock.patch(
+                "watchtower.fetch_optional_indexer_status",
+                return_value={
+                    "enabled": True,
+                    "ok": True,
+                    "health_ok": True,
+                    "metrics_ok": True,
+                    "lag_ok": True,
+                    "checkpoint_fresh": True,
+                    "detail": "ok",
+                    "metrics": {
+                        "toccata_schema": {
+                            "core_ok": False,
+                            "core_supported": 4,
+                            "core_total": 5,
+                            "core_missing": 1,
+                            "core_unknown": 0,
+                        }
+                    },
+                },
+            ),
+        ):
+            report = watchtower.build_report(config)
+
+        checks = {check["name"]: check for check in report["checks"]}
+        self.assertIn("toccata_indexer_core_schema", checks)
+        self.assertFalse(checks["toccata_indexer_core_schema"]["ok"])
+        self.assertIn("core_supported=4/5", checks["toccata_indexer_core_schema"]["detail"])
 
     def test_indexer_lookup_fetches_transaction_api(self):
         config = copy.deepcopy(watchtower.DEFAULT_CONFIG)

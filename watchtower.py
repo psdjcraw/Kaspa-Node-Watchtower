@@ -47,6 +47,13 @@ TOCCATA_INDEXER_CAPABILITIES = [
     ("get_block_reward_info", "GetBlockRewardInfo", {"get_block_reward_info", "getBlockRewardInfo", "block_reward_info", "blockRewardInfo"}),
     ("get_seq_commit_lane_proof", "GetSeqCommitLaneProof", {"get_seq_commit_lane_proof", "getSeqCommitLaneProof", "seq_commit_lane_proof", "seqCommitLaneProof"}),
 ]
+TOCCATA_INDEXER_CORE_CAPABILITIES = {
+    "tx_version_1",
+    "compute_budget",
+    "covenant_binding",
+    "utxo_covenant_id",
+    "subnetwork_id",
+}
 TOCCATA_FEE_MASS_METRICS = [
     ("minimum_relay_fee_sompi_per_gram", "Relay fee sompi/gram", {"minimum_relay_fee_sompi_per_gram", "minimumRelayFeeSompiPerGram", "relay_fee_sompi_per_gram", "relayFeeSompiPerGram"}),
     ("tx_v1_count", "Tx v1 count", {"tx_v1_count", "txV1Count", "tx_version_1_count", "txVersion1Count", "version_1_transactions", "version1Transactions"}),
@@ -1824,6 +1831,20 @@ def build_report(config: dict) -> dict[str, Any]:
                 )
             )
             metrics = indexer.get("metrics") or {}
+            toccata_schema = metrics.get("toccata_schema") or {}
+            if (numeric(toccata_schema.get("core_missing")) or 0) > 0:
+                checks.append(
+                    Check(
+                        "toccata_indexer_core_schema",
+                        False,
+                        (
+                            f"core_supported={toccata_schema.get('core_supported', 0)}/"
+                            f"{toccata_schema.get('core_total', len(TOCCATA_INDEXER_CORE_CAPABILITIES))} "
+                            f"missing={toccata_schema.get('core_missing', 0)} "
+                            f"unknown={toccata_schema.get('core_unknown', 0)}"
+                        ),
+                    )
+                )
             fee_mass = metrics.get("fee_mass") or {}
             if fee_mass.get("relay_fee_ok") is False:
                 checks.append(
@@ -2995,10 +3016,13 @@ def capability_state(value: Any) -> str:
 def indexer_toccata_schema_status(payload: Any) -> dict[str, Any]:
     capabilities = {}
     counts = {"ok": 0, "missing": 0, "unknown": 0}
+    core_counts = {"ok": 0, "missing": 0, "unknown": 0}
     for key, label, aliases in TOCCATA_INDEXER_CAPABILITIES:
         raw = find_nested_value(payload, aliases)
         state = capability_state(raw)
         counts[state] = counts.get(state, 0) + 1
+        if key in TOCCATA_INDEXER_CORE_CAPABILITIES:
+            core_counts[state] = core_counts.get(state, 0) + 1
         capabilities[key] = {
             "label": label,
             "state": state,
@@ -3010,6 +3034,11 @@ def indexer_toccata_schema_status(payload: Any) -> dict[str, Any]:
         "missing": counts["missing"],
         "unknown": counts["unknown"],
         "total": len(TOCCATA_INDEXER_CAPABILITIES),
+        "core_ok": core_counts["missing"] == 0 and core_counts["unknown"] == 0,
+        "core_supported": core_counts["ok"],
+        "core_missing": core_counts["missing"],
+        "core_unknown": core_counts["unknown"],
+        "core_total": len(TOCCATA_INDEXER_CORE_CAPABILITIES),
         "capabilities": capabilities,
     }
 
@@ -7979,7 +8008,7 @@ def indexer_watch_panel(report: dict[str, Any], state: dict[str, Any]) -> str:
     <section class="visual-grid">
       {visual_card("Indexer State", indexer.get("state") or "disabled", f"ok={indexer.get('ok', False)}", "neutral")}
       {visual_card("Checkpoint Age", checkpoint_age_text, f"fresh={indexer.get('checkpoint_fresh', False)}", "neutral")}
-      {visual_card("Toccata Schema", f"{toccata_schema.get('supported', 0)}/{toccata_schema.get('total', len(TOCCATA_INDEXER_CAPABILITIES))}", f"missing={toccata_schema.get('missing', 0)} unknown={toccata_schema.get('unknown', 0)}", "ok" if toccata_schema.get("ok") else "warn")}
+      {visual_card("Toccata Schema", f"{toccata_schema.get('supported', 0)}/{toccata_schema.get('total', len(TOCCATA_INDEXER_CAPABILITIES))}", f"core={toccata_schema.get('core_supported', 0)}/{toccata_schema.get('core_total', len(TOCCATA_INDEXER_CORE_CAPABILITIES))} missing={toccata_schema.get('missing', 0)}", "ok" if toccata_schema.get("core_ok") else "warn")}
       {visual_card("Fee/Mass", f"{fee_mass.get('observed', 0)}/{fee_mass.get('total', len(TOCCATA_FEE_MASS_METRICS))}", f"relay_fee_ok={fee_mass.get('relay_fee_ok', 'unknown')}", "ok" if fee_mass.get("ok") else "warn")}
       {visual_card("Tx Activity", f"{toccata_activity.get('active', 0)} active", f"observed={toccata_activity.get('observed', 0)}/{toccata_activity.get('total', len(TOCCATA_TX_ACTIVITY_METRICS))}", "neutral")}
       {visual_card("Covenants", covenant_explorer.get("covenant_id_count", "unknown"), f"tokens={covenant_explorer.get('token_candidate_count', 'unknown')} nfts={covenant_explorer.get('nft_candidate_count', 'unknown')}", "neutral")}

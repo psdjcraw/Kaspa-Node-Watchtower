@@ -100,7 +100,9 @@ Last verified manually on `2026-06-08`:
   covenant bindings, UTXO covenant IDs, reward info, and lane proofs
 - Indexer tab: post-Toccata schema capability table from `/api/metrics`, with
   each capability marked `ok`, `missing`, or `unknown` so schema gaps are
-  visible before covenant/lane activity appears on mainnet
+  visible before covenant/lane activity appears on mainnet. Core Toccata fields
+  (`txVersion1`, `computeBudget`, covenant bindings, UTXO covenant IDs, and
+  `subnetworkId`) are tracked separately from optional storage/gas/RPC fields
 - Indexer tab: post-Toccata fee/mass monitor for relay fee, tx v1 activity,
   covenant outputs, user lanes, gas, storage/compute/transient mass, and
   low-fee rejections when those `/api/metrics` fields are available
