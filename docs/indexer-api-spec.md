@@ -43,7 +43,7 @@ Recommended top-level response:
 ```json
 {
   "version": "0.1.0",
-  "schemaVersion": 1,
+  "schemaVersion": 23,
   "indexerLagSeconds": 0,
   "checkpoint": {
     "timestamp": "2026-06-30T16:20:00Z",
@@ -158,12 +158,25 @@ post-Toccata fields.
 Boolean `true` means supported, `false` means missing, and omitted means
 unknown.
 
+## Toccata Rollup Semantics
+
+For `simply-kaspa-indexer` schema v23 and later, the recommended implementation
+is a trigger-maintained rollup rather than a full scan of the denormalized
+`transactions` table. New block and transaction inserts update compact rollup
+tables for Toccata counters, top covenant IDs, and top user lanes. This keeps
+`/api/metrics` responsive on retained datasets with tens of millions of
+transactions.
+
+Counters are cumulative from the point where the v23 rollup schema is installed,
+or from genesis for a fresh v23 database. Use `0` for supported counters before
+post-Toccata activity appears.
+
 ## Fee And Mass Fields
 
 These counters feed the Watchtower Toccata Fee/Mass Monitor.
 
 - `minimumRelayFeeSompiPerGram`: expected to be `100` after Toccata.
-- `txV1Count`: indexed version 1 transaction count in the chosen metrics window.
+- `txV1Count`: indexed version 1 transaction count in the rollup window.
 - `covenantOutputCount`: indexed covenant-bound output count.
 - `userLaneTxCount`: indexed user-lane transaction count.
 - `gasTotal`: total gas committed by user-lane transactions.
@@ -195,10 +208,10 @@ These counters feed the Watchtower Post-Toccata Tx Activity panel.
 - `groth16TxCount`
 - `risc0TxCount`
 
-The recommended window is "since indexer start or current retention window" for
-simple counters. If the indexer later exposes time-windowed counters, keep these
-canonical names for the default aggregate and add explicit suffixes such as
-`txV1Count24h`.
+The recommended window is "since rollup installation or current retention
+window" for simple counters. If the indexer later exposes time-windowed
+counters, keep these canonical names for the default aggregate and add explicit
+suffixes such as `txV1Count24h`.
 
 ## Covenant Explorer Fields
 
