@@ -170,6 +170,16 @@ class WatchtowerUnitTests(unittest.TestCase):
                         "computeMassMax": 700,
                         "transientMassMax": 900,
                         "lowFeeRejections": 0,
+                        "blockV2Count": 3,
+                        "covenantTxCount": 2,
+                        "covenantInputCount": 1,
+                        "covenantUtxoCount": 5,
+                        "covenantIdCount": 2,
+                        "activeUserLanes": 1,
+                        "seqCommitBlockCount": 3,
+                        "zkPrecompileTxCount": 1,
+                        "groth16TxCount": 1,
+                        "risc0TxCount": 0,
                     },
                 },
             ],
@@ -187,6 +197,9 @@ class WatchtowerUnitTests(unittest.TestCase):
         self.assertEqual(status["metrics"]["fee_mass"]["observed"], 10)
         self.assertTrue(status["metrics"]["fee_mass"]["relay_fee_ok"])
         self.assertEqual(status["metrics"]["fee_mass"]["metrics"]["storage_mass_max"]["numeric"], 1200)
+        self.assertEqual(status["metrics"]["toccata_activity"]["observed"], 13)
+        self.assertEqual(status["metrics"]["toccata_activity"]["active"], 12)
+        self.assertEqual(status["metrics"]["toccata_activity"]["metrics"]["risc0_tx_count"]["numeric"], 0)
 
     def test_fetch_optional_indexer_status_flags_stale_metrics(self):
         config = copy.deepcopy(watchtower.DEFAULT_CONFIG)
@@ -962,6 +975,17 @@ class WatchtowerUnitTests(unittest.TestCase):
                             "low_fee_rejections": {"label": "Low-fee rejections", "numeric": 0, "value": 0, "observed": True},
                         },
                     },
+                    "toccata_activity": {
+                        "ok": True,
+                        "observed": 13,
+                        "active": 12,
+                        "total": 13,
+                        "metrics": {
+                            "tx_v1_count": {"label": "Tx v1", "numeric": 4, "value": 4, "observed": True, "active": True},
+                            "covenant_tx_count": {"label": "Covenant tx", "numeric": 2, "value": 2, "observed": True, "active": True},
+                            "risc0_tx_count": {"label": "RISC0 tx", "numeric": 0, "value": 0, "observed": True, "active": False},
+                        },
+                    },
                 },
             },
             "indexer_watch": {
@@ -1173,6 +1197,10 @@ class WatchtowerUnitTests(unittest.TestCase):
         self.assertIn('kaspa_watchtower_indexer_toccata_relay_fee_ok{node="test-node"} 1', metrics)
         self.assertIn('kaspa_watchtower_indexer_toccata_expected_relay_fee_sompi_per_gram{node="test-node"} 100', metrics)
         self.assertIn('kaspa_watchtower_indexer_toccata_fee_mass_value{label="Max storageMass",metric="storage_mass_max",node="test-node"} 1200', metrics)
+        self.assertIn('kaspa_watchtower_indexer_toccata_activity_observed{node="test-node"} 13', metrics)
+        self.assertIn('kaspa_watchtower_indexer_toccata_activity_active{node="test-node"} 12', metrics)
+        self.assertIn('kaspa_watchtower_indexer_toccata_activity_value{label="Covenant tx",metric="covenant_tx_count",node="test-node"} 2', metrics)
+        self.assertIn('kaspa_watchtower_indexer_toccata_activity_value{label="RISC0 tx",metric="risc0_tx_count",node="test-node"} 0', metrics)
         self.assertIn('kaspa_watchtower_watch_readiness_ok{node="test-node"} 1', metrics)
         self.assertIn('kaspa_watchtower_indexer_watch_enabled{node="test-node"} 1', metrics)
         self.assertIn('kaspa_watchtower_indexer_watch_events_total{node="test-node"} 1', metrics)
@@ -4122,6 +4150,8 @@ class WatchtowerUnitTests(unittest.TestCase):
             self.assertIn("No Toccata schema metrics exposed", html)
             self.assertIn("Toccata Fee/Mass Monitor", html)
             self.assertIn("No Toccata fee/mass metrics exposed", html)
+            self.assertIn("Post-Toccata Tx Activity", html)
+            self.assertIn("No post-Toccata tx activity metrics exposed", html)
             self.assertIn("KAS/USDT 15m", html)
             self.assertIn("KAS/USDT 4h", html)
             self.assertIn("KAS/USDT 1D", html)

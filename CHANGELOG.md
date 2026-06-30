@@ -33,6 +33,9 @@ All notable changes to Kaspa Node Watchtower are tracked here.
 - Indexer status pages and Prometheus output now include a post-Toccata
   fee/mass monitor for relay fee, tx v1 activity, covenant outputs, user lanes,
   gas, storage/compute/transient mass, and low-fee rejections.
+- Indexer status pages and Prometheus output now include post-Toccata activity
+  counters for tx v1, block v2, covenant inputs/outputs/UTXOs/IDs, user lanes,
+  SeqCommit blocks, and ZK precompile usage.
 - `watchtower.py --alert` now emits a market-risk-high alert body when a new
   critical market positioning snapshot is detected.
 

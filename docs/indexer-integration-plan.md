@@ -82,6 +82,9 @@ Deliverables:
   sompi/gram, tx v1 count, covenant output count, user-lane tx count, total gas,
   max/average `storageMass`, max compute/transient mass, and low-fee rejection
   count. The Watchtower baseline expects `100` sompi/gram after Toccata.
+- Normalize post-Toccata activity counters when exposed: tx v1 count, block v2
+  count, covenant tx/input/output/UTXO/ID counts, active user lanes, user-lane tx
+  count, SeqCommit block count, and ZK precompile/Groth16/RISC0 tx counts.
 - Add status page and summary sections for indexer health.
 - Add alert rules for indexer API down, chain lag, stale checkpoint, and
   PostgreSQL unavailable.

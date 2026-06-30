@@ -59,6 +59,21 @@ TOCCATA_FEE_MASS_METRICS = [
     ("transient_mass_max", "Max transient mass", {"transient_mass_max", "transientMassMax", "max_transient_mass", "maxTransientMass"}),
     ("low_fee_rejections", "Low-fee rejections", {"low_fee_rejections", "lowFeeRejections", "low_fee_rejection_count", "lowFeeRejectionCount"}),
 ]
+TOCCATA_TX_ACTIVITY_METRICS = [
+    ("tx_v1_count", "Tx v1", {"tx_v1_count", "txV1Count", "tx_version_1_count", "txVersion1Count", "version_1_transactions", "version1Transactions"}),
+    ("block_v2_count", "Block v2", {"block_v2_count", "blockV2Count", "block_version_2_count", "blockVersion2Count"}),
+    ("covenant_tx_count", "Covenant tx", {"covenant_tx_count", "covenantTxCount", "covenant_transactions", "covenantTransactions"}),
+    ("covenant_input_count", "Covenant inputs", {"covenant_input_count", "covenantInputCount", "covenant_inputs", "covenantInputs"}),
+    ("covenant_output_count", "Covenant outputs", {"covenant_output_count", "covenantOutputCount", "output_covenant_count", "outputCovenantCount"}),
+    ("covenant_utxo_count", "Covenant UTXOs", {"covenant_utxo_count", "covenantUtxoCount", "utxo_covenant_count", "utxoCovenantCount"}),
+    ("covenant_id_count", "Covenant IDs", {"covenant_id_count", "covenantIdCount", "unique_covenant_ids", "uniqueCovenantIds"}),
+    ("user_lane_count", "User lanes", {"user_lane_count", "userLaneCount", "active_user_lanes", "activeUserLanes"}),
+    ("user_lane_tx_count", "User lane tx", {"user_lane_tx_count", "userLaneTxCount", "lane_tx_count", "laneTxCount"}),
+    ("seq_commit_block_count", "SeqCommit blocks", {"seq_commit_block_count", "seqCommitBlockCount", "seq_commit_blocks", "seqCommitBlocks"}),
+    ("zk_precompile_tx_count", "ZK precompile tx", {"zk_precompile_tx_count", "zkPrecompileTxCount", "zk_tx_count", "zkTxCount"}),
+    ("groth16_tx_count", "Groth16 tx", {"groth16_tx_count", "groth16TxCount"}),
+    ("risc0_tx_count", "RISC0 tx", {"risc0_tx_count", "risc0TxCount", "r0_succinct_tx_count", "r0SuccinctTxCount"}),
+]
 
 INVESTMENT_TIMEFRAMES = [
     {"label": "15m", "range": "5d", "interval": "15m"},
@@ -3007,6 +3022,33 @@ def indexer_fee_mass_status(payload: Any) -> dict[str, Any]:
     }
 
 
+def indexer_toccata_activity_status(payload: Any) -> dict[str, Any]:
+    metrics = {}
+    observed = 0
+    active = 0
+    for key, label, aliases in TOCCATA_TX_ACTIVITY_METRICS:
+        raw = find_nested_value(payload, aliases)
+        parsed = numeric(raw)
+        if raw is not None:
+            observed += 1
+        if parsed is not None and parsed > 0:
+            active += 1
+        metrics[key] = {
+            "label": label,
+            "value": raw,
+            "numeric": parsed,
+            "observed": raw is not None,
+            "active": parsed is not None and parsed > 0,
+        }
+    return {
+        "ok": True,
+        "observed": observed,
+        "active": active,
+        "total": len(TOCCATA_TX_ACTIVITY_METRICS),
+        "metrics": metrics,
+    }
+
+
 def timestamp_age_seconds(value: Any, now: dt.datetime | None = None) -> float | None:
     if value in (None, ""):
         return None
@@ -3085,6 +3127,7 @@ def extract_indexer_metrics(payload: Any) -> dict[str, Any]:
         "lag_seconds": numeric(lag_seconds),
         "toccata_schema": indexer_toccata_schema_status(payload),
         "fee_mass": indexer_fee_mass_status(payload),
+        "toccata_activity": indexer_toccata_activity_status(payload),
         "payload": payload,
     }
 
@@ -7679,6 +7722,7 @@ def indexer_watch_panel(report: dict[str, Any], state: dict[str, Any]) -> str:
     metrics = indexer.get("metrics") or {}
     toccata_schema = metrics.get("toccata_schema") or {}
     fee_mass = metrics.get("fee_mass") or {}
+    toccata_activity = metrics.get("toccata_activity") or {}
     capability_rows = "\n".join(
         html_row(
             [
@@ -7699,6 +7743,16 @@ def indexer_watch_panel(report: dict[str, Any], state: dict[str, Any]) -> str:
         )
         for key, item in (fee_mass.get("metrics") or {}).items()
     ) or html_row(["No Toccata fee/mass metrics exposed", "unknown", ""])
+    activity_rows = "\n".join(
+        html_row(
+            [
+                item.get("label") or key,
+                "active" if item.get("active") else "observed" if item.get("observed") else "unknown",
+                "" if item.get("value") is None else item.get("value"),
+            ]
+        )
+        for key, item in (toccata_activity.get("metrics") or {}).items()
+    ) or html_row(["No post-Toccata tx activity metrics exposed", "unknown", ""])
     checkpoint_age = metrics.get("checkpoint_age_seconds")
     checkpoint_age_text = "unknown" if checkpoint_age is None else f"{float(checkpoint_age):.1f}s"
     return f"""
@@ -7708,6 +7762,7 @@ def indexer_watch_panel(report: dict[str, Any], state: dict[str, Any]) -> str:
       {visual_card("Checkpoint Age", checkpoint_age_text, f"fresh={indexer.get('checkpoint_fresh', False)}", "neutral")}
       {visual_card("Toccata Schema", f"{toccata_schema.get('supported', 0)}/{toccata_schema.get('total', len(TOCCATA_INDEXER_CAPABILITIES))}", f"missing={toccata_schema.get('missing', 0)} unknown={toccata_schema.get('unknown', 0)}", "ok" if toccata_schema.get("ok") else "warn")}
       {visual_card("Fee/Mass", f"{fee_mass.get('observed', 0)}/{fee_mass.get('total', len(TOCCATA_FEE_MASS_METRICS))}", f"relay_fee_ok={fee_mass.get('relay_fee_ok', 'unknown')}", "ok" if fee_mass.get("ok") else "warn")}
+      {visual_card("Tx Activity", f"{toccata_activity.get('active', 0)} active", f"observed={toccata_activity.get('observed', 0)}/{toccata_activity.get('total', len(TOCCATA_TX_ACTIVITY_METRICS))}", "neutral")}
       {visual_card("Watch Addresses", len(targets), f"enabled={watch.get('enabled', False)}", "neutral")}
       {visual_card("Watched Events", len(events), f"new={len(watch.get('new_events') or [])}", "neutral")}
     </section>
@@ -7752,6 +7807,18 @@ def indexer_watch_panel(report: dict[str, Any], state: dict[str, Any]) -> str:
       <table>
         <thead>{html_row(["Metric", "State", "Observed Value"], "th")}</thead>
         <tbody>{fee_mass_rows}</tbody>
+      </table>
+    </section>
+    <section class="panel">
+      <h2>Post-Toccata Tx Activity</h2>
+      <div class="context-grid">
+        <div class="context-item"><div class="context-label">Active Metrics</div><div class="context-value">{html.escape(str(toccata_activity.get('active', 0)))}</div></div>
+        <div class="context-item"><div class="context-label">Observed Metrics</div><div class="context-value">{html.escape(str(toccata_activity.get('observed', 0)))}/{html.escape(str(toccata_activity.get('total', len(TOCCATA_TX_ACTIVITY_METRICS))))}</div></div>
+        <div class="context-item"><div class="context-label">Source</div><div class="context-value">indexer /api/metrics</div></div>
+      </div>
+      <table>
+        <thead>{html_row(["Metric", "State", "Observed Value"], "th")}</thead>
+        <tbody>{activity_rows}</tbody>
       </table>
     </section>
     <section class="layout">
@@ -15383,6 +15450,17 @@ def format_prometheus_metrics(
         add_prometheus_metric(
             lines,
             "kaspa_watchtower_indexer_toccata_fee_mass_value",
+            metric.get("numeric"),
+            {**node_labels, "metric": metric_key, "label": metric.get("label") or metric_key},
+        )
+    toccata_activity = indexer_metrics.get("toccata_activity") or {}
+    add_prometheus_metric(lines, "kaspa_watchtower_indexer_toccata_activity_observed", toccata_activity.get("observed"), node_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_indexer_toccata_activity_active", toccata_activity.get("active"), node_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_indexer_toccata_activity_total", toccata_activity.get("total"), node_labels)
+    for metric_key, metric in (toccata_activity.get("metrics") or {}).items():
+        add_prometheus_metric(
+            lines,
+            "kaspa_watchtower_indexer_toccata_activity_value",
             metric.get("numeric"),
             {**node_labels, "metric": metric_key, "label": metric.get("label") or metric_key},
         )
