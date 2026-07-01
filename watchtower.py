@@ -15657,6 +15657,8 @@ def build_benchmark_summary(path: Path, *, limit: int) -> dict[str, Any]:
             "disk_delta": "unknown",
             "disk_delta_gb": None,
             "window_hours": None,
+            "trend_notes": [],
+            "trend_note": "none",
         }
 
     first = items[0]
@@ -15690,6 +15692,8 @@ def build_benchmark_summary(path: Path, *, limit: int) -> dict[str, Any]:
             "disk_delta": "unknown",
             "disk_delta_gb": None,
             "window_hours": None,
+            "trend_notes": [],
+            "trend_note": "none",
         }
 
     elapsed_seconds = max(0.0, (last_at - first_at).total_seconds())
@@ -15700,8 +15704,15 @@ def build_benchmark_summary(path: Path, *, limit: int) -> dict[str, Any]:
     last_blocks = numeric(last.get("block_count"))
     first_disk = numeric(first.get("disk_free_gb"))
     last_disk = numeric(last.get("disk_free_gb"))
+    trend_notes: list[str] = []
     daa_delta = None if first_daa is None or last_daa is None else last_daa - first_daa
+    if daa_delta is not None and daa_delta < 0:
+        trend_notes.append("virtual_daa_score reset or discontinuity")
+        daa_delta = None
     block_delta = None if first_blocks is None or last_blocks is None else last_blocks - first_blocks
+    if block_delta is not None and block_delta < 0:
+        trend_notes.append("block_count reset or discontinuity")
+        block_delta = None
     disk_delta = None if first_disk is None or last_disk is None else last_disk - first_disk
     relay_blocks = sum(int(item.get("relay_blocks_in_window") or 0) for item in items)
     relay_minutes = sum(float(item.get("progress_window_minutes") or 0) for item in items)
@@ -15755,6 +15766,8 @@ def build_benchmark_summary(path: Path, *, limit: int) -> dict[str, Any]:
         "disk_delta": disk_delta_text,
         "disk_delta_gb": disk_delta,
         "window_hours": elapsed_hours,
+        "trend_notes": trend_notes,
+        "trend_note": ", ".join(trend_notes) if trend_notes else "none",
     }
 
 

@@ -1054,6 +1054,39 @@ class WatchtowerUnitTests(unittest.TestCase):
             self.assertEqual(summary["daa_delta"], 60)
             self.assertEqual(summary["block_delta"], 60)
 
+    def test_benchmark_summary_hides_negative_counter_deltas(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "benchmarks.jsonl"
+            items = [
+                {
+                    "checked_at": "2026-06-05T10:00:00+09:00",
+                    "virtual_daa_score": 200,
+                    "block_count": 300,
+                    "relay_blocks_in_window": 50,
+                    "progress_window_minutes": 10,
+                    "status": "ok",
+                    "severity": "ok",
+                },
+                {
+                    "checked_at": "2026-06-05T11:00:00+09:00",
+                    "virtual_daa_score": 160,
+                    "block_count": 260,
+                    "relay_blocks_in_window": 70,
+                    "progress_window_minutes": 10,
+                    "status": "ok",
+                    "severity": "ok",
+                },
+            ]
+            watchtower.save_jsonl(path, items)
+
+            summary = watchtower.build_benchmark_summary(path, limit=100)
+
+            self.assertEqual(summary["daa_delta"], "unknown")
+            self.assertEqual(summary["block_delta"], "unknown")
+            self.assertIn("virtual_daa_score reset", summary["trend_note"])
+            self.assertIn("block_count reset", summary["trend_note"])
+            self.assertEqual(summary["relay_rate"], "6.00/min")
+
     def test_toccata_readiness_tracks_activation_and_hardware(self):
         with (
             mock.patch("watchtower.os.cpu_count", return_value=16),

@@ -45,6 +45,21 @@ def format_seconds(value) -> str:
     return f"{parsed:.1f}s" if parsed < 60 else f"{parsed / 60:.1f}m"
 
 
+def check_state(name: str) -> str:
+    for check in report.get("checks") or []:
+        if check.get("name") == name:
+            return "ok" if check.get("ok") else "fail"
+    return "missing"
+
+
+def peer_slo() -> str:
+    peers = watchtower.numeric(grpc.get("peer_count"))
+    active = watchtower.numeric(grpc.get("active_peers"))
+    if peers is None or active is None:
+        return "unknown"
+    return "ok" if peers >= 1 and active >= 1 else "fail"
+
+
 config = watchtower.load_config(Path("config.json"))
 report, state = watchtower.build_stateful_report(config)
 benchmark = watchtower.build_benchmark_summary(
@@ -80,6 +95,17 @@ section("1. 한눈에")
 bullet("판정", verdict)
 bullet("상태", f"{report.get('status')} / {report.get('severity')} / health {report.get('health_score', 'unknown')}")
 bullet("실패 체크", join_or_none(failed))
+bullet(
+    "핵심 SLO",
+    (
+        f"process={check_state('process')}, "
+        f"grpc={check_state('grpc_metrics')}, "
+        f"relay={check_state('block_progress')}, "
+        f"peers={peer_slo()}, "
+        f"log={check_state('log_freshness')}, "
+        f"disk={check_state('disk_free')}"
+    ),
+)
 bullet("복구 액션", recovery.get("action", "none"))
 bullet("최근 복구", f"{latest_recovery.get('action', 'none')} ({latest_recovery.get('operator_reason') or latest_recovery.get('reason') or 'none'})")
 
@@ -141,23 +167,33 @@ bullet(
     ),
 )
 
-section("4. 24시간 추세")
-bullet("벤치마크", f"{benchmark.get('window', 'unknown')} / ok {watchtower.format_ratio(benchmark.get('ok_ratio'))}")
+section("4. 최근 추세")
+bullet(
+    "벤치마크",
+    (
+        f"{benchmark.get('window', 'unknown')} / "
+        f"snapshots={benchmark.get('snapshots', 'unknown')}, "
+        f"ok={watchtower.format_ratio(benchmark.get('ok_ratio'))}"
+    ),
+)
 bullet(
     "증가량",
     (
         f"DAA {watchtower.format_optional_number(benchmark.get('daa_delta'))}, "
         f"blocks {watchtower.format_optional_number(benchmark.get('block_delta'))}, "
-        f"relay avg {watchtower.format_optional_rate(benchmark.get('relay_rate'))}/min"
+        f"relay avg {benchmark.get('relay_rate', 'unknown')}"
     ),
 )
 bullet(
-    "최저치",
+    "디스크/최저치",
     (
         f"peers {watchtower.format_optional_number(benchmark.get('min_peer_count'))}, "
-        f"disk {watchtower.format_gib(benchmark.get('min_disk_free_gb'))}"
+        f"disk_min {watchtower.format_gib(benchmark.get('min_disk_free_gb'))}, "
+        f"disk_delta {benchmark.get('disk_delta', 'unknown')}"
     ),
 )
+if benchmark.get("trend_note") and benchmark.get("trend_note") != "none":
+    bullet("추세 메모", benchmark.get("trend_note"))
 
 section("5. 동기화")
 bullet("네트워크", f"{grpc.get('network_id', 'unknown')}, synced={grpc.get('is_synced', 'unknown')}")

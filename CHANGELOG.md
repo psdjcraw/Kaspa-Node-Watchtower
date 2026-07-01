@@ -74,6 +74,9 @@ All notable changes to Kaspa Node Watchtower are tracked here.
 
 ### Changed
 
+- Daily reports now lead with the six core node SLO checks and render benchmark
+  trends with reset-safe DAA/block deltas, relay rates, disk delta, and explicit
+  trend notes instead of misleading negative counters.
 - `make indexer-up` now requires `CONFIRM_INDEXER_UP=1` so the local
   PostgreSQL-backed indexer stack cannot be recreated accidentally on the
   lightweight mainnet host.
