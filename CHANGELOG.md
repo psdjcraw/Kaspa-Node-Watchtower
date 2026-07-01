@@ -9,6 +9,9 @@ All notable changes to Kaspa Node Watchtower are tracked here.
 - Added `docs/lightweight-indexer-mode.md` to document the current disabled
   companion-indexer posture, re-enable checklist, rollback steps, and
   auto-recreation audit.
+- Added a current lightweight-operation baseline to `docs/status.md`, including
+  the expected disabled-indexer report wording and SpaceX watchlist responsive
+  render checks.
 - Discord command bridge now exposes `market`, `market-risk`, and
   `market-drill` outputs for KAS/USDT market snapshots and positioning-risk
   drills.

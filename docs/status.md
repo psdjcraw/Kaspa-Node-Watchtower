@@ -19,6 +19,26 @@
 - GitHub Actions CodeQL workflow: `https://github.com/psdjcraw/Kaspa-Node-Watchtower/actions/workflows/codeql.yml`
 - Canvas status page: `/Users/psdjc/.openclaw/canvas/kaspa-watchtower/status.html`
 
+## Current Lightweight Baseline
+
+Last verified manually on `2026-07-01` after disabling the companion indexer
+stack:
+
+- Watchtower summary: `status=ok`, `severity=ok`, `health_score=100`,
+  `failed_checks=none`.
+- Core node SLO: process, gRPC, relay freshness, peer count, log freshness, and
+  disk free space are the active alert focus.
+- Current node sample: `peers=8 active=8`, `synced=True`, relay age about
+  `6s`, transaction processing age under `10s`.
+- Disk sample: about `480 GiB` free, roughly `52%` free.
+- Indexer posture: `indexer=disabled reason=config ok=True probes=skipped` and
+  `indexer_watch=disabled`; this is the expected healthy lightweight state.
+- Daily report wording: `disabled by config; source retained, probes skipped`
+  is expected for both indexer and Toccata indexer lines.
+- Market Watchlist rendering: SpaceX shows only `1D`, `1W`, and `1M`
+  private-valuation candlestick cards; desktop and 390px mobile checks showed
+  no horizontal overflow.
+
 ## Local Services
 
 - `kaspad`: matched by process name `kaspad`
