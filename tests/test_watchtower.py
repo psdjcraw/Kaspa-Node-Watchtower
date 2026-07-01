@@ -1790,6 +1790,31 @@ class WatchtowerUnitTests(unittest.TestCase):
             )
         )
 
+    def test_grafana_dashboard_includes_lightweight_release_posture_panel(self):
+        dashboard = json.loads(Path("grafana/kaspa-watchtower.json").read_text(encoding="utf-8"))
+        panels = {panel.get("title"): panel for panel in dashboard.get("panels", [])}
+
+        self.assertIn("Lightweight Release Posture", panels)
+        targets = panels["Lightweight Release Posture"].get("targets") or []
+        self.assertTrue(
+            any(
+                target.get("expr") == 'kaspa_watchtower_lightweight_mode{node="$node"}'
+                for target in targets
+            )
+        )
+        self.assertTrue(
+            any(
+                target.get("expr") == '1 - kaspa_watchtower_indexer_enabled{node="$node"}'
+                for target in targets
+            )
+        )
+        self.assertTrue(
+            any(
+                target.get("expr") == '1 - kaspa_watchtower_indexer_watch_enabled{node="$node"}'
+                for target in targets
+            )
+        )
+
     def test_grafana_dashboard_includes_sdk_probe_panels(self):
         dashboard = json.loads(Path("grafana/kaspa-watchtower.json").read_text(encoding="utf-8"))
         panels = {panel.get("title"): panel for panel in dashboard.get("panels", [])}

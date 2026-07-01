@@ -6,6 +6,12 @@ All notable changes to Kaspa Node Watchtower are tracked here.
 
 ### Added
 
+- Added post-v0.8.3 release operation checks to `scripts/ops_snapshot.sh`,
+  including release asset visibility, Docker publish status, and a single
+  lightweight/indexer-hold verdict.
+- Added a weekly lightweight release posture section so weekly reports keep
+  indexer Docker resources visible while the companion indexer is on long-term
+  hold.
 - Added `docs/lightweight-indexer-mode.md` to document the current disabled
   companion-indexer posture, re-enable checklist, rollback steps, and
   auto-recreation audit.
@@ -18,7 +24,7 @@ All notable changes to Kaspa Node Watchtower are tracked here.
 - Added a lightweight-first Phase 7-12 roadmap with market severity alignment,
   release-readiness checks, 24-48h observation, operator UX polish, long-term
   indexer hold, and Watchtower-only planning.
-- Added `docs/release-notes-v0.8.3.md` as the v0.8.3 release-candidate note and
+- Added `docs/release-notes-v0.8.3.md` as the v0.8.3 release note and
   verification checklist.
 - Added `docs/release-execution-v0.8.3.md` with tag-gated release execution,
   24-hour observation, post-release watch, and Watchtower-only backlog reset
@@ -96,7 +102,7 @@ All notable changes to Kaspa Node Watchtower are tracked here.
   next-action language.
 - Daily reports now compress the market section to source, spot, futures,
   market risk, and market operator action lines.
-- Version now reports `0.8.3` for the v0.8.3 release candidate.
+- Version now reports `0.8.3`.
 - Daily reports now lead with the six core node SLO checks and render benchmark
   trends with reset-safe DAA/block deltas, relay rates, disk delta, and explicit
   trend notes instead of misleading negative counters.
@@ -106,7 +112,7 @@ All notable changes to Kaspa Node Watchtower are tracked here.
 - Discord `market` and `market-risk` output now includes the same dashboard
   state language used by the market dashboard (`OK`, `WARN`, `CRIT`, and
   risk-first priority) so chat alerts and the dashboard agree on severity.
-- Homebrew formula now points to the v0.8.2 GitHub Release asset and checksum.
+- Homebrew formula now points to the v0.8.3 GitHub Release asset and checksum.
 
 ## 0.8.2 - 2026-06-20
 

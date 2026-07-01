@@ -11,6 +11,8 @@ EXPORTER_URL="${KASPA_WATCHTOWER_EXPORTER_URL:-http://127.0.0.1:9660}"
 PROMETHEUS_URL="${KASPA_WATCHTOWER_PROMETHEUS_URL:-http://127.0.0.1:9090}"
 GRAFANA_URL="${KASPA_WATCHTOWER_GRAFANA_URL:-http://127.0.0.1:3000}"
 GRAFANA_DASHBOARD_PATH="${KASPA_WATCHTOWER_GRAFANA_DASHBOARD_PATH:-/d/kaspa-watchtower/kaspa-watchtower}"
+RELEASE_TAG="${KASPA_WATCHTOWER_RELEASE_TAG:-v0.8.3}"
+RELEASE_VERSION="${RELEASE_TAG#v}"
 LAUNCHD_LABEL="com.openclaw.kaspa-watchtower-prometheus"
 
 section() {
@@ -35,7 +37,7 @@ exporter_metric() {
   metrics="$(curl -fsS "$EXPORTER_URL/metrics" 2>/dev/null || true)"
   printf '%s\n' "$metrics" |
     awk -v metric="$metric" '
-      $1 ~ ("^" metric "(\\{|$)") {print $2; found=1; exit}
+      !found && $1 ~ ("^" metric "(\\{|$)") {print $2; found=1}
       END {if (!found) print "missing"}
     '
 }
@@ -63,8 +65,111 @@ docker_count_matching() {
   esac
 }
 
+release_asset_digest() {
+  local payload
+  if ! command -v gh >/dev/null 2>&1; then
+    printf 'gh unavailable'
+    return
+  fi
+  if ! payload="$(gh release view "$RELEASE_TAG" --repo psdjcraw/Kaspa-Node-Watchtower --json assets 2>/dev/null)"; then
+    printf 'release unavailable'
+    return
+  fi
+  printf '%s\n' "$payload" | python3 -c '
+import json
+import sys
+
+version = sys.argv[1]
+try:
+    payload = json.load(sys.stdin)
+except json.JSONDecodeError:
+    print("release unavailable")
+    raise SystemExit(0)
+
+for asset in payload.get("assets") or []:
+    name = asset.get("name") or ""
+    if name.startswith(f"kaspa-node-watchtower-{version}-") and name.endswith(".tar.gz"):
+        print(asset.get("digest") or "digest missing")
+        break
+else:
+    print("asset missing")
+' "$RELEASE_VERSION"
+}
+
+release_url() {
+  local payload
+  if ! command -v gh >/dev/null 2>&1; then
+    printf 'gh unavailable'
+    return
+  fi
+  if ! payload="$(gh release view "$RELEASE_TAG" --repo psdjcraw/Kaspa-Node-Watchtower --json url,isDraft,isPrerelease 2>/dev/null)"; then
+    printf 'release unavailable'
+    return
+  fi
+  printf '%s\n' "$payload" | python3 -c '
+import json
+import sys
+
+try:
+    payload = json.load(sys.stdin)
+except json.JSONDecodeError:
+    print("release unavailable")
+    raise SystemExit(0)
+
+state = "draft" if payload.get("isDraft") else "published"
+kind = "prerelease" if payload.get("isPrerelease") else "stable"
+print("{} ({}, {})".format(payload.get("url", "unknown"), state, kind))
+'
+}
+
 section "Watchtower"
 "$PYTHON_BIN" watchtower.py -c config.json --summary
+
+section "Release"
+printf 'expected tag: %s\n' "$RELEASE_TAG"
+printf 'local version: '
+"$PYTHON_BIN" watchtower.py --version
+printf 'git head: %s\n' "$(git rev-parse --short HEAD 2>/dev/null || printf 'unknown')"
+printf 'release: %s\n' "$(release_url)"
+printf 'release asset digest: %s\n' "$(release_asset_digest)"
+if command -v gh >/dev/null 2>&1; then
+  docker_runs="$(gh run list --repo psdjcraw/Kaspa-Node-Watchtower --workflow docker-publish.yml --limit 5 --json headBranch,status,conclusion,url 2>/dev/null || true)"
+  if [ -n "$docker_runs" ]; then
+    if printf '%s\n' "$docker_runs" | python3 -c '
+import json
+import sys
+
+tag = sys.argv[1]
+try:
+    runs = json.load(sys.stdin)
+except json.JSONDecodeError:
+    print("docker publish: unavailable")
+    raise SystemExit(0)
+
+match = next((run for run in runs if run.get("headBranch") == tag), runs[0] if runs else None)
+if not match:
+    print("docker publish: missing")
+else:
+    print(
+        "docker publish: "
+        "{}/{} {}".format(
+            match.get("status", "unknown"),
+            match.get("conclusion") or "pending",
+            match.get("url", ""),
+        ).strip()
+    )
+' "$RELEASE_TAG"
+    then
+      true
+    else
+      printf 'docker publish: unavailable\n'
+    fi
+  else
+    printf 'docker publish: unavailable\n'
+  fi
+else
+  printf 'docker publish: gh unavailable\n'
+fi
 
 section "Multi-Node History"
 scripts/export_history_sqlite.py --multi-node-summary --days 7 | sed -n '/^window_days=/,$p'
@@ -144,12 +249,23 @@ else:
     print(f"{len(alerts)} " + ", ".join(names))'
 
 section "Lightweight Indexer"
-printf 'lightweight_mode metric: %s\n' "$(exporter_metric kaspa_watchtower_lightweight_mode)"
-printf 'indexer_enabled metric: %s\n' "$(exporter_metric kaspa_watchtower_indexer_enabled)"
-printf 'indexer_watch_enabled metric: %s\n' "$(exporter_metric kaspa_watchtower_indexer_watch_enabled)"
-printf 'indexer containers: %s\n' "$(docker_count_matching container 'simply-kaspa-indexer|kaspa_watchtower_indexer|kaspa_watchtower_db|kaspa-db-data')"
-printf 'indexer volumes: %s\n' "$(docker_count_matching volume 'simply-kaspa-indexer|kaspa_watchtower_indexer|kaspa_watchtower_db|kaspa-db-data')"
-printf 'indexer images: %s\n' "$(docker_count_matching image 'simply-kaspa-indexer')"
+lightweight_mode="$(exporter_metric kaspa_watchtower_lightweight_mode)"
+indexer_enabled="$(exporter_metric kaspa_watchtower_indexer_enabled)"
+indexer_watch_enabled="$(exporter_metric kaspa_watchtower_indexer_watch_enabled)"
+indexer_containers="$(docker_count_matching container 'simply-kaspa-indexer|kaspa_watchtower_indexer|kaspa_watchtower_db|kaspa-db-data')"
+indexer_volumes="$(docker_count_matching volume 'simply-kaspa-indexer|kaspa_watchtower_indexer|kaspa_watchtower_db|kaspa-db-data')"
+indexer_images="$(docker_count_matching image 'simply-kaspa-indexer')"
+if [ "$lightweight_mode" = "1" ] && [ "$indexer_enabled" = "0" ] && [ "$indexer_watch_enabled" = "0" ] && [ "$indexer_containers" = "0" ] && [ "$indexer_volumes" = "0" ] && [ "$indexer_images" = "0" ]; then
+  printf 'verdict: OK lightweight-only; indexer long-term hold intact\n'
+else
+  printf 'verdict: REVIEW lightweight/indexer posture drift\n'
+fi
+printf 'lightweight_mode metric: %s\n' "$lightweight_mode"
+printf 'indexer_enabled metric: %s\n' "$indexer_enabled"
+printf 'indexer_watch_enabled metric: %s\n' "$indexer_watch_enabled"
+printf 'indexer containers: %s\n' "$indexer_containers"
+printf 'indexer volumes: %s\n' "$indexer_volumes"
+printf 'indexer images: %s\n' "$indexer_images"
 if command -v docker >/dev/null 2>&1; then
   docker system df
 else

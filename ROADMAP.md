@@ -124,6 +124,68 @@ alignment, and keep the companion indexer on long-term hold:
   Grafana lightweight panel, market-risk noise tuning, status UI polish, and
   weekly report compression.
 
+### Phase 23 - Post-Release 24h Watch
+
+- Confirm the v0.8.3 release tag, GitHub Release assets, Docker publish run,
+  and main-branch smoke/CodeQL checks remain green after the Homebrew follow-up
+  commit.
+- Keep `scripts/ops_snapshot.sh` as the post-release snapshot for daily report,
+  active Prometheus alerts, Docker/indexer resources, disk headroom, and
+  Grafana reachability.
+
+### Phase 24 - Install Path Verification
+
+- Keep the Homebrew formula pointed at the published v0.8.3 archive and
+  checksum.
+- Verify the release tarball, Homebrew formula syntax, `kaspa-watchtower
+  --version`, config validation, and source-checkout smoke path.
+- Keep install docs aligned with the active release asset.
+
+### Phase 25 - Grafana Lightweight Panel
+
+- Surface the lightweight release posture in Grafana with explicit lightweight,
+  indexer-disabled, and indexer-watch-disabled signals.
+- Keep indexer-rich Toccata panels available but interpreted as long-term hold
+  signals on the lightweight host.
+
+### Phase 26 - Daily and Weekly Report Compression
+
+- Keep daily reports focused on core node SLOs, Prometheus alerts,
+  lightweight/indexer posture, market operator state, and CI/integration
+  status.
+- Add weekly lightweight release posture checks so long-window reports show if
+  indexer Docker resources reappear.
+
+### Phase 27 - Market Chart Polish
+
+- Keep SpaceX/private valuation watchlist cards on sparse 1D, 1W, and 1M
+  candlestick views.
+- Continue separating private valuation assets from public intraday market
+  feeds to avoid misleading empty charts.
+
+### Phase 28 - Alert Noise Tuning
+
+- Keep market-risk warnings separate from node-health incidents.
+- Treat expected disabled-indexer state as normal while lightweight mode is
+  enabled.
+- Escalate only real node, exporter, Prometheus, disk, and unexpected indexer
+  recreation drift.
+
+### Phase 29 - Ops Snapshot Automation
+
+- Make the ops snapshot print a single lightweight/indexer-hold verdict.
+- Include release asset and Docker publish status in the same snapshot used for
+  post-release review.
+
+### Phase 30 - v0.8.4 Candidate Reset
+
+- Use v0.8.3 post-release observations to decide the v0.8.4 scope.
+- Keep the active v0.8.4 candidate list Watchtower-only: report readability,
+  Grafana polish, market-risk noise tuning, status UI polish, weekly report
+  compression, and install-path verification.
+- Keep indexer, explorer API, and admin UI work in long-term backlog until the
+  indexer hold is explicitly lifted.
+
 ## Long-Term Backlog - Watchtower plus Indexer
 
 The long-term project direction is documented in

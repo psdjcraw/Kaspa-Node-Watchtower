@@ -24,6 +24,43 @@ section "Benchmark Trend"
 section "Market Snapshot"
 "$PYTHON_BIN" watchtower.py -c config.json --market-snapshot --market-timeout 5
 
+section "Lightweight Release Posture"
+"$PYTHON_BIN" - <<'PY'
+import subprocess
+
+
+def run(args):
+    completed = subprocess.run(args, check=False, text=True, capture_output=True)
+    if completed.returncode != 0:
+        return None
+    return [line.strip() for line in completed.stdout.splitlines() if line.strip()]
+
+
+def count(items, *needles):
+    if items is None:
+        return "unavailable"
+    return sum(1 for item in items if any(needle in item.lower() for needle in needles))
+
+
+containers = run(["docker", "ps", "--format", "{{.Names}}"])
+volumes = run(["docker", "volume", "ls", "--format", "{{.Name}}"])
+images = run(["docker", "images", "--format", "{{.Repository}}:{{.Tag}}"])
+
+indexer_containers = count(containers, "simply-kaspa-indexer", "kaspa_watchtower_indexer", "kaspa_watchtower_db", "kaspa-db-data")
+indexer_volumes = count(volumes, "simply-kaspa-indexer", "kaspa_watchtower_indexer", "kaspa_watchtower_db", "kaspa-db-data")
+indexer_images = count(images, "simply-kaspa-indexer")
+
+print("mode=lightweight")
+print("indexer_hold=long-term")
+print(f"docker_indexer_containers={indexer_containers}")
+print(f"docker_indexer_volumes={indexer_volumes}")
+print(f"docker_indexer_images={indexer_images}")
+if indexer_containers == 0 and indexer_volumes == 0 and indexer_images == 0:
+    print("verdict=ok")
+else:
+    print("verdict=review")
+PY
+
 section "History Summary 7d"
 scripts/export_history_sqlite.py --summary --days 7 | sed -n '/^window_days=/,$p'
 

@@ -11,7 +11,7 @@ Default image targets:
 
 ```bash
 psdjc/kaspa-node-watchtower:latest
-psdjc/kaspa-node-watchtower:0.8.2
+psdjc/kaspa-node-watchtower:0.8.3
 ```
 
 Override the repository or tag when building:
@@ -134,8 +134,8 @@ make docker-push
 Push a version tag:
 
 ```bash
-make docker-build DOCKER_TAG=0.8.2
-make docker-push DOCKER_TAG=0.8.2
+make docker-build DOCKER_TAG=0.8.3
+make docker-push DOCKER_TAG=0.8.3
 ```
 
 ## GitHub Actions Publish
@@ -151,6 +151,6 @@ Required repository secrets:
 Release flow:
 
 ```bash
-git tag v0.8.2
-git push origin v0.8.2
+git tag v0.8.3
+git push origin v0.8.3
 ```

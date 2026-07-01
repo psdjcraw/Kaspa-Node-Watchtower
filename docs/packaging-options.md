@@ -108,7 +108,7 @@ Current formula:
 packaging/homebrew/kaspa-node-watchtower.rb
 ```
 
-The formula installs the v0.8.2 release archive, exposes
+The formula installs the v0.8.3 release archive, exposes
 `kaspa-watchtower`, and prints post-install checks for `--version` and
 `--validate-config`. A source checkout remains the recommended path for full
 operator smoke, launchd service management, Prometheus/Grafana files, and
@@ -138,8 +138,8 @@ Push to Docker Hub:
 
 ```bash
 docker login
-make docker-build DOCKER_TAG=0.8.2
-make docker-push DOCKER_TAG=0.8.2
+make docker-build DOCKER_TAG=0.8.3
+make docker-push DOCKER_TAG=0.8.3
 ```
 
 Default image:

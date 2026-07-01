@@ -3621,6 +3621,85 @@
       ],
       "title": "Toccata Post-Activation Activity",
       "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "options": {
+                "0": {
+                  "text": "off"
+                },
+                "1": {
+                  "text": "on"
+                }
+              },
+              "type": "value"
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 24,
+        "x": 0,
+        "y": 100
+      },
+      "id": 53,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "targets": [
+        {
+          "expr": "kaspa_watchtower_lightweight_mode{node=\"$node\"}",
+          "legendFormat": "lightweight mode",
+          "refId": "A"
+        },
+        {
+          "expr": "1 - kaspa_watchtower_indexer_enabled{node=\"$node\"}",
+          "legendFormat": "indexer disabled",
+          "refId": "B"
+        },
+        {
+          "expr": "1 - kaspa_watchtower_indexer_watch_enabled{node=\"$node\"}",
+          "legendFormat": "indexer watch disabled",
+          "refId": "C"
+        }
+      ],
+      "title": "Lightweight Release Posture",
+      "type": "stat"
     }
   ],
   "refresh": "30s",
