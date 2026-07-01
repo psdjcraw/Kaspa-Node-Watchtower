@@ -116,6 +116,18 @@ def docker_lightweight_state() -> str:
     )
 
 
+def compact_market_report_lines(lines: list[str]) -> list[str]:
+    prefixes = (
+        "Kaspa market snapshot:",
+        "spot=",
+        "futures=",
+        "market_risk=",
+        "market_operator=",
+    )
+    selected = [line for line in lines if line.startswith(prefixes)]
+    return selected or lines[:5]
+
+
 config = watchtower.load_config(Path("config.json"))
 report, state = watchtower.build_stateful_report(config)
 benchmark = watchtower.build_benchmark_summary(
@@ -293,7 +305,7 @@ completed = subprocess.run(
 )
 market_lines = [line for line in completed.stdout.splitlines() if line and not line.startswith("Market snapshot saved:")]
 if completed.returncode == 0 and market_lines:
-    for line in market_lines[:7]:
+    for line in compact_market_report_lines(market_lines):
         print(f"- {line}")
 else:
     print(f"- unavailable: {(completed.stderr or completed.stdout).strip() or 'unknown'}")

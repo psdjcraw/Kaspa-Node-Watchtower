@@ -33,7 +33,7 @@ RUNNING_AS_SCRIPT = Path(sys.argv[0]).resolve() == Path(__file__).resolve()
 if RUNNING_AS_SCRIPT and VENV_PYTHON.exists() and Path(sys.prefix).resolve() != VENV_DIR.resolve():
     os.execv(str(VENV_PYTHON), [str(VENV_PYTHON), *sys.argv])
 
-VERSION = "0.8.2"
+VERSION = "0.8.3"
 TOCCATA_ACTIVATION_DAA = 474_165_565
 TOCCATA_ACTIVATION_UTC = dt.datetime(2026, 6, 30, 16, 15, tzinfo=dt.timezone.utc)
 TOCCATA_MIN_CPU_CORES = 8

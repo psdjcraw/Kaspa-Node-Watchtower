@@ -18,6 +18,8 @@ All notable changes to Kaspa Node Watchtower are tracked here.
 - Added a lightweight-first Phase 7-12 roadmap with market severity alignment,
   release-readiness checks, 24-48h observation, operator UX polish, long-term
   indexer hold, and Watchtower-only planning.
+- Added `docs/release-notes-v0.8.3.md` as the v0.8.3 release-candidate note and
+  verification checklist.
 - Discord command bridge now exposes `market`, `market-risk`, and
   `market-drill` outputs for KAS/USDT market snapshots and positioning-risk
   drills.
@@ -89,6 +91,9 @@ All notable changes to Kaspa Node Watchtower are tracked here.
 - Market snapshot, daily report, Discord market, Discord market-risk, and market
   risk alerts now share the same operator state, severity, priority, and
   next-action language.
+- Daily reports now compress the market section to source, spot, futures,
+  market risk, and market operator action lines.
+- Version now reports `0.8.3` for the v0.8.3 release candidate.
 - Daily reports now lead with the six core node SLO checks and render benchmark
   trends with reset-safe DAA/block deltas, relay rates, disk delta, and explicit
   trend notes instead of misleading negative counters.
