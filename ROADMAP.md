@@ -96,6 +96,34 @@ alignment, and keep the companion indexer on long-term hold:
   lifted.
 - Avoid adding short-term tasks that require the PostgreSQL-backed indexer.
 
+### Phase 18 - v0.8.3 Release Execution Prep
+
+- Keep tag and GitHub Release publishing as separate approved operator actions.
+- Prepare the release body, package/checksum, and Homebrew follow-up plan before
+  tagging.
+- Use `docs/release-execution-v0.8.3.md` as the execution checklist.
+
+### Phase 19 - 24 Hour Observation
+
+- Confirm daily report, Prometheus alerts, lightweight metrics, Docker/indexer
+  resource counts, disk free, and market-risk noise stay stable.
+
+### Phase 20 - Release Decision
+
+- If observation is clean, decide whether to tag `v0.8.3`, upload package
+  assets, and update Homebrew in a follow-up commit.
+
+### Phase 21 - Post-Release Watch
+
+- Watch daily report, alert bridge, Grafana, status HTML, Discord market-risk,
+  and Docker/indexer resource counts for 24 hours after release.
+
+### Phase 22 - Backlog Reset
+
+- Keep active backlog to Watchtower-only improvements: report readability,
+  Grafana lightweight panel, market-risk noise tuning, status UI polish, and
+  weekly report compression.
+
 ## Long-Term Backlog - Watchtower plus Indexer
 
 The long-term project direction is documented in

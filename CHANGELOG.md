@@ -20,6 +20,9 @@ All notable changes to Kaspa Node Watchtower are tracked here.
   indexer hold, and Watchtower-only planning.
 - Added `docs/release-notes-v0.8.3.md` as the v0.8.3 release-candidate note and
   verification checklist.
+- Added `docs/release-execution-v0.8.3.md` with tag-gated release execution,
+  24-hour observation, post-release watch, and Watchtower-only backlog reset
+  steps.
 - Discord command bridge now exposes `market`, `market-risk`, and
   `market-drill` outputs for KAS/USDT market snapshots and positioning-risk
   drills.

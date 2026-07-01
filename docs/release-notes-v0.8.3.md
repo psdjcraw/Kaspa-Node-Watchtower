@@ -29,6 +29,8 @@ PostgreSQL-backed indexer remains source-retained and disabled by default.
   until a `v0.8.3` release archive exists and its checksum is known.
 - The v0.8.3 package candidate should be generated from tracked files only with
   `make package`.
+- Release execution steps are tracked in
+  `docs/release-execution-v0.8.3.md`.
 
 ## Verification Checklist
 

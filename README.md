@@ -127,6 +127,7 @@ Current target environment:
 - [Docker image](docs/docker.md)
 - [Indexer integration plan](docs/indexer-integration-plan.md)
 - [v0.8.3 release candidate notes](docs/release-notes-v0.8.3.md)
+- [v0.8.3 release execution plan](docs/release-execution-v0.8.3.md)
 - [v0.8.2 release notes](docs/release-notes-v0.8.2.md)
 - [v0.8.1 release notes](docs/release-notes-v0.8.1.md)
 - [v0.8.0 release notes](docs/release-notes-v0.8.0.md)
