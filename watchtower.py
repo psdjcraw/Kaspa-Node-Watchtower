@@ -14277,6 +14277,35 @@ def format_summary(report: dict[str, Any]) -> str:
         indexer_metrics_ok = "skipped"
         indexer_lag = "disabled"
         indexer_checkpoint_age = "disabled"
+    if indexer_enabled:
+        indexer_line = (
+            "indexer="
+            f"enabled=True "
+            f"state={indexer_state} "
+            f"ok={indexer_ok} "
+            f"health={indexer_health} "
+            f"syncing={indexer.get('syncing', False)} "
+            f"metrics={indexer_metrics_ok} "
+            f"lag={indexer_lag} "
+            f"checkpoint_age={indexer_checkpoint_age}"
+        )
+    else:
+        indexer_line = "indexer=disabled reason=config ok=True probes=skipped"
+    if indexer_watch.get("enabled", False):
+        indexer_watch_line = (
+            "indexer_watch="
+            f"enabled=True "
+            f"ok={indexer_watch.get('ok', False)} "
+            f"addresses={len(indexer_watch.get('watch_addresses') or [])} "
+            f"events={len(indexer_watch.get('events') or [])} "
+            f"new={len(indexer_watch.get('new_events') or [])}"
+        )
+    else:
+        indexer_watch_line = (
+            "indexer_watch=disabled "
+            f"addresses={len(indexer_watch.get('watch_addresses') or [])} "
+            f"retained_events={len(indexer_watch.get('events') or [])}"
+        )
 
     lines = [
         f"Kaspa watchtower summary: {report['node_name']}",
@@ -14307,25 +14336,8 @@ def format_summary(report: dict[str, Any]) -> str:
             f"latest_relay_age={latest_relay_age_text}"
         ),
         f"processed={format_processed_progress(progress)}",
-        (
-            "indexer="
-            f"enabled={indexer_enabled} "
-            f"state={indexer_state} "
-            f"ok={indexer_ok} "
-            f"health={indexer_health} "
-            f"syncing={indexer.get('syncing', False)} "
-            f"metrics={indexer_metrics_ok} "
-            f"lag={indexer_lag} "
-            f"checkpoint_age={indexer_checkpoint_age}"
-        ),
-        (
-            "indexer_watch="
-            f"enabled={indexer_watch.get('enabled', False)} "
-            f"ok={indexer_watch.get('ok', False)} "
-            f"addresses={len(indexer_watch.get('watch_addresses') or [])} "
-            f"events={len(indexer_watch.get('events') or [])} "
-            f"new={len(indexer_watch.get('new_events') or [])}"
-        ),
+        indexer_line,
+        indexer_watch_line,
         f"disk_free={disk_text}",
         (
             "ops="
@@ -14533,6 +14545,17 @@ def format_discord_status(report: dict[str, Any]) -> str:
     maintenance_text = "active" if maintenance.get("active") else "off"
     causes = report.get("failure_causes") or check_failure_causes(report)
     causes_text = ", ".join(causes) if causes else "none"
+    if indexer.get("enabled", False):
+        indexer_text = (
+            "indexer="
+            f"enabled=True "
+            f"state={indexer.get('state', 'unknown')} "
+            f"ok={indexer.get('ok', False)} "
+            f"lag={indexer_metrics.get('lag_seconds', 'unknown')} "
+            f"checkpoint_age={indexer_metrics.get('checkpoint_age_seconds', 'unknown')}"
+        )
+    else:
+        indexer_text = "indexer=disabled reason=config ok=True probes=skipped"
     return "\n".join(
         [
             f"Kaspa status: {report.get('node_name', 'unknown')}",
@@ -14569,14 +14592,7 @@ def format_discord_status(report: dict[str, Any]) -> str:
                 f"running={mining.get('running', False)} "
                 f"hashrate={format_hashrate_local(mining.get('hashrate_hs'))}"
             ),
-            (
-                "indexer="
-                f"enabled={indexer.get('enabled', False)} "
-                f"state={indexer.get('state', 'unknown')} "
-                f"ok={indexer.get('ok', False)} "
-                f"lag={indexer_metrics.get('lag_seconds', 'unknown')} "
-                f"checkpoint_age={indexer_metrics.get('checkpoint_age_seconds', 'unknown')}"
-            ),
+            indexer_text,
             f"cause_guess={causes_text}",
             f"failed_checks={failed_text}",
         ]
@@ -15156,6 +15172,8 @@ def nested_metric_numeric(status: dict[str, Any], key: str) -> float | None:
 
 def format_toccata_indexer_daily_summary(report: dict[str, Any]) -> str:
     indexer = report.get("indexer") or {}
+    if not bool(indexer.get("enabled", False)):
+        return "disabled by config; source retained, probes skipped"
     metrics = indexer.get("metrics") or {}
     if not metrics:
         return "unavailable"

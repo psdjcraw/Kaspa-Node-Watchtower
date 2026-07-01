@@ -110,16 +110,19 @@ bullet(
     ),
 )
 bullet("디스크", f"{watchtower.format_gib(disk.get('free_gb'))} free ({disk.get('free_percent', 'unknown')}%)")
-bullet(
-    "인덱서",
-    (
-        f"state={indexer.get('state', 'unknown')}, "
-        f"health={indexer.get('health_ok', 'unknown')}, "
-        f"syncing={indexer.get('syncing', 'unknown')}, "
-        f"watch_events={len(watch.get('events') or [])}, "
-        f"new={len(watch.get('new_events') or [])}"
-    ),
-)
+if indexer.get("enabled", False):
+    bullet(
+        "인덱서",
+        (
+            f"state={indexer.get('state', 'unknown')}, "
+            f"health={indexer.get('health_ok', 'unknown')}, "
+            f"syncing={indexer.get('syncing', 'unknown')}, "
+            f"watch_events={len(watch.get('events') or [])}, "
+            f"new={len(watch.get('new_events') or [])}"
+        ),
+    )
+else:
+    bullet("인덱서", "disabled by config; source retained, probes skipped")
 bullet("Toccata indexer", watchtower.format_toccata_indexer_daily_summary(report))
 
 section("3. 사고 / 점검")

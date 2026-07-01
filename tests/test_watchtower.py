@@ -2275,11 +2275,8 @@ class WatchtowerUnitTests(unittest.TestCase):
 
         text = watchtower.format_summary(report)
 
-        self.assertIn(
-            "indexer=enabled=False state=disabled ok=True health=skipped "
-            "syncing=False metrics=skipped lag=disabled checkpoint_age=disabled",
-            text,
-        )
+        self.assertIn("indexer=disabled reason=config ok=True probes=skipped", text)
+        self.assertIn("indexer_watch=disabled addresses=0 retained_events=0", text)
 
     def test_format_discord_status_is_operator_friendly(self):
         report = {
@@ -2330,6 +2327,33 @@ class WatchtowerUnitTests(unittest.TestCase):
         self.assertIn("wallet=enabled=True ok=True addresses=1 total=1.23456789 KAS", text)
         self.assertIn("indexer=enabled=True state=syncing ok=True lag=30 checkpoint_age=45", text)
         self.assertIn("failed_checks=disk_free", text)
+
+    def test_format_discord_status_treats_disabled_indexer_as_skipped(self):
+        report = {
+            "node_name": "kaspa-mainnet-local",
+            "status": "ok",
+            "severity": "ok",
+            "health_score": 100,
+            "checks": [],
+            "grpc_metrics": {},
+            "incident": {},
+            "maintenance": {},
+            "wallet": {},
+            "mining": {},
+            "indexer": {"enabled": False},
+        }
+
+        text = watchtower.format_discord_status(report)
+
+        self.assertIn("indexer=disabled reason=config ok=True probes=skipped", text)
+
+    def test_toccata_indexer_daily_summary_treats_disabled_indexer_as_skipped(self):
+        report = {"indexer": {"enabled": False}}
+
+        self.assertEqual(
+            watchtower.format_toccata_indexer_daily_summary(report),
+            "disabled by config; source retained, probes skipped",
+        )
 
     def test_wallet_balances_are_watch_only_grpc_reads(self):
         fetch = mock.Mock(
@@ -3016,6 +3040,7 @@ class WatchtowerUnitTests(unittest.TestCase):
     def test_format_toccata_indexer_daily_summary_includes_core_and_activity(self):
         report = {
             "indexer": {
+                "enabled": True,
                 "metrics": {
                     "toccata_schema": {
                         "core_supported": 5,
