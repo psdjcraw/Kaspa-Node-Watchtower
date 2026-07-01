@@ -18,6 +18,9 @@ date '+생성시각: %Y-%m-%d %H:%M:%S %z'
 "$PYTHON_BIN" - <<'PY'
 import sqlite3
 import subprocess
+import json
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 import watchtower
@@ -60,6 +63,59 @@ def peer_slo() -> str:
     return "ok" if peers >= 1 and active >= 1 else "fail"
 
 
+def active_prometheus_alerts() -> str:
+    url = "http://127.0.0.1:9090/api/v1/alerts"
+    try:
+        with urllib.request.urlopen(url, timeout=5) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except (OSError, urllib.error.URLError, json.JSONDecodeError) as exc:
+        return f"unavailable ({exc})"
+    alerts = [
+        item
+        for item in payload.get("data", {}).get("alerts", [])
+        if item.get("labels", {}).get("service") == "kaspa-watchtower"
+    ]
+    if not alerts:
+        return "none"
+    names = [
+        f"{item.get('labels', {}).get('alertname', 'unknown')}({item.get('state', 'unknown')})"
+        for item in alerts
+    ]
+    return f"{len(alerts)} " + ", ".join(names)
+
+
+def docker_lightweight_state() -> str:
+    def run(args: list[str]) -> list[str] | None:
+        completed = subprocess.run(args, check=False, text=True, capture_output=True)
+        if completed.returncode != 0:
+            return None
+        return [line.strip() for line in completed.stdout.splitlines() if line.strip()]
+
+    containers = run(["docker", "ps", "--format", "{{.Names}}"])
+    volumes = run(["docker", "volume", "ls", "--format", "{{.Name}}"])
+    images = run(["docker", "images", "--format", "{{.Repository}}:{{.Tag}}"])
+    if containers is None or volumes is None or images is None:
+        return "unavailable"
+
+    def is_indexer_name(value: str) -> bool:
+        text = value.lower()
+        return (
+            "simply-kaspa-indexer" in text
+            or "kaspa_watchtower_indexer" in text
+            or "kaspa_watchtower_db" in text
+            or "kaspa-db-data" in text
+        )
+
+    indexer_containers = [item for item in containers if is_indexer_name(item)]
+    indexer_volumes = [item for item in volumes if is_indexer_name(item)]
+    indexer_images = [item for item in images if "simply-kaspa-indexer" in item.lower()]
+    return (
+        f"containers={len(indexer_containers)}, "
+        f"volumes={len(indexer_volumes)}, "
+        f"images={len(indexer_images)}"
+    )
+
+
 config = watchtower.load_config(Path("config.json"))
 report, state = watchtower.build_stateful_report(config)
 benchmark = watchtower.build_benchmark_summary(
@@ -95,6 +151,7 @@ section("1. 한눈에")
 bullet("판정", verdict)
 bullet("상태", f"{report.get('status')} / {report.get('severity')} / health {report.get('health_score', 'unknown')}")
 bullet("실패 체크", join_or_none(failed))
+bullet("Prometheus alerts", active_prometheus_alerts())
 bullet(
     "핵심 SLO",
     (
@@ -294,6 +351,7 @@ bullet(
         f"risk={multi_fields.get('risk_nodes', 'unknown')}"
     ),
 )
+bullet("Docker/indexer", docker_lightweight_state())
 PY
 
 section "9. 통합 / CI"

@@ -34,7 +34,14 @@ stack:
 - Indexer posture: `indexer=disabled reason=config ok=True probes=skipped` and
   `indexer_watch=disabled`; this is the expected healthy lightweight state.
 - Daily report wording: `disabled by config; source retained, probes skipped`
-  is expected for both indexer and Toccata indexer lines.
+  is expected for both indexer and Toccata indexer lines, and the same report
+  includes Prometheus watchtower alert count plus Docker indexer recreation
+  counts.
+- Prometheus posture: `kaspa_watchtower_lightweight_mode` should be `1` while
+  `kaspa_watchtower_indexer_enabled` and
+  `kaspa_watchtower_indexer_watch_enabled` remain `0`.
+- Ops snapshot: `scripts/ops_snapshot.sh` should report zero indexer
+  containers, zero indexer DB volumes, and zero `simply-kaspa-indexer` images.
 - Market Watchlist rendering: SpaceX shows only `1D`, `1W`, and `1M`
   private-valuation candlestick cards; desktop and 390px mobile checks showed
   no horizontal overflow.

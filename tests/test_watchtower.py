@@ -1506,6 +1506,7 @@ class WatchtowerUnitTests(unittest.TestCase):
         self.assertIn('kaspa_watchtower_whale_latest_amount_kas{node="test-node"} 1.25e+06', metrics)
         self.assertIn('kaspa_watchtower_whale_confirmed_candidates{node="test-node"} 1', metrics)
         self.assertIn('kaspa_watchtower_whale_confirmed_baseline_available{node="test-node"} 1', metrics)
+        self.assertIn('kaspa_watchtower_lightweight_mode{node="test-node"} 0', metrics)
         self.assertIn('kaspa_watchtower_indexer_enabled{node="test-node"} 1', metrics)
         self.assertIn('kaspa_watchtower_indexer_ok{node="test-node"} 1', metrics)
         self.assertIn('kaspa_watchtower_indexer_syncing{node="test-node"} 0', metrics)
@@ -1576,6 +1577,7 @@ class WatchtowerUnitTests(unittest.TestCase):
 
         metrics = watchtower.format_prometheus_metrics(report, {}, {}, {})
 
+        self.assertIn('kaspa_watchtower_lightweight_mode{node="test-node"} 1', metrics)
         self.assertIn('kaspa_watchtower_sync_active{node="test-node"} 0', metrics)
         self.assertIn('kaspa_watchtower_sync_baseline_available{node="test-node"} 0', metrics)
         self.assertIn('kaspa_watchtower_sync_daa_rate_per_hour{node="test-node"} 0', metrics)
@@ -4572,6 +4574,10 @@ class WatchtowerUnitTests(unittest.TestCase):
             self.assertIn('data-liquidation-panel="12h"', html)
             self.assertIn("Hashrate", html)
             self.assertIn("1.25 PH/s", html)
+            self.assertIn("Lightweight mode", html)
+            self.assertIn("Indexer disabled by config; source retained; probes skipped", html)
+            self.assertIn("healthy disabled indexer", html)
+            self.assertIn("table-layout: fixed", html)
             self.assertIn("network_hashes_per_second trend", html)
             self.assertIn("Toccata Readiness", html)
             self.assertIn("Post-Toccata Compatibility", html)

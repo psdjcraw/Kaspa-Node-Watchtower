@@ -599,6 +599,9 @@ processed transaction freshness, mainnet sync progress, benchmark trend,
 optional KAS/USDT spot/futures market context, recent SQLite history summary,
 integration status, GitHub Actions status, recovery attempts, and dashboard
 locations.
+It also prints the current Prometheus watchtower alert count and the lightweight
+indexer Docker posture so `alerts=none`, zero indexer containers, and zero
+indexer DB volumes are visible in the same operator report.
 Market snapshots include a positioning risk score from funding z-score,
 OI/volume crowding, futures basis, and cross-exchange spot dispersion.
 The generated Futures dashboard also shows the current partial live risk score
@@ -625,6 +628,20 @@ Prometheus HTTP endpoint:
 ```text
 http://127.0.0.1:9660/metrics
 ```
+
+Lightweight mode is exported as `kaspa_watchtower_lightweight_mode`. A value of
+`1` means the companion indexer is intentionally disabled and Watchtower should
+treat `indexer=disabled reason=config ok=True probes=skipped` as healthy.
+
+Operational snapshot:
+
+```bash
+scripts/ops_snapshot.sh
+```
+
+The snapshot includes Prometheus active alerts, the lightweight mode metric,
+indexer enabled metrics, Docker indexer container/volume/image counts, Docker
+system disk usage, Grafana reachability, and recent status files.
 
 Canvas-hosted status page file:
 

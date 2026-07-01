@@ -31,11 +31,36 @@ else:
 
 exporter_metric() {
   local metric="$1"
-  curl -fsS "$EXPORTER_URL/metrics" |
+  local metrics
+  metrics="$(curl -fsS "$EXPORTER_URL/metrics" 2>/dev/null || true)"
+  printf '%s\n' "$metrics" |
     awk -v metric="$metric" '
       $1 ~ ("^" metric "(\\{|$)") {print $2; found=1; exit}
       END {if (!found) print "missing"}
     '
+}
+
+docker_count_matching() {
+  local kind="$1"
+  local pattern="$2"
+  if ! command -v docker >/dev/null 2>&1; then
+    printf 'unavailable'
+    return
+  fi
+  case "$kind" in
+    container)
+      docker ps --format '{{.Names}}' | awk -v pattern="$pattern" 'BEGIN {count=0} tolower($0) ~ pattern {count++} END {print count}'
+      ;;
+    volume)
+      docker volume ls --format '{{.Name}}' | awk -v pattern="$pattern" 'BEGIN {count=0} tolower($0) ~ pattern {count++} END {print count}'
+      ;;
+    image)
+      docker images --format '{{.Repository}}:{{.Tag}}' | awk -v pattern="$pattern" 'BEGIN {count=0} tolower($0) ~ pattern {count++} END {print count}'
+      ;;
+    *)
+      printf 'unknown'
+      ;;
+  esac
 }
 
 section "Watchtower"
@@ -117,6 +142,19 @@ else:
         for item in alerts
     ]
     print(f"{len(alerts)} " + ", ".join(names))'
+
+section "Lightweight Indexer"
+printf 'lightweight_mode metric: %s\n' "$(exporter_metric kaspa_watchtower_lightweight_mode)"
+printf 'indexer_enabled metric: %s\n' "$(exporter_metric kaspa_watchtower_indexer_enabled)"
+printf 'indexer_watch_enabled metric: %s\n' "$(exporter_metric kaspa_watchtower_indexer_watch_enabled)"
+printf 'indexer containers: %s\n' "$(docker_count_matching container 'simply-kaspa-indexer|kaspa_watchtower_indexer|kaspa_watchtower_db|kaspa-db-data')"
+printf 'indexer volumes: %s\n' "$(docker_count_matching volume 'simply-kaspa-indexer|kaspa_watchtower_indexer|kaspa_watchtower_db|kaspa-db-data')"
+printf 'indexer images: %s\n' "$(docker_count_matching image 'simply-kaspa-indexer')"
+if command -v docker >/dev/null 2>&1; then
+  docker system df
+else
+  printf 'docker unavailable\n'
+fi
 
 section "Grafana"
 status="$(curl -s -o /dev/null -w '%{http_code}' "$GRAFANA_URL$GRAFANA_DASHBOARD_PATH")"

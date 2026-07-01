@@ -12,6 +12,9 @@ All notable changes to Kaspa Node Watchtower are tracked here.
 - Added a current lightweight-operation baseline to `docs/status.md`, including
   the expected disabled-indexer report wording and SpaceX watchlist responsive
   render checks.
+- Added lightweight-mode visibility across daily reports, Prometheus metrics,
+  the status dashboard, and `scripts/ops_snapshot.sh` so disabled-indexer
+  operation and Docker indexer recreation checks are explicit.
 - Discord command bridge now exposes `market`, `market-risk`, and
   `market-drill` outputs for KAS/USDT market snapshots and positioning-risk
   drills.

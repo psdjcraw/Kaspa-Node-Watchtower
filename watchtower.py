@@ -8085,6 +8085,20 @@ def whale_watch_panel(report: dict[str, Any], state: dict[str, Any]) -> str:
 def indexer_watch_panel(report: dict[str, Any], state: dict[str, Any]) -> str:
     indexer = report.get("indexer") or {}
     watch = report.get("indexer_watch") or {}
+    lightweight_mode = not bool(indexer.get("enabled"))
+    lightweight_notice = ""
+    if lightweight_mode:
+        lightweight_notice = """
+    <section class="panel">
+      <h2>Lightweight Mode</h2>
+      <div class="context-grid">
+        <div class="context-item"><div class="context-label">State</div><div class="context-value">healthy disabled indexer</div></div>
+        <div class="context-item"><div class="context-label">Expected Report</div><div class="context-value">disabled by config; source retained, probes skipped</div></div>
+        <div class="context-item"><div class="context-label">Source</div><div class="context-value">retained for manual re-enable</div></div>
+        <div class="context-item"><div class="context-label">Docker</div><div class="context-value">containers and DB volume should remain absent</div></div>
+      </div>
+    </section>
+        """
     targets = normalize_watch_addresses(watch.get("watch_addresses"))
     address_states = list(watch.get("address_states") or [])
     state_by_address = {str(item.get("address") or ""): item for item in address_states}
@@ -8220,6 +8234,7 @@ def indexer_watch_panel(report: dict[str, Any], state: dict[str, Any]) -> str:
     checkpoint_age_text = "unknown" if checkpoint_age is None else f"{float(checkpoint_age):.1f}s"
     return f"""
     <section id="tab-indexer" class="tab-panel">
+    {lightweight_notice}
     <section class="visual-grid">
       {visual_card("Indexer State", indexer.get("state") or "disabled", f"ok={indexer.get('ok', False)}", "neutral")}
       {visual_card("Checkpoint Age", checkpoint_age_text, f"fresh={indexer.get('checkpoint_fresh', False)}", "neutral")}
@@ -8601,6 +8616,13 @@ def write_status_page(
         next_action = "Inspect warning checks and confirm trend before recovery"
     network_text = grpc_metrics.get("network_id", "unknown")
     sync_text = grpc_metrics.get("is_synced", "unknown")
+    lightweight_mode = not bool(indexer.get("enabled"))
+    lightweight_mode_text = "Lightweight mode" if lightweight_mode else "Full indexer mode"
+    lightweight_mode_detail = (
+        "Indexer disabled by config; source retained; probes skipped"
+        if lightweight_mode
+        else "Indexer probes enabled"
+    )
     visual_cards = "\n".join(
         [
             visual_card("Peers", grpc_metrics.get("peer_count", "unknown"), f"active {grpc_metrics.get('active_peers', 'unknown')}", tone_for_check(report, "peer_count")),
@@ -8729,6 +8751,25 @@ def write_status_page(
     .badge.ok {{ background: var(--ok); }}
     .badge.warn {{ background: var(--warn); }}
     .badge.critical {{ background: var(--critical); }}
+    .mode-badge {{
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 31px;
+      padding: 7px 10px;
+      border: 1px solid #b9e3ca;
+      border-radius: 999px;
+      background: var(--ok-soft);
+      color: var(--ok);
+      font-size: 12px;
+      font-weight: 900;
+      white-space: nowrap;
+    }}
+    .mode-badge.full {{
+      border-color: #fed7aa;
+      background: #fff7ed;
+      color: #b26a00;
+    }}
     .eyebrow {{
       color: var(--muted);
       font-size: 11px;
@@ -9531,8 +9572,8 @@ def write_status_page(
     .tab-panel {{
       margin-bottom: 14px;
     }}
-    table {{ border-collapse: collapse; width: 100%; font-size: 13px; }}
-    th, td {{ border-bottom: 1px solid var(--line); padding: 8px; text-align: left; vertical-align: top; }}
+    table {{ border-collapse: collapse; width: 100%; table-layout: fixed; font-size: 13px; }}
+    th, td {{ border-bottom: 1px solid var(--line); padding: 8px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word; }}
     th {{ color: var(--muted); font-size: 12px; font-weight: 700; }}
     code {{ background: #eef2f6; padding: 2px 4px; border-radius: 4px; overflow-wrap: anywhere; word-break: break-all; white-space: normal; }}
     .ok-text {{ color: var(--ok); font-weight: 700; }}
@@ -9578,6 +9619,7 @@ def write_status_page(
         </div>
         <div class="hero-actions">
           <a class="header-link" href="stream.html">Stream</a>
+          <div class="mode-badge{' full' if not lightweight_mode else ''}" title="{html.escape(lightweight_mode_detail)}">{html.escape(lightweight_mode_text)}</div>
           <div class="badge {html.escape(report['severity'])}">{html.escape(report['severity'])}</div>
         </div>
       </div>
@@ -16071,6 +16113,7 @@ def format_prometheus_metrics(
         node_labels,
     )
     add_prometheus_metric(lines, "kaspa_watchtower_health_score", report.get("health_score"), node_labels)
+    add_prometheus_metric(lines, "kaspa_watchtower_lightweight_mode", not bool(indexer.get("enabled")), node_labels)
     add_prometheus_metric(lines, "kaspa_watchtower_incident_active", bool(incident.get("active")), node_labels)
     add_prometheus_metric(lines, "kaspa_watchtower_incident_duration_seconds", incident.get("duration_seconds") or 0, node_labels)
     add_prometheus_metric(lines, "kaspa_watchtower_maintenance_active", bool(maintenance.get("active")), node_labels)
