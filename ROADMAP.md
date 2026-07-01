@@ -232,6 +232,47 @@ alignment, and keep the companion indexer on long-term hold:
 - Out of scope: companion indexer reactivation, explorer API validation, admin
   UI, and indexer-backed watchlist expansion.
 
+### Phase 37 - Alert Wording Cleanup
+
+- Add explicit alert `signal_type` labels so Discord/CLI alert bodies separate
+  node health, node lifecycle, market risk, wallet, whale, watch, and indexer
+  lifecycle signals.
+- Keep lightweight disabled-indexer posture out of alert escalation unless a
+  real drift check fails.
+
+### Phase 38 - Status UI Mobile Polish
+
+- Keep first-screen status cards focused on release, indexer hold, peers, relay,
+  sync, tx rate, and disk.
+- Preserve mobile-safe wrapping for release posture, SpaceX/private valuation,
+  and market panels.
+
+### Phase 39 - Grafana Panel Install Sync
+
+- Copy the repository `grafana/kaspa-watchtower.json` into the active
+  provisioning path used by the local Grafana stack.
+- Confirm the provisioned dashboard includes `Lightweight Release Posture`.
+
+### Phase 40 - Report Compression Pass
+
+- Keep daily reports as current-state summaries.
+- Keep weekly reports focused on trend and drift by compressing market output to
+  source, spot, futures, market risk, and operator action lines.
+- Keep `scripts/ops_snapshot.sh` as the detailed diagnostic surface.
+
+### Phase 41 - v0.8.4 Release Candidate Prep
+
+- Keep v0.8.4 candidate prep limited to Watchtower-only polish already landed on
+  main.
+- Do not bump version or tag until a separate release decision.
+
+### Phase 42 - Decision Gate
+
+- Decide whether v0.8.4 is worth cutting after post-release drift watch and
+  install-path checks stay clean.
+- If no urgent release is needed, keep main as stable post-v0.8.3 polish and
+  continue monitoring.
+
 ## Long-Term Backlog - Watchtower plus Indexer
 
 The long-term project direction is documented in

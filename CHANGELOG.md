@@ -6,6 +6,12 @@ All notable changes to Kaspa Node Watchtower are tracked here.
 
 ### Added
 
+- Alert bodies now include `signal_type` so market risk, node health, node
+  lifecycle, indexer lifecycle, wallet, whale, and watch events are easier to
+  route without confusing market warnings for node incidents.
+- Added Phase 37-42 planning for alert wording cleanup, status mobile polish,
+  Grafana provisioning sync, weekly report compression, v0.8.4 candidate prep,
+  and release decision gating.
 - Added `make release-install-check` to verify the published v0.8.3 release
   tarball, checksum file, extracted CLI version, and Homebrew formula URL,
   version, and SHA-256 before install or upgrade handoff.
@@ -102,6 +108,9 @@ All notable changes to Kaspa Node Watchtower are tracked here.
 
 ### Changed
 
+- Weekly reports now compress the market snapshot to source, spot, futures,
+  market risk, and operator action lines while leaving detailed diagnostics to
+  `scripts/ops_snapshot.sh`.
 - SpaceX investment watchlist cards now render sparse private valuation marks as
   OHLC candlesticks on 1D, 1W, and 1M views instead of showing unavailable
   private-source placeholders across intraday chart slots.

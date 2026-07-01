@@ -14198,6 +14198,22 @@ def format_alert(
     failed_checks = [check for check in report["checks"] if not check["ok"]]
     incident = report.get("incident") or {}
     maintenance = report.get("maintenance") or {}
+    if event == "market_risk_high":
+        signal_type = "market_risk"
+    elif event in {"sync_completed", "incident_resolved"} or (report["severity"] == "ok" and previous_status and previous_status != "ok"):
+        signal_type = "node_lifecycle"
+    elif event == "indexer_ready":
+        signal_type = "indexer_lifecycle"
+    elif event in {"indexer_watch_event", "sdk_watch_event"}:
+        signal_type = "watch_event"
+    elif event in {"wallet_changed", "wallet_large_outgoing"}:
+        signal_type = "wallet"
+    elif event == "whale_tx_detected":
+        signal_type = "whale"
+    elif failed_checks:
+        signal_type = "node_health"
+    else:
+        signal_type = "status"
     if event == "sync_completed":
         title = f"Kaspa watchtower: {report['node_name']} sync completed"
     elif event == "indexer_ready":
@@ -14227,6 +14243,7 @@ def format_alert(
 
     lines = [
         title,
+        f"signal_type={signal_type}",
         f"checked_at={report['checked_at']}",
         f"health_score={report.get('health_score', 'unknown')}",
     ]

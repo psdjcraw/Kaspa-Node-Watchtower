@@ -623,8 +623,10 @@ Integration and GitHub status failures are reported inline instead of stopping
 the rest of the report. Unlike alert and smoke wrappers, it intentionally emits
 output while healthy.
 The weekly report focuses on diagnostics summary, 7-day and 30-day SQLite
-history windows, benchmark trend, optional KAS/USDT market context, recovery
-attempts, and upgrade checkpoints.
+history windows, benchmark trend, compact KAS/USDT market context, release
+posture drift, recovery attempts, and upgrade checkpoints. The market section is
+intentionally compressed to source, spot, futures, market risk, and operator
+action lines; use `scripts/ops_snapshot.sh` for detailed live diagnostics.
 `make weekly-archive` pairs the report with a history archive for off-host
 backup.
 
@@ -672,6 +674,15 @@ make release-install-check
 This downloads the published GitHub Release tarball and checksum, verifies the
 archive SHA-256, checks the extracted `watchtower.py --version`, and confirms
 the Homebrew formula URL, version, and SHA-256 point at the same asset.
+
+Alert bodies include a `signal_type` field for routing:
+
+- `node_health`: failed node or host checks
+- `node_lifecycle`: recovered or sync-completed state changes
+- `market_risk`: KAS/USDT positioning risk
+- `indexer_lifecycle`: companion-indexer lifecycle events
+- `watch_event`, `wallet`, `whale`: address, wallet, and whale-watch events
+- `status`: ordinary status-only alert bodies
 
 Canvas-hosted status page file:
 

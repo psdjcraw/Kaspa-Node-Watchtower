@@ -3248,6 +3248,7 @@ class WatchtowerUnitTests(unittest.TestCase):
         text = watchtower.format_alert(report, "ok", "ok", event="sync_completed")
 
         self.assertIn("sync completed", text)
+        self.assertIn("signal_type=node_lifecycle", text)
         self.assertIn("상태: mainnet sync completed", text)
         self.assertIn("require_synced=true", text)
 
@@ -3285,6 +3286,7 @@ class WatchtowerUnitTests(unittest.TestCase):
         text = watchtower.format_alert(report, "ok", "ok", event="indexer_ready")
 
         self.assertIn("indexer ready", text)
+        self.assertIn("signal_type=indexer_lifecycle", text)
         self.assertIn("상태: indexer catch-up completed", text)
         self.assertIn("state=up", text)
         self.assertIn("checkpoint_age=12", text)
@@ -4080,6 +4082,7 @@ class WatchtowerUnitTests(unittest.TestCase):
 
         self.assertIsNotNone(key)
         self.assertIn("market risk high", text)
+        self.assertIn("signal_type=market_risk", text)
         self.assertIn("Kaspa market risk: test-node", text)
         self.assertIn("level=critical score=4", text)
 

@@ -22,7 +22,22 @@ section "Benchmark Trend"
 "$PYTHON_BIN" watchtower.py -c config.json --benchmark-report --benchmark-limit 336
 
 section "Market Snapshot"
-"$PYTHON_BIN" watchtower.py -c config.json --market-snapshot --market-timeout 5
+"$PYTHON_BIN" watchtower.py -c config.json --market-snapshot --market-timeout 5 |
+  "$PYTHON_BIN" -c '
+import sys
+
+prefixes = (
+    "Kaspa market snapshot:",
+    "spot=",
+    "futures=",
+    "market_risk=",
+    "market_operator=",
+)
+for line in sys.stdin:
+    line = line.rstrip()
+    if line.startswith(prefixes):
+        print(line)
+'
 
 section "Lightweight Release Posture"
 "$PYTHON_BIN" - <<'PY'
