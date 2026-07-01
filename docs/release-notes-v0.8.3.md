@@ -1,8 +1,8 @@
-# Kaspa Node Watchtower v0.8.3 Release Candidate Notes
+# Kaspa Node Watchtower v0.8.3 Release Notes
 
-v0.8.3 is a lightweight-operation stabilization release candidate. It keeps the
-Python Watchtower as the active operator surface while the companion
-PostgreSQL-backed indexer remains source-retained and disabled by default.
+v0.8.3 is a lightweight-operation stabilization release. It keeps the Python
+Watchtower as the active operator surface while the companion PostgreSQL-backed
+indexer remains source-retained and disabled by default.
 
 ## Highlights
 
@@ -19,16 +19,13 @@ PostgreSQL-backed indexer remains source-retained and disabled by default.
   1M candlesticks.
 - `ROADMAP.md` is reorganized around Watchtower-only lightweight operation, with
   indexer-backed explorer/admin work moved to long-term backlog.
-- `watchtower.py --version` reports `0.8.3` for release-candidate package
-  generation.
+- `watchtower.py --version` reports `0.8.3`.
 
-## Release Candidate Scope
+## Release Scope
 
-- Tag and GitHub Release publishing are intentionally separate operator actions.
-- The Homebrew formula remains pinned to the latest published `0.8.2` asset
-  until a `v0.8.3` release archive exists and its checksum is known.
-- The v0.8.3 package candidate should be generated from tracked files only with
-  `make package`.
+- The v0.8.3 package is generated from tracked files only with `make package`.
+- The Homebrew formula is updated after the GitHub Release asset exists and its
+  checksum is known.
 - Release execution steps are tracked in
   `docs/release-execution-v0.8.3.md`.
 

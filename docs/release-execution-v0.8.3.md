@@ -1,18 +1,16 @@
 # v0.8.3 Release Execution Plan
 
-This plan prepares the v0.8.3 release without publishing a tag or GitHub
-Release. Tagging and publishing require a separate operator command.
+This plan records the v0.8.3 release execution flow.
 
 ## Phase 18 - Release Execution Prep
 
 Before tagging:
 
-- Confirm the release candidate commit is the intended `main` HEAD.
+- Confirm the release commit is the intended `main` HEAD.
 - Run the verification checklist in `docs/release-notes-v0.8.3.md`.
 - Generate the final tracked-source package with `make package`.
 - Record the generated package path and SHA-256 checksum.
-- Confirm GitHub Actions smoke and CodeQL are green for the release candidate
-  commit.
+- Confirm GitHub Actions smoke and CodeQL are green for the release commit.
 - Prepare the GitHub Release body from `docs/release-notes-v0.8.3.md`.
 - Keep the Homebrew formula unchanged until the GitHub Release asset exists.
 
