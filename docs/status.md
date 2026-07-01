@@ -48,6 +48,8 @@ stack:
 - Release install check: `make release-install-check` should verify the v0.8.3
   release archive checksum, extracted CLI version, and Homebrew formula URL,
   version, and SHA-256.
+- v0.8.4 decision: hold release for now; keep post-v0.8.3 polish on `main`
+  unless drift appears or the operator explicitly asks to cut a patch release.
 - Market Watchlist rendering: SpaceX shows only `1D`, `1W`, and `1M`
   private-valuation candlestick cards; desktop and 390px mobile checks showed
   no horizontal overflow.
@@ -99,6 +101,9 @@ Last verified manually on `2026-07-01`:
   dashboard HTTP `302`, lightweight/indexer-hold verdict OK, and GitHub Actions
   smoke/codeql success.
 - `make release-install-check` passed for `v0.8.3`.
+- `dist/kaspa-node-watchtower-v0.8.4-dry-run.tar.gz` was generated for
+  release-readiness review only, with SHA-256
+  `c50156281e643678ee21351ac2d4669b3f9ebd5554940cbd1559008e2943d375`.
 - Synced-state sync progress metrics now export inactive `0` values instead of
   appearing as missing in exporter and Prometheus query output.
 - `make history-multi-node` exported SQLite history and compared

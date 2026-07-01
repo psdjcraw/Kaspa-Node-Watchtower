@@ -273,6 +273,46 @@ alignment, and keep the companion indexer on long-term hold:
 - If no urgent release is needed, keep main as stable post-v0.8.3 polish and
   continue monitoring.
 
+### Phase 43 - Short Stability Observation
+
+- Use `scripts/ops_snapshot.sh` as the short-window stability gate for
+  `health_score=100`, no failed checks, Prometheus alerts `0`, GitHub Actions
+  green, and lightweight/indexer-hold verdict OK.
+- Keep disk free, relay age, processed transaction age, and peer count inside
+  the current post-v0.8.3 baseline.
+
+### Phase 44 - Alert Signal Drill
+
+- Keep tests and manual samples confirming `signal_type` is present for node
+  lifecycle, indexer lifecycle, market risk, and node-health alert bodies.
+- Continue treating disabled indexer posture as expected state in lightweight
+  mode.
+
+### Phase 45 - Status and Grafana Visual Check
+
+- Confirm generated `state/status.html` includes Release, v0.8.3, Indexer Hold,
+  Lightweight mode, and SpaceX/private valuation content.
+- Confirm both the repository and active Grafana provisioning dashboard include
+  `Lightweight Release Posture`.
+
+### Phase 46 - Report Role Separation
+
+- Keep daily reports as current operator state.
+- Keep weekly reports as trend and drift review.
+- Keep ops snapshot as the detailed diagnostic and release-readiness surface.
+
+### Phase 47 - v0.8.4 RC Package Dry-Run
+
+- Generate a dry-run package without bumping `watchtower.py --version` or
+  tagging.
+- Record the dry-run archive and checksum for release-readiness review only.
+
+### Phase 48 - Release / No-Release Decision
+
+- Current decision: hold v0.8.4 release unless post-v0.8.3 drift appears or the
+  operator wants the polish packaged as a new release.
+- Keep main stable with the v0.8.4 polish commits and continue monitoring.
+
 ## Long-Term Backlog - Watchtower plus Indexer
 
 The long-term project direction is documented in

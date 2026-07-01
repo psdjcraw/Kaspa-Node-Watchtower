@@ -6,6 +6,11 @@ All notable changes to Kaspa Node Watchtower are tracked here.
 
 ### Added
 
+- Added draft v0.8.4 notes with the current no-release decision, dry-run
+  package checksum, and final verification checklist.
+- Added Phase 43-48 planning for short stability observation, alert signal
+  drill, status/Grafana visual checks, report role separation, v0.8.4 dry-run
+  package generation, and release/no-release decision.
 - Alert bodies now include `signal_type` so market risk, node health, node
   lifecycle, indexer lifecycle, wallet, whale, and watch events are easier to
   route without confusing market warnings for node incidents.
