@@ -74,6 +74,9 @@ All notable changes to Kaspa Node Watchtower are tracked here.
 
 ### Changed
 
+- SpaceX investment watchlist cards now render sparse private valuation marks as
+  OHLC candlesticks on 1D, 1W, and 1M views instead of showing unavailable
+  private-source placeholders across intraday chart slots.
 - Daily reports now lead with the six core node SLO checks and render benchmark
   trends with reset-safe DAA/block deltas, relay rates, disk delta, and explicit
   trend notes instead of misleading negative counters.

@@ -156,10 +156,10 @@ Last verified manually on `2026-06-08`:
   NASDAQ, KOSPI, KOSDAQ, Gold, Silver, WTI, USD/KRW, and KAS/BTC sats. Public
   Yahoo Finance symbols are fetched server-side during status page generation
   and embedded as preloaded OHLC rows, then rendered as 15m, 4h, 1D, 1W, and
-  1M candlestick cards. KAS/BTC sats is a server-side synthetic candle series
-  from Bybit spot KASUSDT and BTCUSDT klines using
-  `KASUSD/BTCUSD*100000000`. SpaceX remains marked private because it has no
-  public real-time ticker.
+  1M candlestick cards. SpaceX uses server-side private valuation marks as
+  sparse OHLC candles for 1D, 1W, and 1M views because it has no public
+  real-time ticker. KAS/BTC sats is a server-side synthetic candle series from
+  Bybit spot KASUSDT and BTCUSDT klines using `KASUSD/BTCUSD*100000000`.
 - Indicator anomaly summary: browser-side indicator states are normalized into
   watch, warning, and critical anomaly rows by timeframe and indicator
 - Market microstructure panel: Bybit orderbook and recent public trades provide

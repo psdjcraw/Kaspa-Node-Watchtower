@@ -3792,6 +3792,38 @@ class WatchtowerUnitTests(unittest.TestCase):
         self.assertAlmostEqual(rows[0]["close"], 0.032 / 61000 * 100_000_000)
         self.assertEqual(rows[0]["volume"], 1000)
 
+    def test_investment_private_valuation_rows_build_ohlc_candles(self):
+        asset = {
+            "valuation_marks": [
+                {"date": "2024-01-01", "valuation_b": 100},
+                {"date": "2024-06-01", "valuation_b": 150},
+            ]
+        }
+
+        rows = watchtower.investment_private_valuation_rows(asset)
+
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[0]["open"], 100)
+        self.assertEqual(rows[0]["close"], 100)
+        self.assertEqual(rows[1]["open"], 100)
+        self.assertEqual(rows[1]["high"], 150)
+        self.assertEqual(rows[1]["low"], 100)
+        self.assertEqual(rows[1]["close"], 150)
+
+    def test_investment_market_data_preloads_spacex_valuation_candles(self):
+        with (
+            mock.patch("watchtower.fetch_json_url", side_effect=OSError("skip bybit")),
+            mock.patch("watchtower.fetch_json_url_with_user_agent", side_effect=OSError("skip yahoo")),
+        ):
+            data = watchtower.fetch_investment_market_data(timeout=0.1)
+
+        spacex = data["spacex"]["timeframes"]
+
+        self.assertEqual(set(spacex), {"1D", "1W", "1M"})
+        self.assertTrue(spacex["1D"]["ok"])
+        self.assertEqual(spacex["1D"]["source"], "Private valuation marks")
+        self.assertGreaterEqual(len(spacex["1D"]["rows"]), 2)
+
     def test_market_spot_orderbook_metrics_normalize_venue_payloads(self):
         payload = {
             "data": {
@@ -4589,6 +4621,9 @@ class WatchtowerUnitTests(unittest.TestCase):
             self.assertIn('id="investment-chart-panels"', html)
             self.assertIn("investmentAssets", html)
             self.assertIn('label: "SpaceX"', html)
+            self.assertIn('source: "private_valuation"', html)
+            self.assertIn('unit: "usd_b"', html)
+            self.assertIn('timeframes: ["1D", "1W", "1M"]', html)
             self.assertIn('label: "Tesla"', html)
             self.assertIn('label: "S&P 500"', html)
             self.assertIn('label: "NASDAQ"', html)
@@ -4618,6 +4653,7 @@ class WatchtowerUnitTests(unittest.TestCase):
             self.assertIn("investmentRowsFromYahoo", html)
             self.assertIn("investmentAggregateRows", html)
             self.assertIn("investmentPreloadedData", html)
+            self.assertIn('return "$" + parsed.toLocaleString', html)
             self.assertIn("hydrateInvestmentWatchlist", html)
             self.assertIn("drawInvestmentChart", html)
             self.assertIn("investment-candle-wick", html)

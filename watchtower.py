@@ -99,7 +99,22 @@ INVESTMENT_TIMEFRAMES = [
 ]
 
 INVESTMENT_ASSETS = [
-    {"key": "spacex", "label": "SpaceX", "symbol": "PRIVATE", "source": "private"},
+    {
+        "key": "spacex",
+        "label": "SpaceX",
+        "symbol": "PRIVATE",
+        "source": "private_valuation",
+        "timeframes": ["1D", "1W", "1M"],
+        "unit": "usd_b",
+        "valuation_marks": [
+            {"date": "2021-10-08", "valuation_b": 100.3},
+            {"date": "2022-05-17", "valuation_b": 125.0},
+            {"date": "2023-01-03", "valuation_b": 137.0},
+            {"date": "2023-07-13", "valuation_b": 150.0},
+            {"date": "2024-06-27", "valuation_b": 210.0},
+            {"date": "2024-12-10", "valuation_b": 350.0},
+        ],
+    },
     {"key": "tesla", "label": "Tesla", "symbol": "TSLA", "yahoo_symbol": "TSLA", "source": "yahoo"},
     {"key": "sp500", "label": "S&P 500", "symbol": "SPX", "yahoo_symbol": "^GSPC", "source": "yahoo"},
     {"key": "nasdaq", "label": "NASDAQ", "symbol": "IXIC", "yahoo_symbol": "^IXIC", "source": "yahoo"},
@@ -2938,9 +2953,41 @@ def investment_rows_from_bybit_klines(payload: Any) -> list[dict[str, Any]]:
     ]
 
 
+def investment_private_valuation_rows(asset: dict[str, Any]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    previous_close: float | None = None
+    for mark in asset.get("valuation_marks") or []:
+        date_text = str(mark.get("date") or "")
+        value = numeric(mark.get("valuation_b"))
+        if value is None or value <= 0:
+            continue
+        try:
+            timestamp = dt.datetime.fromisoformat(date_text).replace(tzinfo=dt.timezone.utc).timestamp() * 1000
+        except ValueError:
+            continue
+        open_value = previous_close if previous_close is not None else value
+        high_value = max(open_value, value)
+        low_value = min(open_value, value)
+        rows.append(
+            {
+                "time": timestamp,
+                "open": open_value,
+                "high": high_value,
+                "low": low_value,
+                "close": value,
+                "volume": 0,
+            }
+        )
+        previous_close = value
+    return rows
+
+
 def fetch_investment_chart(asset: dict[str, Any], timeframe: dict[str, Any], timeout: float = 5.0) -> tuple[str, str, dict[str, Any]]:
     asset_key = str(asset["key"])
     timeframe_label = str(timeframe["label"])
+    if asset.get("source") == "private_valuation":
+        rows = investment_private_valuation_rows(asset)
+        return asset_key, timeframe_label, {"ok": bool(rows), "rows": rows[-240:], "source": "Private valuation marks"}
     if asset.get("source") == "bybit_ratio":
         try:
             numerator_rows = investment_rows_from_bybit_klines(
@@ -2971,14 +3018,15 @@ def fetch_investment_chart(asset: dict[str, Any], timeframe: dict[str, Any], tim
 
 def fetch_investment_market_data(timeout: float = 5.0) -> dict[str, Any]:
     result: dict[str, Any] = {
-        asset["key"]: {"private": asset.get("source") != "yahoo", "timeframes": {}}
+        asset["key"]: {"private": asset.get("source") not in {"yahoo", "bybit_ratio"}, "timeframes": {}}
         for asset in INVESTMENT_ASSETS
     }
     jobs = [
         (asset, timeframe)
         for asset in INVESTMENT_ASSETS
         for timeframe in INVESTMENT_TIMEFRAMES
-        if asset.get("source") in {"yahoo", "bybit_ratio"}
+        if asset.get("source") in {"yahoo", "bybit_ratio", "private_valuation"}
+        and str(timeframe.get("label")) in set(asset.get("timeframes") or [item["label"] for item in INVESTMENT_TIMEFRAMES])
     ]
     with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
         futures = [executor.submit(fetch_investment_chart, asset, timeframe, timeout) for asset, timeframe in jobs]
@@ -10241,7 +10289,7 @@ def write_status_page(
       {{ label: "1M", range: "10y", interval: "1mo" }},
     ];
     const investmentAssets = [
-      {{ key: "spacex", label: "SpaceX", symbol: "PRIVATE", source: "private", note: "Private company; public real-time ticker unavailable" }},
+      {{ key: "spacex", label: "SpaceX", symbol: "PRIVATE", source: "private_valuation", note: "Private valuation marks, not a live public ticker", unit: "usd_b", timeframes: ["1D", "1W", "1M"] }},
       {{ key: "tesla", label: "Tesla", symbol: "TSLA", yahooSymbol: "TSLA", source: "yahoo", note: "Yahoo Finance" }},
       {{ key: "sp500", label: "S&P 500", symbol: "SPX", yahooSymbol: "^GSPC", source: "yahoo", note: "Yahoo Finance" }},
       {{ key: "nasdaq", label: "NASDAQ", symbol: "IXIC", yahooSymbol: "^IXIC", source: "yahoo", note: "Yahoo Finance" }},
@@ -10278,14 +10326,6 @@ def write_status_page(
       grid.setAttribute("stroke-width", "1");
       grid.setAttribute("fill", "none");
       svg.appendChild(grid);
-      const path = document.createElementNS(ns, "path");
-      path.setAttribute("d", "M42 150 L106 132 L170 138 L234 116 L298 124 L362 92 L426 108 L490 76 L554 86 L618 64 L680 72");
-      path.setAttribute("stroke", "#276b74");
-      path.setAttribute("stroke-width", "3");
-      path.setAttribute("fill", "none");
-      path.setAttribute("stroke-linecap", "round");
-      path.setAttribute("stroke-linejoin", "round");
-      svg.appendChild(path);
       const label = document.createElementNS(ns, "text");
       label.textContent = asset.label + " " + timeframeLabel;
       label.setAttribute("x", "42");
@@ -10295,7 +10335,7 @@ def write_status_page(
       label.setAttribute("font-weight", "900");
       svg.appendChild(label);
       const pending = document.createElementNS(ns, "text");
-      pending.textContent = asset.source === "yahoo" ? "loading source" : "private source unavailable";
+      pending.textContent = asset.source === "yahoo" ? "loading source" : "market data unavailable";
       pending.setAttribute("x", "42");
       pending.setAttribute("y", "190");
       pending.setAttribute("fill", "#66727f");
@@ -10319,6 +10359,12 @@ def write_status_page(
           minimumFractionDigits: 2,
           maximumFractionDigits: 2,
         }}) + " sats";
+      }}
+      if (asset.unit === "usd_b") {{
+        return "$" + parsed.toLocaleString(undefined, {{
+          minimumFractionDigits: 1,
+          maximumFractionDigits: 1,
+        }}) + "B";
       }}
       return formatMarketPrice(parsed);
     }}
@@ -10467,7 +10513,7 @@ def write_status_page(
       const status = document.getElementById(investmentStatusId(asset.key, timeframe));
       if (asset.source !== "yahoo") {{
         if (status) {{
-          status.textContent = "Private market source unavailable";
+          status.textContent = "Refresh unavailable for this source";
         }}
         return;
       }}
@@ -10494,12 +10540,6 @@ def write_status_page(
         investmentTimeframes.forEach((timeframe) => {{
           const status = document.getElementById(investmentStatusId(asset.key, timeframe));
           const data = (((investmentPreloadedData || {{}})[asset.key] || {{}}).timeframes || {{}})[timeframe.label];
-          if (asset.source === "private") {{
-            if (status) {{
-              status.textContent = "Private market source unavailable";
-            }}
-            return;
-          }}
           if (data && data.ok && Array.isArray(data.rows) && data.rows.length) {{
             drawInvestmentChart(data.rows, asset, timeframe);
             return;
@@ -10557,7 +10597,8 @@ def write_status_page(
 
         const grid = document.createElement("div");
         grid.className = "investment-card-grid";
-        investmentTimeframes.forEach((timeframe) => {{
+        const assetTimeframes = new Set(asset.timeframes || investmentTimeframes.map((item) => item.label));
+        investmentTimeframes.filter((timeframe) => assetTimeframes.has(timeframe.label)).forEach((timeframe) => {{
           const card = document.createElement("section");
           card.className = "investment-card";
           const head = document.createElement("div");
@@ -10567,7 +10608,7 @@ def write_status_page(
           const status = document.createElement("div");
           status.id = investmentStatusId(asset.key, timeframe);
           status.className = "market-status";
-          status.textContent = asset.source === "private" ? "Private market source unavailable" : "Loading market data";
+          status.textContent = asset.source === "private_valuation" ? "Loading valuation marks" : "Loading market data";
           head.appendChild(title);
           head.appendChild(status);
           card.appendChild(head);
