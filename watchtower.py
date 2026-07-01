@@ -10537,7 +10537,8 @@ def write_status_page(
 
     function hydrateInvestmentWatchlist() {{
       investmentAssets.forEach((asset) => {{
-        investmentTimeframes.forEach((timeframe) => {{
+        const assetTimeframes = new Set(asset.timeframes || investmentTimeframes.map((item) => item.label));
+        investmentTimeframes.filter((timeframe) => assetTimeframes.has(timeframe.label)).forEach((timeframe) => {{
           const status = document.getElementById(investmentStatusId(asset.key, timeframe));
           const data = (((investmentPreloadedData || {{}})[asset.key] || {{}}).timeframes || {{}})[timeframe.label];
           if (data && data.ok && Array.isArray(data.rows) && data.rows.length) {{

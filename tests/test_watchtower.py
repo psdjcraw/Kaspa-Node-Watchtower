@@ -4655,6 +4655,10 @@ class WatchtowerUnitTests(unittest.TestCase):
             self.assertIn("investmentPreloadedData", html)
             self.assertIn('return "$" + parsed.toLocaleString', html)
             self.assertIn("hydrateInvestmentWatchlist", html)
+            self.assertGreaterEqual(
+                html.count("investmentTimeframes.filter((timeframe) => assetTimeframes.has(timeframe.label))"),
+                2,
+            )
             self.assertIn("drawInvestmentChart", html)
             self.assertIn("investment-candle-wick", html)
             self.assertIn("investment-candle-body", html)
