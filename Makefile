@@ -63,7 +63,7 @@ help:
 	@printf '  make discord-watch-remove Remove watch address; set ADDRESS=kaspa:...\n'
 	@printf '  make discord-watch-test  Test watch address reads; set ADDRESS=kaspa:...\n'
 	@printf '  make market-risk-drill   Inject synthetic market positioning risk metrics\n'
-	@printf '  make indexer-up          Start local kaspad/postgres/indexer compose stack\n'
+	@printf '  make indexer-up          Start local indexer stack; requires CONFIRM_INDEXER_UP=1\n'
 	@printf '  make indexer-down        Stop local indexer compose stack\n'
 	@printf '  make indexer-logs        Tail local indexer compose logs\n'
 	@printf '  make indexer-smoke       Check local indexer API/admin endpoints\n'
@@ -220,6 +220,7 @@ market-risk-drill:
 	@$(PYTHON) watchtower.py -c $(CONFIG) --market-risk-drill --market-risk-score "$(MARKET_RISK_SCORE)" --market-risk-reason "$(MARKET_RISK_REASON)" --market-risk-direction "$(MARKET_RISK_DIRECTION)"
 
 indexer-up:
+	@if [ "$(CONFIRM_INDEXER_UP)" != "1" ]; then printf 'Indexer is disabled in the lightweight operating mode. Re-run with CONFIRM_INDEXER_UP=1 only after reviewing docs/lightweight-indexer-mode.md\n' >&2; exit 2; fi
 	@$(COMPOSE) -f $(INDEXER_COMPOSE) up -d --build
 
 indexer-down:

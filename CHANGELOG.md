@@ -6,6 +6,9 @@ All notable changes to Kaspa Node Watchtower are tracked here.
 
 ### Added
 
+- Added `docs/lightweight-indexer-mode.md` to document the current disabled
+  companion-indexer posture, re-enable checklist, rollback steps, and
+  auto-recreation audit.
 - Discord command bridge now exposes `market`, `market-risk`, and
   `market-drill` outputs for KAS/USDT market snapshots and positioning-risk
   drills.
@@ -71,6 +74,9 @@ All notable changes to Kaspa Node Watchtower are tracked here.
 
 ### Changed
 
+- `make indexer-up` now requires `CONFIRM_INDEXER_UP=1` so the local
+  PostgreSQL-backed indexer stack cannot be recreated accidentally on the
+  lightweight mainnet host.
 - Discord `market` and `market-risk` output now includes the same dashboard
   state language used by the market dashboard (`OK`, `WARN`, `CRIT`, and
   risk-first priority) so chat alerts and the dashboard agree on severity.

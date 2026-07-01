@@ -13,8 +13,9 @@ the primary source of truth.
 - Keep smoke tests, unit tests, and alert rule tests passing on GitHub Actions.
 - Document safe diagnostics and recovery workflows for node operators.
 - Use local SQLite history summaries for longer-window operator review.
-- Extend the project into a Watchtower plus Indexer stack by integrating
-  `simply-kaspa-indexer` as the PostgreSQL-backed chain data layer.
+- Keep the mainnet host in lightweight Watchtower mode by default, with the
+  companion Rust/PostgreSQL indexer source retained but disabled until disk
+  capacity, retention, and re-enable criteria are reviewed.
 
 ## Next Execution Plan
 
@@ -33,21 +34,22 @@ toward the explorer API baseline:
   alerts, Grafana reachability, and GitHub Actions status in one command.
 - Keep the local market dashboard and Discord `market-risk` output aligned so
   critical, warning, and recovered market states use the same operator language.
-- Treat v0.9 indexer awareness as implemented in Watchtower and keep it covered
-  by config validation, mocked unit tests, Prometheus metrics, status output,
-  alert rules, and smoke coverage.
-- Start v1.0 by validating the companion Rust indexer read APIs for transaction,
-  address, balance, UTXO, search, recent-block, and combined status lookups.
-- Keep the Rust indexer as a companion service first; integrate through
-  health/metrics/API endpoints before deciding whether to fork, vendor, or
-  submodule it.
+- Treat v0.9 indexer awareness as implemented but disabled by config on the
+  lightweight mainnet host.
+- Keep the manual indexer start path guarded by `CONFIRM_INDEXER_UP=1` and
+  documented in `docs/lightweight-indexer-mode.md`.
+- Resume v1.0 companion Rust indexer API validation only after confirming disk
+  headroom, PostgreSQL volume retention, Docker cleanup, and the intended
+  `simply-kaspa-indexer` commit.
 
 ## v1.x - Watchtower plus Indexer
 
 The long-term project direction is documented in
-`docs/indexer-integration-plan.md`. The short version: Python Watchtower remains
-the operator, alerting, reporting, and dashboard layer; `simply-kaspa-indexer`
-becomes the PostgreSQL-backed chain data and explorer API layer.
+`docs/indexer-integration-plan.md`, but the current mainnet host defaults to the
+lighter posture described in `docs/lightweight-indexer-mode.md`. The short
+version: Python Watchtower remains the operator, alerting, reporting, and
+dashboard layer; `simply-kaspa-indexer` is available as a companion explorer
+layer only when explicitly re-enabled.
 
 ### v0.9 - Indexer Awareness
 

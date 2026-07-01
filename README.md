@@ -108,6 +108,8 @@ Current target environment:
 - macOS host
 - Discord-based operational updates
 - Optional Kaspa Python SDK read-only wRPC probe metrics
+- Lightweight Watchtower mode with the companion Rust/PostgreSQL indexer
+  intentionally disabled unless explicitly re-enabled
 
 ## Documentation
 
@@ -117,6 +119,7 @@ Current target environment:
 - [Prometheus/Grafana integrations](docs/integrations.md)
 - [Compatibility guide](docs/compatibility.md)
 - [Failure handling runbook](docs/runbook.md)
+- [Lightweight indexer mode](docs/lightweight-indexer-mode.md)
 - [Deployment status](docs/status.md)
 - [Sample status reports](docs/sample-status-reports.md)
 - [Long-lived storage options](docs/storage-options.md)
@@ -207,7 +210,7 @@ make discord-watch-list
 make discord-watch-add ADDRESS="kaspa:q..." LABEL="treasury"
 make discord-watch-remove ADDRESS="kaspa:q..."
 make discord-watch-test ADDRESS="kaspa:q..." LABEL="treasury"
-make indexer-up
+CONFIRM_INDEXER_UP=1 make indexer-up
 make indexer-smoke
 make indexer-logs
 make indexer-down
@@ -217,10 +220,10 @@ make discord-mute MUTE_MINUTES=30 MUTE_REASON="kaspad upgrade"
 make discord-unmute
 ```
 
-Local indexer stack:
+Local indexer stack, disabled by default on the lightweight mainnet host:
 
 ```bash
-make indexer-up
+CONFIRM_INDEXER_UP=1 make indexer-up
 make indexer-smoke
 open http://127.0.0.1:8500/admin
 ```
@@ -229,7 +232,10 @@ The bundled compose file starts PostgreSQL and the local `simply-kaspa-indexer`
 checkout from `../simply-kaspa-indexer` by default. It uses the existing local
 mainnet kaspad wRPC Borsh endpoint at `ws://host.docker.internal:17110`. Set
 `SIMPLY_KASPA_INDEXER_DIR=/path/to/simply-kaspa-indexer` if the checkout lives
-elsewhere.
+elsewhere. The confirmation flag is intentional: the current production posture
+keeps source code available while avoiding Docker volume, image, and PostgreSQL
+disk growth. Review [Lightweight indexer mode](docs/lightweight-indexer-mode.md)
+before re-enabling it.
 
 Enable watch-only wallet monitoring by adding address labels to `config.json`:
 
