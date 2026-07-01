@@ -15,6 +15,7 @@
 - Grafana relay panels: relay window progress and latest relay freshness
 - Grafana mempool panel: mempool size timeseries from Prometheus
 - Grafana market panels: persisted KAS/USDT spot price and futures positioning from market snapshots
+- Grafana lightweight panel: release posture, lightweight mode, indexer disabled, and indexer watch disabled
 - GitHub Actions smoke workflow: `https://github.com/psdjcraw/Kaspa-Node-Watchtower/actions/workflows/smoke.yml`
 - GitHub Actions CodeQL workflow: `https://github.com/psdjcraw/Kaspa-Node-Watchtower/actions/workflows/codeql.yml`
 - Canvas status page: `/Users/psdjc/.openclaw/canvas/kaspa-watchtower/status.html`
@@ -41,7 +42,12 @@ stack:
   `kaspa_watchtower_indexer_enabled` and
   `kaspa_watchtower_indexer_watch_enabled` remain `0`.
 - Ops snapshot: `scripts/ops_snapshot.sh` should report zero indexer
-  containers, zero indexer DB volumes, and zero `simply-kaspa-indexer` images.
+  containers, zero indexer DB volumes, zero `simply-kaspa-indexer` images, the
+  published v0.8.3 release asset, successful Docker publish, and
+  `verdict: OK lightweight-only; indexer long-term hold intact`.
+- Release install check: `make release-install-check` should verify the v0.8.3
+  release archive checksum, extracted CLI version, and Homebrew formula URL,
+  version, and SHA-256.
 - Market Watchlist rendering: SpaceX shows only `1D`, `1W`, and `1M`
   private-valuation candlestick cards; desktop and 390px mobile checks showed
   no horizontal overflow.
@@ -72,7 +78,7 @@ stack:
 
 ## Latest Operator Verification
 
-Last verified manually on `2026-06-08`:
+Last verified manually on `2026-07-01`:
 
 - `make smoke` passed, including unit tests, release package checks, Homebrew
   formula syntax, Grafana dashboard JSON, Prometheus rule tests, config
@@ -89,8 +95,10 @@ Last verified manually on `2026-06-08`:
 - `scripts/check_prometheus_alerts.sh` passed with no active watchtower alerts.
 - Prometheus API returned an empty active alert list for watchtower service.
 - `scripts/ops_snapshot.sh` passed with node `ok`, severity `ok`, `8` peers,
-  Prometheus target `up`, Grafana dashboard HTTP `302`, and GitHub Actions
+  Prometheus target `up`, release asset digest, Docker publish success, Grafana
+  dashboard HTTP `302`, lightweight/indexer-hold verdict OK, and GitHub Actions
   smoke/codeql success.
+- `make release-install-check` passed for `v0.8.3`.
 - Synced-state sync progress metrics now export inactive `0` values instead of
   appearing as missing in exporter and Prometheus query output.
 - `make history-multi-node` exported SQLite history and compared

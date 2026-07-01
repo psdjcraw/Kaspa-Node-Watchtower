@@ -8657,8 +8657,17 @@ def write_status_page(
         if lightweight_mode
         else "Indexer probes enabled"
     )
+    release_tag = f"v{VERSION}"
+    indexer_hold_text = "long-term" if lightweight_mode else "active"
+    indexer_hold_detail = (
+        "source retained; Docker/PostgreSQL resources expected absent"
+        if lightweight_mode
+        else "indexer probes and indexed workflows enabled"
+    )
     visual_cards = "\n".join(
         [
+            visual_card("Release", release_tag, "stable Watchtower build", "ok"),
+            visual_card("Indexer Hold", indexer_hold_text, indexer_hold_detail, "neutral" if lightweight_mode else "ok"),
             visual_card("Peers", grpc_metrics.get("peer_count", "unknown"), f"active {grpc_metrics.get('active_peers', 'unknown')}", tone_for_check(report, "peer_count")),
             visual_card("Relay", latest_relay_text, f"{compact_number(progress.get('relay_blocks_in_window'))} blocks / {progress.get('window_minutes', 'unknown')}m", tone_for_check(report, "block_progress")),
             visual_card("Sync", "synced" if sync_text is True else str(sync_text), f"network {network_text}", tone_for_check(report, "sync_status")),

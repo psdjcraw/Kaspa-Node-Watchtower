@@ -186,6 +186,52 @@ alignment, and keep the companion indexer on long-term hold:
 - Keep indexer, explorer API, and admin UI work in long-term backlog until the
   indexer hold is explicitly lifted.
 
+### Phase 31 - Post-Release Drift Watch
+
+- Keep `scripts/ops_snapshot.sh` as the live post-release drift check for
+  release asset status, Docker publish status, Prometheus alerts, Grafana
+  reachability, disk headroom, and indexer Docker resource recreation.
+- Treat `verdict: OK lightweight-only; indexer long-term hold intact` as the
+  expected post-v0.8.3 baseline.
+
+### Phase 32 - Alert Bridge Precision
+
+- Keep node incidents, market-risk alerts, and lightweight/indexer posture drift
+  separated in operator wording.
+- Keep expected disabled-indexer posture silent while lightweight mode is
+  enabled.
+
+### Phase 33 - Status UI Release Posture
+
+- Show the active release version and indexer hold state in the status page
+  first-screen card grid.
+- Keep mobile status views free of horizontal overflow while preserving release,
+  market, and node-health signals.
+
+### Phase 34 - Grafana v0.8.4 Polish
+
+- Keep the `Lightweight Release Posture` panel installed and aligned with
+  Prometheus lightweight/indexer metrics.
+- Keep indexer-rich panels available for future reactivation, but document them
+  as long-term hold context for the current mainnet host.
+
+### Phase 35 - Install and Upgrade Drill
+
+- Use `make release-install-check` to verify the published release tarball,
+  checksum file, extracted `watchtower.py --version`, and Homebrew formula URL,
+  version, and SHA-256.
+- Keep release installation docs aligned with the active v0.8.3 asset.
+
+### Phase 36 - v0.8.4 Scope Freeze
+
+- Freeze v0.8.4 as a Watchtower-only polish release unless post-release drift
+  reveals a real operational bug.
+- Candidate scope: alert wording, status release posture, Grafana lightweight
+  polish, weekly report compression, install-path verification, and docs
+  cleanup.
+- Out of scope: companion indexer reactivation, explorer API validation, admin
+  UI, and indexer-backed watchlist expansion.
+
 ## Long-Term Backlog - Watchtower plus Indexer
 
 The long-term project direction is documented in

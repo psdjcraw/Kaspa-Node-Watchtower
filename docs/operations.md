@@ -653,9 +653,25 @@ Operational snapshot:
 scripts/ops_snapshot.sh
 ```
 
-The snapshot includes Prometheus active alerts, the lightweight mode metric,
-indexer enabled metrics, Docker indexer container/volume/image counts, Docker
-system disk usage, Grafana reachability, and recent status files.
+The snapshot includes release asset status, Docker publish status, Prometheus
+active alerts, the lightweight mode metric, indexer enabled metrics, Docker
+indexer container/volume/image counts, Docker system disk usage, Grafana
+reachability, GitHub Actions status, and recent status files. The expected
+post-v0.8.3 line is:
+
+```text
+verdict: OK lightweight-only; indexer long-term hold intact
+```
+
+Release install check:
+
+```bash
+make release-install-check
+```
+
+This downloads the published GitHub Release tarball and checksum, verifies the
+archive SHA-256, checks the extracted `watchtower.py --version`, and confirms
+the Homebrew formula URL, version, and SHA-256 point at the same asset.
 
 Canvas-hosted status page file:
 

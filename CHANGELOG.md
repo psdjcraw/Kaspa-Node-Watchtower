@@ -6,6 +6,14 @@ All notable changes to Kaspa Node Watchtower are tracked here.
 
 ### Added
 
+- Added `make release-install-check` to verify the published v0.8.3 release
+  tarball, checksum file, extracted CLI version, and Homebrew formula URL,
+  version, and SHA-256 before install or upgrade handoff.
+- Status pages now surface the active release tag and indexer hold state in the
+  first-screen card grid for post-release drift checks.
+- Added Phase 31-36 planning for post-release drift watch, alert precision,
+  status UI release posture, Grafana v0.8.4 polish, install/upgrade drill, and
+  v0.8.4 scope freeze.
 - Added post-v0.8.3 release operation checks to `scripts/ops_snapshot.sh`,
   including release asset visibility, Docker publish status, and a single
   lightweight/indexer-hold verdict.

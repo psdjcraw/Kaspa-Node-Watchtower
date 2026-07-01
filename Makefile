@@ -24,7 +24,7 @@ MARKET_RISK_SCORE ?= 4
 MARKET_RISK_REASON ?= market_risk_drill
 MARKET_RISK_DIRECTION ?= mixed
 
-.PHONY: help onboard bootstrap proto-check version status stream summary sync-report diagnostics-summary incident-report timeline json alert discord-status discord-incidents discord-timeline discord-wallet discord-wallet-txs discord-mining discord-whales discord-tx discord-address discord-balance discord-utxos discord-search discord-market discord-market-risk discord-market-drill discord-watch-list discord-watch-check discord-watch-drill discord-watch-add discord-watch-remove discord-watch-test market-risk-drill indexer-up indexer-down indexer-logs indexer-smoke mining-set-address mining-clear-address discord-maintenance discord-mute discord-mute-all discord-unmute maintenance-status mute mute-all unmute smoke ci integrations simulate-exporter-failure ensure-exporter launchd-status launchd-install launchd-restart launchd-uninstall diagnostics diagnostics-archive daily-report weekly-report weekly-archive benchmark benchmark-report prometheus export-history history-report history-multi-node history-archive upload-archive sns-refresh package docker-build docker-smoke docker-push prune validate recover-dry-run recover force-recover-dry-run
+.PHONY: help onboard bootstrap proto-check version status stream summary sync-report diagnostics-summary incident-report timeline json alert discord-status discord-incidents discord-timeline discord-wallet discord-wallet-txs discord-mining discord-whales discord-tx discord-address discord-balance discord-utxos discord-search discord-market discord-market-risk discord-market-drill discord-watch-list discord-watch-check discord-watch-drill discord-watch-add discord-watch-remove discord-watch-test market-risk-drill indexer-up indexer-down indexer-logs indexer-smoke mining-set-address mining-clear-address discord-maintenance discord-mute discord-mute-all discord-unmute maintenance-status mute mute-all unmute smoke ci integrations simulate-exporter-failure ensure-exporter launchd-status launchd-install launchd-restart launchd-uninstall diagnostics diagnostics-archive daily-report weekly-report weekly-archive benchmark benchmark-report prometheus export-history history-report history-multi-node history-archive upload-archive sns-refresh package release-install-check docker-build docker-smoke docker-push prune validate recover-dry-run recover force-recover-dry-run
 
 help:
 	@printf 'Kaspa Node Watchtower operator commands\n'
@@ -98,6 +98,7 @@ help:
 	@printf '  make upload-archive      Upload/copy archive; set ARCHIVE_SOURCE/TARGET\n'
 	@printf '  make sns-refresh         Fetch recent X/YouTube Kaspa social snapshot\n'
 	@printf '  make package             Build a portable release tarball\n'
+	@printf '  make release-install-check Verify release tarball/checksum and Homebrew formula\n'
 	@printf '  make docker-build        Build Docker image; set DOCKER_IMAGE/DOCKER_TAG\n'
 	@printf '  make docker-smoke        Build image and run container version smoke\n'
 	@printf '  make docker-push         Push Docker image to Docker Hub\n'
@@ -341,6 +342,9 @@ sns-refresh:
 
 package:
 	@scripts/package_release.sh
+
+release-install-check:
+	@scripts/check_release_install.sh
 
 docker-build:
 	@docker build -t "$(DOCKER_IMAGE):$(DOCKER_TAG)" .
