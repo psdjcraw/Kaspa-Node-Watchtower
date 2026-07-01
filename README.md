@@ -126,6 +126,7 @@ Current target environment:
 - [Packaging options](docs/packaging-options.md)
 - [Docker image](docs/docker.md)
 - [Indexer integration plan](docs/indexer-integration-plan.md)
+- [v0.8.3 draft release notes](docs/release-notes-v0.8.3.md)
 - [v0.8.2 release notes](docs/release-notes-v0.8.2.md)
 - [v0.8.1 release notes](docs/release-notes-v0.8.1.md)
 - [v0.8.0 release notes](docs/release-notes-v0.8.0.md)
@@ -220,7 +221,8 @@ make discord-mute MUTE_MINUTES=30 MUTE_REASON="kaspad upgrade"
 make discord-unmute
 ```
 
-Local indexer stack, disabled by default on the lightweight mainnet host:
+Local indexer stack, disabled by default and on long-term hold for the
+lightweight mainnet host:
 
 ```bash
 CONFIRM_INDEXER_UP=1 make indexer-up
@@ -235,7 +237,8 @@ mainnet kaspad wRPC Borsh endpoint at `ws://host.docker.internal:17110`. Set
 elsewhere. The confirmation flag is intentional: the current production posture
 keeps source code available while avoiding Docker volume, image, and PostgreSQL
 disk growth. Review [Lightweight indexer mode](docs/lightweight-indexer-mode.md)
-before re-enabling it.
+before re-enabling it. Explorer/admin work should remain backlog-only until
+disk headroom, retention, prune/cleanup, and commit pinning are reviewed.
 
 Enable watch-only wallet monitoring by adding address labels to `config.json`:
 

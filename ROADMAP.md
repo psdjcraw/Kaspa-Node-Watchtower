@@ -19,9 +19,9 @@ the primary source of truth.
 
 ## Next Execution Plan
 
-The next operator work should keep distribution checks green, finish Market
-Dashboard v2/Discord alert alignment, and move the Watchtower plus Indexer stack
-toward the explorer API baseline:
+The next operator work is lightweight-first. Keep Watchtower reliable as the
+standalone operator surface, finish Market Dashboard v2/Discord alert
+alignment, and keep the companion indexer on long-term hold:
 
 - Keep `make smoke`, `make validate`, and Prometheus rule tests green before
   each deployment change.
@@ -38,22 +38,78 @@ toward the explorer API baseline:
   lightweight mainnet host.
 - Keep the manual indexer start path guarded by `CONFIRM_INDEXER_UP=1` and
   documented in `docs/lightweight-indexer-mode.md`.
-- Resume v1.0 companion Rust indexer API validation only after confirming disk
-  headroom, PostgreSQL volume retention, Docker cleanup, and the intended
-  `simply-kaspa-indexer` commit.
+- Do not resume v1.0 companion Rust indexer API validation during the current
+  lightweight operating window. Revisit it only after a separate capacity and
+  retention review.
 
-## v1.x - Watchtower plus Indexer
+## Phase Plan
+
+### Phase 7 - Market / Discord Severity Alignment
+
+- Keep `market`, `market-risk`, daily report, dashboard, and alert output on
+  the same `state`, `severity`, `priority`, and next-action language.
+- Separate market warning/critical states from node health failures so market
+  crowding does not look like `kaspad` failure.
+- Keep funding z-score, OI/volume, basis, and spot dispersion reasons in a
+  stable order.
+
+### Phase 8 - Release Candidate Readiness
+
+- Keep `make smoke`, `make validate`, Prometheus rule tests, and
+  `scripts/ops_snapshot.sh` green before release candidate tagging.
+- Keep `CHANGELOG.md`, release notes, `README.md`, `docs/status.md`, and
+  `docs/operations.md` aligned with lightweight operation.
+- Confirm GitHub Actions smoke and CodeQL success for the release candidate
+  commit.
+
+### Phase 9 - 24-48 Hour Lightweight Observation
+
+- Confirm daily reports stay quiet and continue to show Prometheus alerts as
+  none.
+- Confirm `kaspa_watchtower_lightweight_mode=1`, indexer enabled metrics remain
+  `0`, and Docker indexer containers, images, and DB volumes do not reappear.
+- Track disk free, peers, relay freshness, processed tx age, and gRPC sync
+  against the current baseline.
+
+### Phase 10 - Operator UX Polish
+
+- Shorten daily and Discord summaries without removing health, failed checks,
+  peers, relay age, disk free, and market risk.
+- Keep Status UI text compact, mobile-safe, and consistent with Discord output.
+- Keep SpaceX/private watchlist cards as sparse valuation candles and avoid
+  intraday slots for private assets.
+
+### Phase 11 - Long-Term Indexer Hold
+
+- Keep `simply-kaspa-indexer` source retained but Docker containers, images,
+  build cache, and PostgreSQL volumes absent by default.
+- Keep `make indexer-up` guarded by `CONFIRM_INDEXER_UP=1`.
+- Revisit the indexer only after disk headroom, PostgreSQL retention, DB prune
+  policy, Docker cleanup, upstream/fork commit, and API scope are explicitly
+  reviewed.
+
+### Phase 12 - Watchtower-Only Roadmap
+
+- Prioritize market risk quality, alert quality, daily/weekly reports, Grafana
+  cleanup, status readability, multi-node history, and recovery/incident review.
+- Move explorer/admin UI work to long-term backlog until the indexer hold is
+  lifted.
+- Avoid adding short-term tasks that require the PostgreSQL-backed indexer.
+
+## Long-Term Backlog - Watchtower plus Indexer
 
 The long-term project direction is documented in
 `docs/indexer-integration-plan.md`, but the current mainnet host defaults to the
 lighter posture described in `docs/lightweight-indexer-mode.md`. The short
 version: Python Watchtower remains the operator, alerting, reporting, and
-dashboard layer; `simply-kaspa-indexer` is available as a companion explorer
-layer only when explicitly re-enabled.
+dashboard layer; `simply-kaspa-indexer` is source-retained on long-term hold and
+is available as a companion explorer layer only after a separate re-enable
+review.
 
 ### v0.9 - Indexer Awareness
 
-Status: implemented in Watchtower.
+Status: implemented in Watchtower and disabled by config on the lightweight
+mainnet host.
 
 - Optional `indexer` configuration exists for base URL, path templates,
   metrics mode, timeout, and lag/staleness thresholds.
@@ -66,7 +122,7 @@ Status: implemented in Watchtower.
 - Mocked tests cover healthy, stale, syncing, unavailable, lookup, and watchlist
   paths.
 
-### v1.0 - Explorer API Baseline
+### Deferred v1.0 - Explorer API Baseline
 
 - Add or consume Rust indexer endpoints for recent blocks, block details,
   transaction details, address transactions, search, and combined status.
@@ -75,21 +131,21 @@ Status: implemented in Watchtower.
 - Validate Rust endpoints with seeded PostgreSQL fixtures and Watchtower command
   tests with mocked API responses.
 
-### v1.1 - Watchlist and Alert Events
+### Deferred v1.1 - Watchlist and Alert Events
 
 - Add durable watch target and watch event storage for addresses,
   transactions, blocks, large transaction rules, and indexer lag rules.
 - Keep alert policy in Watchtower while using indexed data for event detection.
 - Add idempotent event creation so alerts do not duplicate across restarts.
 
-### v1.2 - Balance and UTXO Layer
+### Deferred v1.2 - Balance and UTXO Layer
 
 - Add optional derived balance and UTXO tables behind an explicit enable flag.
 - Provide balance, UTXO, and balance-event APIs for watched addresses.
 - Add reconciliation checks and reorg-safe update behavior before using this
   data for operator alerts.
 
-### v1.3+ - Admin and Explorer UI
+### Deferred v1.3+ - Admin and Explorer UI
 
 - Build an operator-first admin UI for node health, indexer health, PostgreSQL,
   watchlists, alert history, and recent chain activity.

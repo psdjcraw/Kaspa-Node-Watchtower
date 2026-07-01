@@ -5790,6 +5790,32 @@ def market_risk_next_action(level: Any, score: Any, verdict: str = "unknown") ->
     return "monitor"
 
 
+def market_risk_operator_state(level: Any, score: Any, verdict: str = "unknown") -> dict[str, str]:
+    parsed = numeric(score)
+    level_text = str(level or "unknown")
+    if parsed is None:
+        state = "NO DATA"
+        severity = "watch"
+    elif level_text == "critical" or parsed >= 4:
+        state = "CRIT"
+        severity = "critical"
+    elif level_text == "warning" or parsed >= 2:
+        state = "WARN"
+        severity = "warning"
+    else:
+        state = "OK"
+        severity = "ok"
+    if verdict in {"warming", "elevated"} and severity == "ok":
+        state = "WATCH"
+        severity = "watch"
+    return {
+        "state": state,
+        "severity": severity,
+        "priority": "risk-first" if severity in {"critical", "warning"} else "normal",
+        "next_action": market_risk_next_action(level_text, score, verdict),
+    }
+
+
 def fetch_market_snapshot(timeout: float = 6.0) -> dict[str, Any]:
     spot_url = "https://api.bybit.com/v5/market/tickers?category=spot&symbol=KASUSDT"
     futures_url = "https://api.bybit.com/v5/market/tickers?category=linear&symbol=KASUSDT"
@@ -6212,6 +6238,7 @@ def format_market_snapshot(snapshot: dict[str, Any]) -> str:
     risk_score = futures.get("risk_score") if futures.get("risk_score") is not None else risk["score"]
     risk_direction = futures.get("risk_direction") or risk["direction"]
     risk_reasons = futures.get("risk_reasons") or (",".join(risk["reasons"]) if risk["reasons"] else "none")
+    operator_state = market_risk_operator_state(risk_level, risk_score)
     return "\n".join(
         [
             f"Kaspa market snapshot: {snapshot.get('source', 'Bybit KAS/USDT')}",
@@ -6255,6 +6282,13 @@ def format_market_snapshot(snapshot: dict[str, Any]) -> str:
                 f"score={risk_score} "
                 f"direction={risk_direction} "
                 f"reasons={risk_reasons}"
+            ),
+            (
+                "market_operator="
+                f"state={operator_state['state']} "
+                f"severity={operator_state['severity']} "
+                f"priority={operator_state['priority']} "
+                f"next={operator_state['next_action']}"
             ),
         ]
     )
@@ -14828,29 +14862,9 @@ def market_metrics_from_config(config: dict[str, Any]) -> dict[str, Any]:
 
 
 def market_risk_dashboard_state(latest: dict[str, Any], trend: dict[str, Any] | None = None) -> dict[str, str]:
-    score = numeric(latest.get("market_risk_score"))
     level = str(latest.get("market_risk_level") or "unknown")
     verdict = str((trend or {}).get("verdict") or "unknown")
-    if score is None:
-        state = "NO DATA"
-        severity = "watch"
-    elif level == "critical" or score >= 4:
-        state = "CRIT"
-        severity = "critical"
-    elif level == "warning" or score >= 2:
-        state = "WARN"
-        severity = "warning"
-    else:
-        state = "OK"
-        severity = "ok"
-    if verdict in {"warming", "elevated"} and severity == "ok":
-        state = "WATCH"
-        severity = "watch"
-    return {
-        "state": state,
-        "severity": severity,
-        "priority": "risk-first" if severity in {"critical", "warning"} else "normal",
-    }
+    return market_risk_operator_state(level, latest.get("market_risk_score"), verdict)
 
 
 def format_discord_market(config: dict[str, Any], market_metrics: dict[str, Any] | None = None) -> str:
@@ -14895,7 +14909,8 @@ def format_discord_market(config: dict[str, Any], market_metrics: dict[str, Any]
                 f"dashboard_state={dashboard_state['state']} "
                 f"priority={dashboard_state['priority']} "
                 f"direction={latest.get('market_risk_direction', 'unknown')} "
-                f"reasons={latest.get('market_risk_reasons', 'none')}"
+                f"reasons={latest.get('market_risk_reasons', 'none')} "
+                f"next={dashboard_state['next_action']}"
             ),
             (
                 "trend="

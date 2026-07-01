@@ -3677,6 +3677,7 @@ class WatchtowerUnitTests(unittest.TestCase):
         self.assertIn("oi_value=$7.20M", text)
         self.assertIn("oi_volume=4.51x", text)
         self.assertIn("market_risk=level=ok score=1 direction=long_crowded reasons=oi_volume_elevated", text)
+        self.assertIn("market_operator=state=OK severity=ok priority=normal next=monitor", text)
 
     def test_fetch_market_snapshot_computes_basis_and_apr(self):
         spot_payload = {
@@ -3976,6 +3977,7 @@ class WatchtowerUnitTests(unittest.TestCase):
         self.assertIn("Kaspa market: test-node", market_text)
         self.assertIn("risk=level=critical score=4", market_text)
         self.assertIn("dashboard_state=CRIT priority=risk-first", market_text)
+        self.assertIn("next=check funding/OI crowding now", market_text)
         self.assertIn("trend=verdict=warming 24h_max=4.0", market_text)
         self.assertIn("Kaspa market risk: test-node", risk_text)
         self.assertIn("level=critical score=4", risk_text)

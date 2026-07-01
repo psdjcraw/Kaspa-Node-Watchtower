@@ -45,6 +45,10 @@ stack:
 - Market Watchlist rendering: SpaceX shows only `1D`, `1W`, and `1M`
   private-valuation candlestick cards; desktop and 390px mobile checks showed
   no horizontal overflow.
+- Market risk output: status dashboard, daily report, Discord market commands,
+  and alerts use the same `state`, `severity`, `priority`, and `next` language.
+- Indexer roadmap: companion indexer and explorer/admin UI work are long-term
+  backlog until the hold is explicitly lifted.
 
 ## Local Services
 

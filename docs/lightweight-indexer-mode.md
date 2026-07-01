@@ -15,6 +15,31 @@ Watchtower stays active, while the companion PostgreSQL-backed
   Watchtower state.
 - Keep the operational SLO centered on `kaspad` process state, gRPC metrics,
   relay progress, peer count, log freshness, and disk free space.
+- Treat indexer-backed explorer/admin work as long-term backlog. Do not schedule
+  it in the active lightweight-operation plan.
+
+## Long-Term Hold
+
+The companion indexer is on long-term hold for this mainnet host. The hold is
+intentional, not an incident:
+
+- The PostgreSQL-backed chain index can grow quickly and compete with `kaspad`
+  disk headroom.
+- Retention, pruning, and backup rules need to be decided before the DB volume
+  is recreated.
+- Docker image/build-cache growth should stay at zero during lightweight
+  operation.
+- Watchtower already provides the active operator surface for node health,
+  market risk, alerts, reports, Grafana, and status HTML.
+
+Only revisit the hold after explicitly deciding:
+
+- Minimum disk headroom for indexer reactivation.
+- PostgreSQL volume retention and deletion policy.
+- DB prune/cleanup strategy.
+- Docker cleanup and rollback commands.
+- The intended `simply-kaspa-indexer` upstream or fork commit.
+- The exact API scope needed by Watchtower before explorer/admin UI work starts.
 
 ## Auto-Recreation Audit
 

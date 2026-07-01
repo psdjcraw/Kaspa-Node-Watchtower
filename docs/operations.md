@@ -526,6 +526,17 @@ on the positioning-risk verdict and next operator action. `make
 discord-market-drill` injects the same synthetic risk snapshot as
 `make market-risk-drill`, but routes through the Discord command adapter so
 slash-command payload handling is covered too.
+Market dashboard, daily report, alert, and Discord market-risk output all use
+the same operator language:
+
+- `state`: `OK`, `WATCH`, `WARN`, `CRIT`, or `NO DATA`
+- `severity`: `ok`, `watch`, `warning`, or `critical`
+- `priority`: `normal` or `risk-first`
+- `next`: the next operator action for the current market posture
+
+Market `warning` and `critical` states describe KAS/USDT positioning risk, not
+node health failure. Use the node summary and failed checks for `kaspad`
+incident handling.
 
 Operator timeline:
 
@@ -632,6 +643,9 @@ http://127.0.0.1:9660/metrics
 Lightweight mode is exported as `kaspa_watchtower_lightweight_mode`. A value of
 `1` means the companion indexer is intentionally disabled and Watchtower should
 treat `indexer=disabled reason=config ok=True probes=skipped` as healthy.
+The companion indexer is on long-term hold for the mainnet host; keep explorer
+and admin UI work in backlog until disk headroom, retention, prune/cleanup, and
+commit pinning are reviewed separately.
 
 Operational snapshot:
 

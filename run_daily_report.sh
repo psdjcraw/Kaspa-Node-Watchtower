@@ -293,7 +293,7 @@ completed = subprocess.run(
 )
 market_lines = [line for line in completed.stdout.splitlines() if line and not line.startswith("Market snapshot saved:")]
 if completed.returncode == 0 and market_lines:
-    for line in market_lines[:6]:
+    for line in market_lines[:7]:
         print(f"- {line}")
 else:
     print(f"- unavailable: {(completed.stderr or completed.stdout).strip() or 'unknown'}")

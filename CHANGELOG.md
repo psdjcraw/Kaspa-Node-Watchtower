@@ -15,6 +15,9 @@ All notable changes to Kaspa Node Watchtower are tracked here.
 - Added lightweight-mode visibility across daily reports, Prometheus metrics,
   the status dashboard, and `scripts/ops_snapshot.sh` so disabled-indexer
   operation and Docker indexer recreation checks are explicit.
+- Added a lightweight-first Phase 7-12 roadmap with market severity alignment,
+  release-readiness checks, 24-48h observation, operator UX polish, long-term
+  indexer hold, and Watchtower-only planning.
 - Discord command bridge now exposes `market`, `market-risk`, and
   `market-drill` outputs for KAS/USDT market snapshots and positioning-risk
   drills.
@@ -83,6 +86,9 @@ All notable changes to Kaspa Node Watchtower are tracked here.
 - SpaceX investment watchlist cards now render sparse private valuation marks as
   OHLC candlesticks on 1D, 1W, and 1M views instead of showing unavailable
   private-source placeholders across intraday chart slots.
+- Market snapshot, daily report, Discord market, Discord market-risk, and market
+  risk alerts now share the same operator state, severity, priority, and
+  next-action language.
 - Daily reports now lead with the six core node SLO checks and render benchmark
   trends with reset-safe DAA/block deltas, relay rates, disk delta, and explicit
   trend notes instead of misleading negative counters.
