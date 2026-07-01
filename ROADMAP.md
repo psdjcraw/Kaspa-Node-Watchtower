@@ -313,6 +313,46 @@ alignment, and keep the companion indexer on long-term hold:
   operator wants the polish packaged as a new release.
 - Keep main stable with the v0.8.4 polish commits and continue monitoring.
 
+### Phase 49 - Passive Watch Window
+
+- Stop feature work and observe daily report, alert bridge, Grafana, and
+  `scripts/ops_snapshot.sh`.
+- Keep the expected state as health 100, failed checks none, Prometheus alerts
+  `0`, lightweight/indexer-hold verdict OK, and no indexer Docker resources.
+
+### Phase 50 - Noise Budget
+
+- Page immediately for node-health failures, exporter/Prometheus failures, disk
+  pressure, release/install check failures, or unexpected indexer recreation.
+- Keep market risk as a market signal, not a node incident.
+- Keep expected disabled-indexer posture out of alerts during lightweight mode.
+
+### Phase 51 - Runbook Cleanup
+
+- Use this order when checking the host: `scripts/ops_snapshot.sh`, daily
+  report, Grafana, Prometheus alerts, then `state/status.html`.
+- Keep docs short enough for operator use during an incident.
+
+### Phase 52 - Dashboard Proof Check
+
+- Treat status page and Grafana as sufficient if release, indexer hold,
+  lightweight mode, node health, market risk, and disk posture are visible
+  without opening the indexer stack.
+- Remove or defer more dashboard work unless real drift appears.
+
+### Phase 53 - v0.8.4 Hold Criteria
+
+- Cut v0.8.4 only if alert/status/report/Grafana polish fixes a real operation
+  issue, install checks fail, provisioning drifts, or the operator explicitly
+  asks for a patch release.
+- Otherwise keep the v0.8.4 draft as a hold record and continue on main.
+
+### Phase 54 - Stop Condition
+
+- Stop extending phases after the stable operating mode is documented.
+- Resume work only for a real incident, observed drift, explicit v0.8.4 release
+  command, or a new operator-requested scope.
+
 ## Long-Term Backlog - Watchtower plus Indexer
 
 The long-term project direction is documented in

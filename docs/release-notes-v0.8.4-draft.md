@@ -21,6 +21,49 @@ Hold the v0.8.4 release for now. Keep the changes on `main` and continue
 monitoring unless a post-v0.8.3 drift issue appears or the operator explicitly
 asks to cut a patch release.
 
+## Hold Criteria
+
+Do not cut v0.8.4 while all of these remain true:
+
+- `scripts/ops_snapshot.sh` reports health 100, failed checks none, Prometheus
+  alerts `0`, and lightweight/indexer-hold verdict OK.
+- Docker indexer containers, volumes, and `simply-kaspa-indexer` images remain
+  absent.
+- Daily report, weekly report, status HTML, and Grafana continue to show the
+  same release/lightweight posture.
+- GitHub Actions smoke and CodeQL stay green on `main`.
+- `make release-install-check` continues to verify the published v0.8.3 release
+  asset and Homebrew formula.
+
+Cut v0.8.4 only if one of these happens:
+
+- alert, status, report, or Grafana polish fixes a real operator issue;
+- release install checks fail;
+- active Grafana provisioning drifts from the repository dashboard;
+- a real post-v0.8.3 drift issue appears;
+- the operator explicitly asks for a patch release.
+
+## Stable Operating Mode
+
+Use this order for routine checks:
+
+1. `scripts/ops_snapshot.sh`
+2. daily report
+3. Grafana dashboard
+4. Prometheus alerts
+5. `state/status.html`
+
+Noise budget:
+
+- Immediate: node-health failures, exporter/Prometheus failures, disk pressure,
+  release/install check failures, and unexpected indexer recreation.
+- Observe: market-risk warnings and multi-node history imperfections.
+- Silent: expected disabled-indexer posture while lightweight mode is enabled.
+
+Stop condition: no more roadmap phases are needed until a real incident,
+observed drift, explicit v0.8.4 release command, or a new operator-requested
+scope appears.
+
 ## Dry-Run Package
 
 Generated from the current tracked source without a version bump:

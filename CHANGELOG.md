@@ -6,6 +6,11 @@ All notable changes to Kaspa Node Watchtower are tracked here.
 
 ### Added
 
+- Added Phase 49-54 stable operating mode guidance covering passive watch,
+  noise budget, runbook order, dashboard proof checks, v0.8.4 hold criteria,
+  and the stop condition for further phase work.
+- v0.8.4 draft notes now include hold criteria, stable operating mode, noise
+  budget, and the explicit no-more-phases stop condition.
 - Added draft v0.8.4 notes with the current no-release decision, dry-run
   package checksum, and final verification checklist.
 - Added Phase 43-48 planning for short stability observation, alert signal

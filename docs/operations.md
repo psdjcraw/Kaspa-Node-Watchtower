@@ -684,6 +684,28 @@ Alert bodies include a `signal_type` field for routing:
 - `watch_event`, `wallet`, `whale`: address, wallet, and whale-watch events
 - `status`: ordinary status-only alert bodies
 
+Stable operating mode after v0.8.3:
+
+1. Run `scripts/ops_snapshot.sh`.
+2. Read the daily report.
+3. Check Grafana only if a summary line needs visual context.
+4. Check Prometheus alerts for active alert details.
+5. Open `state/status.html` for a local HTML view.
+
+Immediate-action noise budget:
+
+- node health failures
+- exporter or Prometheus failures
+- disk pressure
+- release/install check failures
+- unexpected indexer container, volume, or image recreation
+
+Observation-only noise budget:
+
+- market-risk warnings without node failures
+- multi-node history imperfections on the single-node baseline
+- expected disabled-indexer posture while lightweight mode is enabled
+
 Canvas-hosted status page file:
 
 ```text

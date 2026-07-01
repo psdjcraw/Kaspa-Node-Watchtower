@@ -50,6 +50,9 @@ stack:
   version, and SHA-256.
 - v0.8.4 decision: hold release for now; keep post-v0.8.3 polish on `main`
   unless drift appears or the operator explicitly asks to cut a patch release.
+- Stable operating mode: stop extending roadmap phases; resume work only for a
+  real incident, observed drift, explicit v0.8.4 release command, or new
+  operator-requested scope.
 - Market Watchlist rendering: SpaceX shows only `1D`, `1W`, and `1M`
   private-valuation candlestick cards; desktop and 390px mobile checks showed
   no horizontal overflow.
